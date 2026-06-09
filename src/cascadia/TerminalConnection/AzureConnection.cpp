@@ -454,7 +454,7 @@ namespace winrt::Microsoft::Terminal::TerminalConnection::implementation
             {
                 _WriteCaughtExceptionRecord();
                 _transitionToState(ConnectionState::Failed);
-                return E_FAIL;
+                return gsl::narrow<DWORD>(E_FAIL);
             }
         }
     }

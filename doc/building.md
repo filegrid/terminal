@@ -155,6 +155,20 @@ The `bx` will build just the Terminal package, critically, populating the `Casca
 
 Notably, this method of building the Terminal package can't leverage the FastUpToDate check in Visual Studio, so the builds end up being considerably slower for the whole package, as cppwinrt does a lot of work before confirming that it's up to date and doing nothing.
 
+### Portable distribution (directory install)
+
+If you want an unpackaged build that can be extracted to any directory instead of
+installed into `WindowsApps`, use:
+
+```pwsh
+.\build\scripts\Build-PortableTerminalDistribution.ps1
+```
+
+This script builds `CascadiaPackage`, finds the matching `Microsoft.UI.Xaml`
+dependency package, and then runs
+`build\scripts\New-UnpackagedTerminalDistribution.ps1 -PortableMode -SingleFileOutput`
+to produce a single portable executable under `AppPackages\Portable\portable`.
+
 
 ### Are you seeing `DEP0700: Registration of the app failed`?
 

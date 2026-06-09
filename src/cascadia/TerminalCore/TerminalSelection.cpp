@@ -266,7 +266,8 @@ void Terminal::_SetSelectionEnd(SelectionInfo* selection, const til::point viewp
 // - the new start/end for a selection
 std::pair<til::point, til::point> Terminal::_PivotSelection(const til::point targetPos, bool& targetStart) const noexcept
 {
-    if (targetStart = targetPos <= _selection->pivot)
+    targetStart = targetPos <= _selection->pivot;
+    if (targetStart)
     {
         // target is before pivot
         // treat target as start

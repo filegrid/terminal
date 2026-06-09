@@ -108,7 +108,7 @@ jobs:
     MSBuildCacheParameters: ' '
     # When building the unpackaged distribution, build it in portable mode if it's Canary-branded
     ${{ if eq(parameters.branding, 'Canary') }}:
-      UnpackagedBuildArguments: -PortableMode
+      UnpackagedBuildArguments: -PortableMode -SingleFileOutput
     ${{ else }}:
       UnpackagedBuildArguments: ' '
     JobOutputDirectory: $(Terminal.BinDir)

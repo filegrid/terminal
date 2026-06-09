@@ -45,18 +45,18 @@ namespace winrt::Microsoft::Terminal::UI::implementation
             // a protected member. It does work, though.
             target = box.as<IControlProtected>().GetTemplateChild(L"InputBox").as<TextBox>();
         }
-        if (const auto control = target.try_as<TextBlock>())
+        if (const auto textBlock = target.try_as<TextBlock>())
         {
-            selection = control.SelectedText();
+            selection = textBlock.SelectedText();
         }
-        else if (const auto control = target.try_as<TextBox>())
+        else if (const auto textBox = target.try_as<TextBox>())
         {
-            selection = control.SelectedText();
+            selection = textBox.SelectedText();
             writable = true;
         }
-        else if (const auto control = target.try_as<RichTextBlock>())
+        else if (const auto richTextBlock = target.try_as<RichTextBlock>())
         {
-            selection = control.SelectedText();
+            selection = richTextBlock.SelectedText();
         }
 
         if (!_copy)
@@ -118,17 +118,17 @@ namespace winrt::Microsoft::Terminal::UI::implementation
         {
             target = box.as<IControlProtected>().GetTemplateChild(L"InputBox").as<TextBox>();
         }
-        if (const auto control = target.try_as<TextBlock>())
+        if (const auto textBlock = target.try_as<TextBlock>())
         {
-            control.CopySelectionToClipboard();
+            textBlock.CopySelectionToClipboard();
         }
-        else if (const auto control = target.try_as<TextBox>())
+        else if (const auto textBox = target.try_as<TextBox>())
         {
-            control.CopySelectionToClipboard();
+            textBox.CopySelectionToClipboard();
         }
-        else if (const auto control = target.try_as<RichTextBlock>())
+        else if (const auto richTextBlock = target.try_as<RichTextBlock>())
         {
-            control.CopySelectionToClipboard();
+            richTextBlock.CopySelectionToClipboard();
         }
     }
 
@@ -177,17 +177,17 @@ namespace winrt::Microsoft::Terminal::UI::implementation
         {
             target = box.as<IControlProtected>().GetTemplateChild(L"InputBox").as<TextBox>();
         }
-        if (const auto control = target.try_as<TextBlock>())
+        if (const auto textBlock = target.try_as<TextBlock>())
         {
-            control.SelectAll();
+            textBlock.SelectAll();
         }
-        else if (const auto control = target.try_as<TextBox>())
+        else if (const auto textBox = target.try_as<TextBox>())
         {
-            control.SelectAll();
+            textBox.SelectAll();
         }
-        else if (const auto control = target.try_as<RichTextBlock>())
+        else if (const auto richTextBlock = target.try_as<RichTextBlock>())
         {
-            control.SelectAll();
+            richTextBlock.SelectAll();
         }
     }
 

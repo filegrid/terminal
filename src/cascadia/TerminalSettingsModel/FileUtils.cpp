@@ -12,6 +12,7 @@ static constexpr std::wstring_view UnpackagedSettingsFolderName{ L"Microsoft\\Wi
 static constexpr std::wstring_view ReleaseSettingsFolder{ L"Packages\\Microsoft.WindowsTerminal_8wekyb3d8bbwe\\LocalState\\" };
 static constexpr std::wstring_view PortableModeMarkerFile{ L".portable" };
 static constexpr std::wstring_view PortableModeSettingsFolder{ L"settings" };
+static constexpr std::wstring_view SettingsDirectoryOverrideEnvironmentVariable{ L"WT_SETTINGS_DIR_OVERRIDE" };
 
 namespace winrt::Microsoft::Terminal::Settings::Model
 {
@@ -27,9 +28,31 @@ namespace winrt::Microsoft::Terminal::Settings::Model
         return portableMode;
     }
 
+    static std::filesystem::path _getSettingsDirectoryOverridePath()
+    {
+        const auto overridePath = wil::TryGetEnvironmentVariableW<std::wstring>(SettingsDirectoryOverrideEnvironmentVariable.data());
+        if (overridePath.empty())
+        {
+            return {};
+        }
+
+        std::filesystem::path path{ overridePath };
+        std::filesystem::create_directories(path);
+        return path;
+    }
+
     std::filesystem::path GetBaseSettingsPath()
     {
         static auto baseSettingsPath = []() {
+            if (!IsPackaged())
+            {
+                if (const auto overridePath = _getSettingsDirectoryOverridePath();
+                    !overridePath.empty())
+                {
+                    return overridePath;
+                }
+            }
+
             if (!IsPackaged() && IsPortableMode())
             {
                 std::filesystem::path modulePath{ wil::GetModuleFileNameW<std::wstring>(wil::GetModuleInstanceHandle()) };

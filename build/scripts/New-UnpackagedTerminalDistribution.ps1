@@ -30,7 +30,11 @@ Param(
     [Parameter(HelpMessage="Include the portable mode marker file by default", ParameterSetName='AppX')]
     [Parameter(HelpMessage="Include the portable mode marker file by default", ParameterSetName='Layout')]
     [switch]
-    $PortableMode = $PSCmdlet.ParameterSetName -eq 'Layout'
+    $PortableMode = $PSCmdlet.ParameterSetName -eq 'Layout',
+
+    [Parameter(HelpMessage="Bundle the portable distribution into a single executable", ParameterSetName='AppX')]
+    [switch]
+    $SingleFileOutput
 )
 
 $filesToRemove = @("*.xml", "*.winmd", "Appx*", "Images/*Tile*", "Images/*Logo*") # Remove from Terminal
@@ -66,6 +70,14 @@ $architecture = $manifest.Package.Identity.ProcessorArchitecture
 
 $distributionName = "{0}_{1}_{2}" -f ($pfn, $version, $architecture)
 $terminalDir = "terminal-{0}" -f ($version)
+
+if ($PortableMode -and -not $PSBoundParameters.ContainsKey('SingleFileOutput')) {
+    $SingleFileOutput = $true
+}
+
+if ($SingleFileOutput -and -not $PortableMode) {
+    throw "SingleFileOutput requires PortableMode."
+}
 
 ########
 # Unpacking Terminal and XAML
@@ -135,16 +147,124 @@ $finalTerminalPriFile = Join-Path $terminalAppPath "resources.pri"
 
 $portableModeMarkerFile = Join-Path $terminalAppPath ".portable"
 If ($PortableMode) {
-	"" | Out-File $portableModeMarkerFile
+    if (-not $SingleFileOutput) {
+	    "" | Out-File $portableModeMarkerFile
+
+        $settingsDirectory = Join-Path $terminalAppPath "settings"
+        New-Item -ItemType Directory -Path $settingsDirectory -Force | Out-Null
+
+        @'
+{
+  "profiles":
+  {
+    "defaults":
+    {
+      "cursorShape": "vintage"
+    }
+  }
+}
+'@ | Out-File -FilePath (Join-Path $settingsDirectory "settings.json") -Encoding utf8
+    }
 }
 
 If ($PSCmdlet.ParameterSetName -Eq "AppX") {
-	# We only produce a ZIP when we're combining two AppX directories.
 	New-Item -ItemType Directory -Path $Destination -ErrorAction:SilentlyContinue | Out-Null
-	$outputZip = (Join-Path $Destination ("{0}.zip" -f ($distributionName)))
+    $outputZip = Join-Path $tempDir ("{0}.zip" -f ($distributionName))
 	& tar -c --format=zip -f $outputZip -C $tempDir $terminalDir
-	Remove-Item -Recurse -Force $tempDir -EA:SilentlyContinue
-	Get-Item $outputZip
+
+    if ($SingleFileOutput) {
+        $launcherSourcePath = Join-Path $PSScriptRoot "..\..\src\tools\PortableTerminalLauncher\Program.cs"
+        $cscPath = (Get-Command csc.exe -ErrorAction SilentlyContinue).Source
+        if ([string]::IsNullOrWhiteSpace($cscPath)) {
+            $roslynCsc = "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\Roslyn\csc.exe"
+            if (Test-Path $roslynCsc -PathType Leaf) {
+                $cscPath = $roslynCsc
+            } else {
+                throw "Could not find csc.exe to build the single-file portable launcher."
+            }
+        }
+
+        $cscPlatform = switch ($architecture) {
+            "x64" { "x64" }
+            "x86" { "x86" }
+            "arm64" { "arm64" }
+            default { throw "Unsupported architecture $architecture for single-file portable output." }
+        }
+
+        $publishDir = Join-Path $tempDir "portable-launcher"
+        New-Item -ItemType Directory -Path $publishDir -Force | Out-Null
+
+        $assemblyInfoPath = Join-Path $publishDir "PortableTerminalLauncher.AssemblyInfo.cs"
+        @"
+using System.Reflection;
+[assembly: AssemblyTitle("Windows Terminal Portable")]
+[assembly: AssemblyProduct("Windows Terminal Portable")]
+[assembly: AssemblyVersion("$version")]
+[assembly: AssemblyFileVersion("$version")]
+[assembly: AssemblyInformationalVersion("$version")]
+"@ | Set-Content -Path $assemblyInfoPath -Encoding Ascii
+
+        $outputExe = Join-Path $Destination ("{0}.exe" -f ($distributionName))
+        $staleZip = Join-Path $Destination ("{0}.zip" -f ($distributionName))
+        if (Test-Path $staleZip -PathType Leaf) {
+            Remove-Item $staleZip -Force
+        }
+
+        $launcherPath = $outputExe
+        $compileArgs = @(
+            "/nologo",
+            "/target:winexe",
+            "/optimize+",
+            "/platform:$cscPlatform",
+            "/r:System.IO.Compression.dll",
+            "/r:System.IO.Compression.FileSystem.dll",
+            "/r:System.Windows.Forms.dll",
+            "/out:$launcherPath",
+            $assemblyInfoPath,
+            $launcherSourcePath
+        )
+
+        & $cscPath @compileArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "Building the single-file portable launcher failed with code $LASTEXITCODE"
+        }
+
+        if (-not (Test-Path $launcherPath -PathType Leaf)) {
+            throw "Could not find the published portable launcher at `"$launcherPath`"."
+        }
+
+        $payloadLength = (Get-Item $outputZip).Length
+        $payloadLengthBytes = [BitConverter]::GetBytes([int64]$payloadLength)
+        $footerMagic = [System.Text.Encoding]::ASCII.GetBytes("WTPORT01")
+
+        $outputStream = [System.IO.File]::Open($outputExe, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
+        try {
+            $payloadStream = [System.IO.File]::OpenRead($outputZip)
+            try {
+                $payloadStream.CopyTo($outputStream)
+                $outputStream.Write($payloadLengthBytes, 0, $payloadLengthBytes.Length)
+                $outputStream.Write($footerMagic, 0, $footerMagic.Length)
+            }
+            finally {
+                $payloadStream.Dispose()
+            }
+        }
+        finally {
+            $outputStream.Dispose()
+        }
+
+	    Remove-Item -Recurse -Force $tempDir -EA:SilentlyContinue
+        Get-Item $outputExe
+    } else {
+	    $finalZip = Join-Path $Destination ("{0}.zip" -f ($distributionName))
+        $staleExe = Join-Path $Destination ("{0}.exe" -f ($distributionName))
+        if (Test-Path $staleExe -PathType Leaf) {
+            Remove-Item $staleExe -Force
+        }
+        Move-Item $outputZip $finalZip -Force
+	    Remove-Item -Recurse -Force $tempDir -EA:SilentlyContinue
+	    Get-Item $finalZip
+    }
 } ElseIf ($PSCmdlet.ParameterSetName -Eq "Layout") {
 	Get-Item $terminalAppPath
 }

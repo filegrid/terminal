@@ -4,6 +4,7 @@
 #################################
 # Draft-TerminalReleases takes a directory full of Terminal build outputs:
 # - zip files
+# - single-file portable executables
 # - preinstallation kits
 # - MSIX bundles
 # and produces tagged releases with hashes and assets on GitHub.
@@ -33,6 +34,7 @@ Enum AssetType {
 	GroupPolicy
 	NugetPackage
 	Zip
+	PortableExecutable
 }
 
 Enum Branding {
@@ -91,6 +93,8 @@ Class Asset {
 		} ElseIf (".nupkg" -eq $local:ext) {
 			$this.Type = [AssetType]::NugetPackage
 			$this.Architecture = "all"
+		} ElseIf (".exe" -eq $local:ext -and $local:filename -match '^(Microsoft\.WindowsTerminal|Microsoft\.WindowsTerminalPreview|Microsoft\.WindowsTerminalCanary|WindowsTerminalDev)_.+_[^_]+\.exe$') {
+			$this.Type = [AssetType]::PortableExecutable
 		} ElseIf (".zip" -eq $local:ext) {
 			$this.Type = [AssetType]::Zip
 		} ElseIf (".msixbundle" -eq $local:ext) {
@@ -120,13 +124,18 @@ Class Asset {
 			$local:Manifest = [xml](Get-Content $local:nuspec)
 			$this.ParseNuspec($local:Manifest)
 		} Else {
-			If ($this.Type -Ne [AssetType]::GroupPolicy) {
+			If ($this.Type -Eq [AssetType]::PortableExecutable) {
+				$this.ExpandedVersion = (Get-Item $this.Path).VersionInfo.ProductVersion
+			} ElseIf ($this.Type -Ne [AssetType]::GroupPolicy) {
 				& $script:tar -x -f $this.Path -C $local:directory --strip-components=1 '*/wt.exe'
 				$this.ExpandedVersion = (Get-Item (Join-Path $local:directory wt.exe)).VersionInfo.ProductVersion
 			}
 
-			# Zip files just encode everything in their filename. Not great, but workable.
+			# Unpackaged artifacts encode everything in their filename. Not great, but workable.
 			$this.ParseFilename($local:filename)
+			if ([string]::IsNullOrWhiteSpace($this.ExpandedVersion)) {
+				$this.ExpandedVersion = $this.Version.ToString()
+			}
 		}
 
 		$v = [version]$this.Version
@@ -173,6 +182,9 @@ Class Asset {
 			}
 			Zip {
 				"{0}_{1}_{2}.zip" -f ($this.Name, $this.Version, $this.Architecture)
+			}
+			PortableExecutable {
+				"{0}_{1}_{2}.exe" -f ($this.Name, $this.Version, $this.Architecture)
 			}
 			GroupPolicy {
 				"{0}_{1}.zip" -f ($this.Name, $this.Version)
@@ -277,7 +289,10 @@ Function New-ReleaseBody([Release]$Release) {
 }
 
 # Collect Assets from $Directory, figure out what those assets are
-$Assets = Get-ChildItem $Directory -Recurse -Include *.msixbundle, *.zip, *.nupkg -Exclude *.Wpf.*,*.symbols.nupkg | ForEach-Object {
+$Assets = Get-ChildItem $Directory -Recurse -Include *.msixbundle, *.zip, *.nupkg, *.exe -Exclude *.Wpf.*,*.symbols.nupkg |
+	Where-Object {
+		$_.Extension -ne ".exe" -or $_.Name -match '^(Microsoft\.WindowsTerminal|Microsoft\.WindowsTerminalPreview|Microsoft\.WindowsTerminalCanary|WindowsTerminalDev)_.+_[^_]+\.exe$'
+	} | ForEach-Object {
 	[Asset]::CreateFromFile($_.FullName)
 }
 

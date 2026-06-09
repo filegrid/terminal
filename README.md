@@ -160,18 +160,18 @@ Windows Terminal Canary is a nightly build of Windows Terminal. This build has t
 
 Windows Terminal Canary is our least stable offering, so you may discover bugs before we have had a chance to find them.
 
-Windows Terminal Canary is available as an App Installer distribution and a Portable ZIP distribution.
+Windows Terminal Canary is available as an App Installer distribution and a Portable EXE distribution.
 
 The App Installer distribution supports automatic updates. Due to platform limitations, this installer only works on Windows 11.
 
-The Portable ZIP distribution is a portable application. It will not automatically update and will not automatically check for updates. This portable ZIP distribution works on Windows 10 (19041+) and Windows 11.
+The Portable EXE distribution is a portable application. It will not automatically update and will not automatically check for updates. This portable EXE distribution works on Windows 10 (19041+) and Windows 11.
 
 | Distribution  | Architecture    | Link                                                 |
 |---------------|:---------------:|------------------------------------------------------|
 | App Installer | x64, arm64, x86 | [Download](https://aka.ms/terminal-canary-installer) |
-| Portable ZIP  | x64             | [Download](https://aka.ms/terminal-canary-zip-x64)   |
-| Portable ZIP  | ARM64           | [Download](https://aka.ms/terminal-canary-zip-arm64) |
-| Portable ZIP  | x86             | [Download](https://aka.ms/terminal-canary-zip-x86)   |
+| Portable EXE  | x64             | [Download](https://aka.ms/terminal-canary-zip-x64)   |
+| Portable EXE  | ARM64           | [Download](https://aka.ms/terminal-canary-zip-arm64) |
+| Portable EXE  | x86             | [Download](https://aka.ms/terminal-canary-zip-x86)   |
 
 _Learn more about the [types of Windows Terminal distributions](https://learn.microsoft.com/windows/terminal/distributions)._
 

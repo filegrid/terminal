@@ -26,6 +26,7 @@ New-Item -ItemType Directory -Path $tempDir | Out-Null
 $priConfig = Join-Path $tempDir "priconfig.xml"
 $priListFile = Join-Path $tempDir "pri.resfiles"
 $dumpListFile = Join-Path $tempDir "dump.resfiles"
+$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 
 @"
 <?xml version="1.0" encoding="utf-8"?>
@@ -63,15 +64,23 @@ $dumpListFile = Join-Path $tempDir "dump.resfiles"
     <indexer-config type="RESFILES" qualifierDelimiter="." />
   </index>
 </resources>
-"@ | Out-File -Encoding:utf8NoBOM $priConfig
+"@ | ForEach-Object {
+    [System.IO.File]::WriteAllText($priConfig, $_, $utf8NoBom)
+}
 
-$Path | Where { $_ -Like "*.pri" } | ForEach-Object {
-    Get-Item $_ | Select -Expand FullName
-} | Out-File -Encoding:utf8NoBOM $priListFile
+$priFiles = @(
+    $Path | Where { $_ -Like "*.pri" } | ForEach-Object {
+        Get-Item $_ | Select -Expand FullName
+    }
+)
+[System.IO.File]::WriteAllLines($priListFile, $priFiles, $utf8NoBom)
 
-$Path | Where { $_ -Like "*.xml" } | ForEach-Object {
-    Get-Item $_ | Select -Expand FullName
-} | Out-File -Encoding:utf8NoBOM $dumpListFile
+$dumpFiles = @(
+    $Path | Where { $_ -Like "*.xml" } | ForEach-Object {
+        Get-Item $_ | Select -Expand FullName
+    }
+)
+[System.IO.File]::WriteAllLines($dumpListFile, $dumpFiles, $utf8NoBom)
 
 & $MakePriPath new /pr $tempDir /cf $priConfig /o /in $IndexName /of $OutputPath
 

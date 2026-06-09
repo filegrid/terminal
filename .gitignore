@@ -286,3 +286,8 @@ profiles.json
 
 # MSBuildCache
 /MSBuildCacheLogs/
+
+# Portable build local dependencies and generated scratch files
+/dep/vcpkg/
+/packages-ref/
+/src/cascadia/WpfTerminalControl/*_wpftmp.csproj
