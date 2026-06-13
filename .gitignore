@@ -261,6 +261,7 @@ build*.trc
 build*.rec
 build*.wrn
 build*.metadata
+bin/
 
 # MS Build binary logs
 *.binlog
@@ -291,3 +292,11 @@ profiles.json
 /dep/vcpkg/
 /packages-ref/
 /src/cascadia/WpfTerminalControl/*_wpftmp.csproj
+
+# Local scratch directories
+/tmp/
+/temp/
+/.tmp/
+**/tmp/
+**/temp/
+**/.tmp/

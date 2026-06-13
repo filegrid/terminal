@@ -13,6 +13,7 @@
 #include "RequestMoveContentArgs.g.h"
 #include "LaunchPositionRequest.g.h"
 #include "Toast.h"
+#include "WorkspaceManagerPaneContent.h"
 
 #include "WindowsPackageManagerFactory.h"
 #include "../TerminalSettingsModel/Workspace.h"
@@ -252,6 +253,8 @@ namespace winrt::TerminalApp::implementation
         void _UpdateTabIndices();
 
         TerminalApp::Tab _settingsTab{ nullptr };
+        TerminalApp::Tab _workspaceManagerTab{ nullptr };
+        winrt::com_ptr<WorkspaceManagerPaneContent> _workspaceManagerContent{ nullptr };
 
         bool _isInFocusMode{ false };
         bool _isFullscreen{ false };
@@ -343,7 +346,7 @@ namespace winrt::TerminalApp::implementation
         bool _TryCaptureCurrentWorkspace(winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace& workspace) const;
         bool _CurrentWorkspaceNeedsSave() const;
         void _LoadWorkspaceEditorState(bool preserveSelection = true);
-        void _RebuildWorkspaceManagerDialog();
+        void _RebuildWorkspaceManagerTab();
         void _AddWorkspaceDefinition();
         void _DeleteSelectedWorkspaceDefinition();
         void _AddWorkspaceNode();

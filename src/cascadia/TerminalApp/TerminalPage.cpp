@@ -24,6 +24,7 @@
 #include "SnippetsPaneContent.h"
 #include "TabRowControl.h"
 #include "TerminalSettingsCache.h"
+#include "WorkspaceManagerPaneContent.h"
 
 #include "LaunchPositionRequest.g.cpp"
 #include "RenameWindowRequestedArgs.g.cpp"
@@ -359,6 +360,11 @@ namespace winrt::TerminalApp::implementation
 
         auto manageWorkspacesItem = WUX::Controls::MenuFlyoutItem{};
         manageWorkspacesItem.Text(RS_(L"WorkspaceManageMenuItem"));
+
+        WUX::Controls::SymbolIcon manageWorkspacesIcon{};
+        manageWorkspacesIcon.Symbol(WUX::Controls::Symbol::Setting);
+        manageWorkspacesItem.Icon(manageWorkspacesIcon);
+
         manageWorkspacesItem.Click([weakThis{ get_weak() }](auto&&, auto&&) {
             if (auto page{ weakThis.get() })
             {
@@ -484,12 +490,9 @@ namespace winrt::TerminalApp::implementation
         }
 
         _LoadWorkspaceEditorState();
-        if (const auto dialog = FindName(L"WorkspaceManagerDialog").try_as<ContentDialog>())
+        if (_workspaceManagerContent)
         {
-            if (dialog.Content() != nullptr)
-            {
-                _RebuildWorkspaceManagerDialog();
-            }
+            _RebuildWorkspaceManagerTab();
         }
     }
 
@@ -498,9 +501,19 @@ namespace winrt::TerminalApp::implementation
         _workspaceEditorEditMode = false;
         _workspaceDefinitionsDirty = false;
         _LoadWorkspaceEditorState(false);
-        _RebuildWorkspaceManagerDialog();
-
-        co_await _ShowDialogHelper(L"WorkspaceManagerDialog");
+        if (!_workspaceManagerTab)
+        {
+            _workspaceManagerContent = winrt::make_self<WorkspaceManagerPaneContent>(_BuildWorkspaceManagerContent(), _settings);
+            auto resultPane = std::make_shared<Pane>(*_workspaceManagerContent);
+            _workspaceManagerTab = _CreateNewTabFromPane(resultPane);
+            _tabView.SelectedItem(_workspaceManagerTab.TabViewItem());
+        }
+        else
+        {
+            _RebuildWorkspaceManagerTab();
+            _tabView.SelectedItem(_workspaceManagerTab.TabViewItem());
+        }
+        co_return;
     }
 
     void TerminalPage::_LoadWorkspaceEditorState(const bool preserveSelection)
@@ -772,14 +785,12 @@ namespace winrt::TerminalApp::implementation
         _workspaceDefinitionsDirty = true;
     }
 
-    void TerminalPage::_RebuildWorkspaceManagerDialog()
+    void TerminalPage::_RebuildWorkspaceManagerTab()
     {
-        const auto dialog = FindName(L"WorkspaceManagerDialog").as<ContentDialog>();
-        dialog.Title(box_value(_workspaceEditorEditMode ? RS_(L"WorkspaceEditor_DialogTitleEdit") : RS_(L"WorkspaceEditor_DialogTitleBrowse")));
-        dialog.PrimaryButtonText(RS_(L"WorkspaceEditor_DialogPrimaryButton"));
-        dialog.SecondaryButtonText(_workspaceEditorEditMode ? RS_(L"WorkspaceEditor_DialogSecondaryButtonCancel") : RS_(L"WorkspaceEditor_DialogSecondaryButtonClose"));
-        dialog.IsPrimaryButtonEnabled(_workspaceEditorEditMode);
-        dialog.Content(_BuildWorkspaceManagerContent());
+        if (_workspaceManagerContent)
+        {
+            _workspaceManagerContent->UpdateContent(_BuildWorkspaceManagerContent());
+        }
     }
 
     UIElement TerminalPage::_BuildWorkspaceManagerContent()
@@ -787,57 +798,52 @@ namespace winrt::TerminalApp::implementation
         const auto marginBottom = [](const double bottom) {
             return WUX::ThicknessHelper::FromLengths(0, 0, 0, bottom);
         };
+        auto outerGrid = Grid{};
+        outerGrid.Margin(WUX::ThicknessHelper::FromLengths(0, 4, 0, 0));
 
-        auto scrollViewer = ScrollViewer{};
-        scrollViewer.VerticalScrollBarVisibility(ScrollBarVisibility::Auto);
-        scrollViewer.MaxHeight(620);
+        auto leftColumn = ColumnDefinition{};
+        leftColumn.Width(GridLengthHelper::FromValueAndType(300, GridUnitType::Pixel));
+        outerGrid.ColumnDefinitions().Append(leftColumn);
 
-        auto root = StackPanel{};
-        root.Margin(WUX::ThicknessHelper::FromLengths(0, 4, 0, 0));
-        scrollViewer.Content(root);
+        auto rightColumn = ColumnDefinition{};
+        rightColumn.Width(GridLengthHelper::FromValueAndType(1.0, GridUnitType::Star));
+        outerGrid.ColumnDefinitions().Append(rightColumn);
 
-        auto header = StackPanel{};
-        header.Orientation(Orientation::Horizontal);
-        header.Margin(marginBottom(12));
+        auto leftPanel = StackPanel{};
+        leftPanel.Margin(WUX::ThicknessHelper::FromLengths(0, 0, 16, 0));
+        Controls::Grid::SetColumn(leftPanel, 0);
 
         auto workspaceLabel = TextBlock{};
         workspaceLabel.Text(RS_(L"WorkspaceEditor_WorkspaceLabel"));
-        workspaceLabel.VerticalAlignment(VerticalAlignment::Center);
-        workspaceLabel.Margin(WUX::ThicknessHelper::FromLengths(0, 0, 8, 0));
-        header.Children().Append(workspaceLabel);
+        workspaceLabel.FontWeight(Windows::UI::Text::FontWeights::SemiBold());
+        workspaceLabel.Margin(marginBottom(8));
+        leftPanel.Children().Append(workspaceLabel);
 
-        auto workspacePicker = ComboBox{};
-        workspacePicker.Width(260);
-        workspacePicker.Margin(WUX::ThicknessHelper::FromLengths(0, 0, 8, 0));
+        auto currentWorkspaceStatus = TextBlock{};
+        currentWorkspaceStatus.Text(RS_fmt(L"WorkspaceEditor_CurrentStatus", _CurrentWorkspaceDisplayName()));
+        currentWorkspaceStatus.TextWrapping(TextWrapping::Wrap);
+        currentWorkspaceStatus.Margin(marginBottom(_currentWorkspaceId.empty() ? 4 : 12));
+        leftPanel.Children().Append(currentWorkspaceStatus);
+
+        if (_currentWorkspaceId.empty())
         {
-            const auto& workspaces = _workspaceEditorManager.Workspaces();
-            for (const auto& workspace : workspaces)
-            {
-                auto item = ComboBoxItem{};
-                item.Content(box_value(_WorkspaceDisplayName(workspace)));
-                workspacePicker.Items().Append(item);
-            }
-
-            if (!workspaces.empty())
-            {
-                workspacePicker.SelectedIndex(gsl::narrow_cast<int32_t>(_workspaceEditorSelectedIndex));
-            }
+            auto unsavedWorkspaceHint = TextBlock{};
+            unsavedWorkspaceHint.Text(RS_(L"WorkspaceEditor_UnsavedHint"));
+            unsavedWorkspaceHint.TextWrapping(TextWrapping::Wrap);
+            unsavedWorkspaceHint.Margin(marginBottom(12));
+            leftPanel.Children().Append(unsavedWorkspaceHint);
         }
-        workspacePicker.SelectionChanged([weakThis{ get_weak() }](auto&& sender, auto&&) {
-            if (auto self{ weakThis.get() })
-            {
-                if (const auto picker = sender.try_as<ComboBox>())
-                {
-                    const auto selectedIndex = picker.SelectedIndex();
-                    if (selectedIndex >= 0)
-                    {
-                        self->_SetSelectedWorkspaceIndex(gsl::narrow_cast<size_t>(selectedIndex));
-                        self->_RebuildWorkspaceManagerDialog();
-                    }
-                }
-            }
-        });
-        header.Children().Append(workspacePicker);
+
+        auto hint = TextBlock{};
+        hint.Text(_workspaceEditorEditMode ? RS_(L"WorkspaceEditor_EditHint") :
+                                             RS_(L"WorkspaceEditor_BrowseHint"));
+        hint.TextWrapping(TextWrapping::Wrap);
+        hint.Margin(marginBottom(12));
+        leftPanel.Children().Append(hint);
+
+        auto commandBar = StackPanel{};
+        commandBar.Orientation(Orientation::Horizontal);
+        commandBar.Margin(marginBottom(12));
 
         auto editButton = Button{};
         editButton.Content(box_value(_workspaceEditorEditMode ? RS_(L"WorkspaceEditor_DoneEditingButton") : RS_(L"WorkspaceEditor_EditButton")));
@@ -846,10 +852,10 @@ namespace winrt::TerminalApp::implementation
             if (auto self{ weakThis.get() })
             {
                 self->_workspaceEditorEditMode = !self->_workspaceEditorEditMode;
-                self->_RebuildWorkspaceManagerDialog();
+                self->_RebuildWorkspaceManagerTab();
             }
         });
-        header.Children().Append(editButton);
+        commandBar.Children().Append(editButton);
 
         if (_workspaceEditorEditMode)
         {
@@ -860,10 +866,10 @@ namespace winrt::TerminalApp::implementation
                 if (auto self{ weakThis.get() })
                 {
                     self->_AddWorkspaceDefinition();
-                    self->_RebuildWorkspaceManagerDialog();
+                    self->_RebuildWorkspaceManagerTab();
                 }
             });
-            header.Children().Append(newWorkspaceButton);
+            commandBar.Children().Append(newWorkspaceButton);
 
             auto deleteWorkspaceButton = Button{};
             deleteWorkspaceButton.Content(box_value(RS_(L"WorkspaceEditor_DeleteWorkspaceButton")));
@@ -872,36 +878,54 @@ namespace winrt::TerminalApp::implementation
                 if (auto self{ weakThis.get() })
                 {
                     self->_DeleteSelectedWorkspaceDefinition();
-                    self->_RebuildWorkspaceManagerDialog();
+                    self->_RebuildWorkspaceManagerTab();
                 }
             });
-            header.Children().Append(deleteWorkspaceButton);
+            commandBar.Children().Append(deleteWorkspaceButton);
         }
+        leftPanel.Children().Append(commandBar);
 
-        root.Children().Append(header);
-
-        auto hint = TextBlock{};
-        hint.Text(_workspaceEditorEditMode ? RS_(L"WorkspaceEditor_EditHint") :
-                                             RS_(L"WorkspaceEditor_BrowseHint"));
-        hint.TextWrapping(TextWrapping::Wrap);
-        hint.Margin(marginBottom(12));
-        root.Children().Append(hint);
-
-        auto currentWorkspaceStatus = TextBlock{};
-        currentWorkspaceStatus.Text(RS_fmt(L"WorkspaceEditor_CurrentStatus", _CurrentWorkspaceDisplayName()));
-        currentWorkspaceStatus.FontWeight(Windows::UI::Text::FontWeights::SemiBold());
-        currentWorkspaceStatus.TextWrapping(TextWrapping::Wrap);
-        currentWorkspaceStatus.Margin(marginBottom(_currentWorkspaceId.empty() ? 4 : 12));
-        root.Children().Append(currentWorkspaceStatus);
-
-        if (_currentWorkspaceId.empty())
+        auto workspaceList = ListView{};
+        workspaceList.SelectionMode(ListViewSelectionMode::Single);
+        workspaceList.MaxHeight(560);
         {
-            auto unsavedWorkspaceHint = TextBlock{};
-            unsavedWorkspaceHint.Text(RS_(L"WorkspaceEditor_UnsavedHint"));
-            unsavedWorkspaceHint.TextWrapping(TextWrapping::Wrap);
-            unsavedWorkspaceHint.Margin(marginBottom(12));
-            root.Children().Append(unsavedWorkspaceHint);
+            const auto& workspaces = _workspaceEditorManager.Workspaces();
+            for (const auto& workspace : workspaces)
+            {
+                auto item = ListViewItem{};
+                item.Content(box_value(_WorkspaceDisplayName(workspace)));
+                workspaceList.Items().Append(item);
+            }
+
+            if (!workspaces.empty())
+            {
+                workspaceList.SelectedIndex(gsl::narrow_cast<int32_t>(_workspaceEditorSelectedIndex));
+            }
         }
+        workspaceList.SelectionChanged([weakThis{ get_weak() }](auto&& sender, auto&&) {
+            if (auto self{ weakThis.get() })
+            {
+                if (const auto list = sender.try_as<ListView>())
+                {
+                    const auto selectedIndex = list.SelectedIndex();
+                    if (selectedIndex >= 0)
+                    {
+                        self->_SetSelectedWorkspaceIndex(gsl::narrow_cast<size_t>(selectedIndex));
+                        self->_RebuildWorkspaceManagerTab();
+                    }
+                }
+            }
+        });
+        leftPanel.Children().Append(workspaceList);
+        outerGrid.Children().Append(leftPanel);
+
+        auto scrollViewer = ScrollViewer{};
+        scrollViewer.VerticalScrollBarVisibility(ScrollBarVisibility::Auto);
+        scrollViewer.MaxHeight(620);
+        Controls::Grid::SetColumn(scrollViewer, 1);
+
+        auto root = StackPanel{};
+        scrollViewer.Content(root);
 
         auto* workspace = _SelectedWorkspaceForEditing();
         if (workspace == nullptr)
@@ -910,7 +934,8 @@ namespace winrt::TerminalApp::implementation
             empty.Text(RS_(L"WorkspaceEditor_NoneSaved"));
             empty.TextWrapping(TextWrapping::Wrap);
             root.Children().Append(empty);
-            return scrollViewer;
+            outerGrid.Children().Append(scrollViewer);
+            return outerGrid;
         }
 
         const auto addLabeledTextBox = [&](const wchar_t* labelText, const std::wstring& initialValue, const auto& onChanged, const bool readOnly, const bool multiline = false) {
@@ -972,7 +997,7 @@ namespace winrt::TerminalApp::implementation
                 if (auto self{ weakThis.get() })
                 {
                     self->_AddWorkspaceNode();
-                    self->_RebuildWorkspaceManagerDialog();
+                    self->_RebuildWorkspaceManagerTab();
                 }
             });
             nodesHeader.Children().Append(addNodeButton);
@@ -1020,7 +1045,7 @@ namespace winrt::TerminalApp::implementation
                     if (auto self{ weakThis.get() })
                     {
                         self->_DeleteWorkspaceNode(nodeIndex);
-                        self->_RebuildWorkspaceManagerDialog();
+                        self->_RebuildWorkspaceManagerTab();
                     }
                 });
                 nodeHeader.Children().Append(deleteNodeButton);
@@ -1148,7 +1173,8 @@ namespace winrt::TerminalApp::implementation
             root.Children().Append(nodeBorder);
         }
 
-        return scrollViewer;
+        outerGrid.Children().Append(scrollViewer);
+        return outerGrid;
     }
 
     void TerminalPage::_WorkspaceManagerPrimaryButtonClick(const IInspectable& /*sender*/, const ContentDialogButtonClickEventArgs& eventArgs)
@@ -3965,8 +3991,8 @@ namespace winrt::TerminalApp::implementation
             }
         }
 
-        // For now, prevent splitting the _settingsTab. We can always revisit this later.
-        if (*activeTab == _settingsTab)
+        // For now, prevent splitting the special settings/workspace management tabs.
+        if (*activeTab == _settingsTab || *activeTab == _workspaceManagerTab)
         {
             return;
         }

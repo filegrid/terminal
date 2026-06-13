@@ -33,6 +33,7 @@
     <ClCompile Include="Toast.cpp" />
     <ClCompile Include="LanguageProfileNotifier.cpp" />
     <ClCompile Include="TerminalSettingsCache.cpp" />
+    <ClCompile Include="WorkspaceManagerPaneContent.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
@@ -62,6 +63,7 @@
     <ClInclude Include="LanguageProfileNotifier.h" />
     <ClInclude Include="WindowsPackageManagerFactory.h" />
     <ClInclude Include="TerminalSettingsCache.h" />
+    <ClInclude Include="WorkspaceManagerPaneContent.h" />
   </ItemGroup>
   <ItemGroup>
     <Midl Include="AppLogic.idl">

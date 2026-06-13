@@ -485,6 +485,11 @@ namespace winrt::TerminalApp::implementation
         {
             _settingsTab = nullptr;
         }
+        else if (tab == _workspaceManagerTab)
+        {
+            _workspaceManagerTab = nullptr;
+            _workspaceManagerContent = nullptr;
+        }
 
         if (_stashed.draggedTab && *_stashed.draggedTab == tab)
         {
