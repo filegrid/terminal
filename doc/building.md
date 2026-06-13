@@ -140,14 +140,15 @@ powershell -Command Set-Location -Path %OPENCON%\src\cascadia\CascadiaPackage\Ap
 
 Building the package from VS generates the loose layout to begin with, and then registers the loose manifest, skipping the msix stop. It's a lot faster than the commandline inner loop here, unfortunately.
 
-### 2022 Update
+### Visual Studio update
 
 The following command can be used to build the terminal package, and then deploy it.
 
 ```cmd
 pushd %OPENCON%\src\cascadia\CascadiaPackage
 bx
-"C:\Program Files\Microsoft Visual Studio\2022\Preview\Common7\IDE\DeployAppRecipe.exe" bin\%ARCH%\%_LAST_BUILD_CONF%\CascadiaPackage.build.appxrecipe
+for /f "usebackq tokens=*" %I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -prerelease -products * -requires Microsoft.Component.MSBuild -property installationPath`) do set VSINSTALLROOT=%I
+"%VSINSTALLROOT%\Common7\IDE\DeployAppRecipe.exe" bin\%ARCH%\%_LAST_BUILD_CONF%\CascadiaPackage.build.appxrecipe
 popd
 ```
 
@@ -155,7 +156,7 @@ The `bx` will build just the Terminal package, critically, populating the `Casca
 
 Notably, this method of building the Terminal package can't leverage the FastUpToDate check in Visual Studio, so the builds end up being considerably slower for the whole package, as cppwinrt does a lot of work before confirming that it's up to date and doing nothing.
 
-### Portable distribution (directory install)
+### Portable distribution (single-file portable launcher)
 
 If you want an unpackaged build that can be extracted to any directory instead of
 installed into `WindowsApps`, use:
@@ -167,7 +168,54 @@ installed into `WindowsApps`, use:
 This script builds `CascadiaPackage`, finds the matching `Microsoft.UI.Xaml`
 dependency package, and then runs
 `build\scripts\New-UnpackagedTerminalDistribution.ps1 -PortableMode -SingleFileOutput`
-to produce a single portable executable under `AppPackages\Portable\portable`.
+to produce a single portable executable under `bin`.
+
+The primary acceptance artifact is:
+
+`bin\WindowsTerminalDev_0.0.1.0_x64.exe`
+
+This single-file launcher is the main portable output. You run it directly;
+there is no install step for the normal portable flow.
+
+If you also want sparse identity validation assets for a regular non-SID-500
+desktop session, use:
+
+```pwsh
+.\build\scripts\Build-PortableTerminalDistribution.ps1 -GenerateSparseIdentityPackage
+```
+
+That emits:
+
+- `bin\msix\portable-identity\WindowsTerminalSparseDev_0.0.1.0.msix`
+- `bin\msix\portable-identity\WindowsTerminal.exe.manifest`
+
+The sparse identity path below is optional and is only for runtime diagnostics
+that need package identity. It is not required for normal portable usage.
+
+To install those sparse assets against an extracted portable payload, use:
+
+```pwsh
+.\ext\src\portable\scripts\Install-PortableIdentityPackage.ps1 `
+    -IdentityPackagePath .\bin\msix\portable-identity\WindowsTerminalSparseDev_0.0.1.0.msix `
+    -ExternalLocation "$env:LOCALAPPDATA\WTP\<hash>\p\terminal-0.0.1.0" `
+    -AllowUnsigned
+```
+
+The helper copies `WindowsTerminal.exe.manifest` beside the external
+`WindowsTerminal.exe` and then runs `Add-AppxPackage -ExternalLocation ...`
+for you. When `-AllowUnsigned` is used, it also validates that the package
+publisher contains the required unsigned-package OID before attempting
+registration.
+
+For unsigned local validation on Windows 11, the generated sparse identity
+package now includes the required unsigned-package OID in its publisher so that
+`-AllowUnsigned` can register it. Signed sparse packages should still pass a
+real publisher subject that matches the signing certificate.
+
+On the built-in Administrator (`SID-500`) account, sparse package registration
+and unpackaged XAML Islands activation can still fail with access denied /
+PLM initialization errors even when the package itself is well-formed. Validate
+the sparse path from a regular desktop user session instead.
 
 
 ### Are you seeing `DEP0700: Registration of the app failed`?

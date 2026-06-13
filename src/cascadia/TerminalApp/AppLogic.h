@@ -11,6 +11,8 @@
 #include "TerminalWindow.h"
 #include "ContentManager.h"
 
+#include "../TerminalSettingsModel/Workspace.h"
+
 #include <inc/cppwinrt_utils.h>
 #include <ThrottledFunc.h>
 
@@ -48,8 +50,10 @@ namespace winrt::TerminalApp::implementation
         TerminalApp::TerminalWindow CreateNewWindow();
 
         winrt::TerminalApp::ContentManager ContentManager();
+        std::vector<Microsoft::Terminal::Settings::Model::ActionAndArgs> ConsumeInitialWorkspaceStartupActions();
 
         til::typed_event<winrt::Windows::Foundation::IInspectable, winrt::TerminalApp::SettingsLoadEventArgs> SettingsChanged;
+        til::typed_event<winrt::Windows::Foundation::IInspectable, winrt::Windows::Foundation::IInspectable> WorkspaceDefinitionsChanged;
 
     private:
         bool _isElevated{ false };
@@ -73,14 +77,17 @@ namespace winrt::TerminalApp::implementation
         // (C++ destroys members in reverse-declaration-order.)
         winrt::com_ptr<LanguageProfileNotifier> _languageProfileNotifier;
         wil::unique_folder_change_reader_nothrow _reader;
+        wil::unique_folder_change_reader_nothrow _workspaceReader;
 
         TerminalApp::ContentManager _contentManager{ winrt::make<implementation::ContentManager>() };
+        bool _initialWorkspaceConsumed{ false };
 
         void _ApplyLanguageSettingChange() noexcept;
 
         [[nodiscard]] HRESULT _TryLoadSettings() noexcept;
         void _ProcessLazySettingsChanges();
         void _RegisterSettingsChange();
+        void _RegisterWorkspaceChange();
 
         void _setupFolderPathEnvVar();
 

@@ -73,7 +73,8 @@ if "%_SKIP_NUGET_RESTORE%" == "1" (
     echo Skipped nuget restore
 ) else (
     echo Performing nuget restore...
-    nuget.exe restore %OPENCON%\OpenConsole.slnx
+    nuget.exe restore %OPENCON%\dep\nuget\packages.config -Verbosity quiet
+    "%MSBUILD%" %OPENCON%\OpenConsole.slnx /restore /t:ValidateSolutionConfiguration /m /p:Configuration=%_LAST_BUILD_CONF% /p:Platform=%ARCH%
 )
 
 @rem /p:GenerateAppxPackageOnBuild=false will prevent us from building the whole .msix package when building the wapproj project.

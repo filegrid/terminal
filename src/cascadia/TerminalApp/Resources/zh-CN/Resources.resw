@@ -961,4 +961,145 @@
   <data name="InvalidRegex" xml:space="preserve">
     <value>发现无效的正则表达式。</value>
   </data>
+ <data name="WorkspaceMenuItem" xml:space="preserve">
+   <value>工作区</value>
+ </data>
+ <data name="WorkspaceDefaultUnsaved" xml:space="preserve">
+   <value>默认（未保存）</value>
+ </data>
+ <data name="WorkspaceNoneSaved" xml:space="preserve">
+   <value>暂无工作区</value>
+ </data>
+ <data name="WorkspaceOpenInNewWindow" xml:space="preserve">
+   <value>在新窗口中打开工作区</value>
+ </data>
+ <data name="WorkspaceManageMenuItem" xml:space="preserve">
+   <value>管理工作区</value>
+ </data>
+ <data name="WorkspaceSaveMenuItem" xml:space="preserve">
+   <value>保存工作区</value>
+ </data>
+ <data name="WorkspaceGeneratedName" xml:space="preserve">
+   <value>工作区 {0}</value>
+ </data>
+ <data name="WorkspaceSaveFailedNoSavableTabs" xml:space="preserve">
+   <value>当前窗口没有可保存的标签页，无法保存工作区。</value>
+ </data>
+ <data name="WorkspaceSaveFailedWorkspacesFile" xml:space="preserve">
+   <value>保存工作区到 workspaces.yaml 失败。</value>
+ </data>
+ <data name="WorkspaceSaveFailedStateFile" xml:space="preserve">
+   <value>保存工作区状态到 workspace-state.yaml 失败。</value>
+ </data>
+ <data name="WorkspaceSaveFailedGeneric" xml:space="preserve">
+   <value>保存工作区失败。</value>
+ </data>
+ <data name="WorkspaceManagerDialog_Title" xml:space="preserve">
+   <value>管理工作区</value>
+ </data>
+ <data name="WorkspaceManagerDialog_PrimaryButtonText" xml:space="preserve">
+   <value>保存</value>
+ </data>
+ <data name="WorkspaceManagerDialog_SecondaryButtonText" xml:space="preserve">
+   <value>关闭</value>
+ </data>
+ <data name="WorkspaceSaver_Title" xml:space="preserve">
+   <value>保存工作区</value>
+ </data>
+ <data name="WorkspaceSaver_Subtitle" xml:space="preserve">
+   <value>输入工作区名称</value>
+ </data>
+ <data name="WorkspaceSaver_ActionButtonContent" xml:space="preserve">
+   <value>保存</value>
+ </data>
+ <data name="WorkspaceSaver_CloseButtonContent" xml:space="preserve">
+   <value>取消</value>
+ </data>
+ <data name="WorkspaceEditor_DialogTitleBrowse" xml:space="preserve">
+   <value>浏览工作区</value>
+ </data>
+ <data name="WorkspaceEditor_DialogTitleEdit" xml:space="preserve">
+   <value>编辑工作区</value>
+ </data>
+ <data name="WorkspaceEditor_DialogPrimaryButton" xml:space="preserve">
+   <value>保存</value>
+ </data>
+ <data name="WorkspaceEditor_DialogSecondaryButtonClose" xml:space="preserve">
+   <value>关闭</value>
+ </data>
+ <data name="WorkspaceEditor_DialogSecondaryButtonCancel" xml:space="preserve">
+   <value>取消</value>
+ </data>
+ <data name="WorkspaceEditor_WorkspaceLabel" xml:space="preserve">
+   <value>工作区</value>
+ </data>
+ <data name="WorkspaceEditor_EditButton" xml:space="preserve">
+   <value>编辑工作区</value>
+ </data>
+ <data name="WorkspaceEditor_DoneEditingButton" xml:space="preserve">
+   <value>完成编辑</value>
+ </data>
+ <data name="WorkspaceEditor_NewWorkspaceButton" xml:space="preserve">
+   <value>新建工作区</value>
+ </data>
+ <data name="WorkspaceEditor_DeleteWorkspaceButton" xml:space="preserve">
+   <value>删除工作区</value>
+ </data>
+ <data name="WorkspaceEditor_EditHint" xml:space="preserve">
+   <value>当前为编辑模式。可在此添加或删除节点，保存后会写入 workspaces.yaml。</value>
+ </data>
+ <data name="WorkspaceEditor_BrowseHint" xml:space="preserve">
+   <value>当前为浏览模式。进入编辑模式后可添加或删除工作区和节点。</value>
+ </data>
+ <data name="WorkspaceEditor_CurrentStatus" xml:space="preserve">
+   <value>当前工作区：{0}</value>
+ </data>
+ <data name="WorkspaceEditor_UnsavedHint" xml:space="preserve">
+   <value>当前窗口仍在使用默认的未保存工作区。需要复用这个布局时再保存即可。</value>
+ </data>
+ <data name="WorkspaceEditor_NoneSaved" xml:space="preserve">
+   <value>还没有已保存的工作区。</value>
+ </data>
+ <data name="WorkspaceEditor_WorkspaceName" xml:space="preserve">
+   <value>工作区名称</value>
+ </data>
+ <data name="WorkspaceEditor_Description" xml:space="preserve">
+   <value>描述</value>
+ </data>
+ <data name="WorkspaceEditor_Nodes" xml:space="preserve">
+   <value>节点</value>
+ </data>
+ <data name="WorkspaceEditor_AddNodeButton" xml:space="preserve">
+   <value>添加节点</value>
+ </data>
+ <data name="WorkspaceEditor_NoNodes" xml:space="preserve">
+   <value>这个工作区还没有节点。</value>
+ </data>
+ <data name="WorkspaceEditor_DeleteNodeButton" xml:space="preserve">
+   <value>删除</value>
+ </data>
+ <data name="WorkspaceEditor_NodeName" xml:space="preserve">
+   <value>节点名称</value>
+ </data>
+ <data name="WorkspaceEditor_NodeGeneratedName" xml:space="preserve">
+   <value>节点 {0}</value>
+ </data>
+ <data name="WorkspaceEditor_Profile" xml:space="preserve">
+   <value>配置文件</value>
+ </data>
+ <data name="WorkspaceEditor_ConnectionReference" xml:space="preserve">
+   <value>连接引用</value>
+ </data>
+ <data name="WorkspaceEditor_StartupDirectory" xml:space="preserve">
+   <value>启动目录</value>
+ </data>
+ <data name="WorkspaceEditor_StartupCommandOrScript" xml:space="preserve">
+   <value>启动命令或脚本</value>
+ </data>
+ <data name="WorkspaceEditor_ExternalChangeError" xml:space="preserve">
+   <value>编辑器有未保存修改时，磁盘上的 workspaces.yaml 又发生了变化。</value>
+ </data>
+ <data name="WorkspaceEditor_SaveFailed" xml:space="preserve">
+   <value>保存工作区变更到 workspaces.yaml 失败。</value>
+ </data>
 </root>

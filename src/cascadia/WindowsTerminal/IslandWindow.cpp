@@ -372,10 +372,77 @@ LRESULT IslandWindow::_OnMoving(const WPARAM /*wParam*/, const LPARAM lParam)
 // - This should only be called once.
 void IslandWindow::Initialize()
 {
-    _source = DesktopWindowXamlSource{};
+#ifdef _DEBUG
+    {
+        wchar_t tempPath[MAX_PATH]{};
+        if (GetTempPathW(ARRAYSIZE(tempPath), tempPath))
+        {
+            const auto logPath = std::filesystem::path{ tempPath } / L"wt-launch-debug.log";
+            std::ofstream output{ logPath, std::ios::binary | std::ios::app };
+            if (output)
+            {
+                const auto utf8 = til::u16u8(std::wstring{ L"IslandWindow::Initialize before DesktopWindowXamlSource\n" });
+                output.write(utf8.data(), gsl::narrow_cast<std::streamsize>(utf8.size()));
+            }
+        }
+    }
+#endif
+    try
+    {
+        _source = DesktopWindowXamlSource{};
+    }
+    catch (...)
+    {
+#ifdef _DEBUG
+        {
+            wchar_t tempPath[MAX_PATH]{};
+            if (GetTempPathW(ARRAYSIZE(tempPath), tempPath))
+            {
+                const auto logPath = std::filesystem::path{ tempPath } / L"wt-launch-debug.log";
+                std::ofstream output{ logPath, std::ios::binary | std::ios::app };
+                if (output)
+                {
+                    const auto utf8 = til::u16u8(std::wstring{ L"IslandWindow::Initialize DesktopWindowXamlSource failed hr=" } + std::to_wstring(static_cast<uint32_t>(winrt::to_hresult())) + L"\n");
+                    output.write(utf8.data(), gsl::narrow_cast<std::streamsize>(utf8.size()));
+                }
+            }
+        }
+#endif
+        throw;
+    }
+#ifdef _DEBUG
+    {
+        wchar_t tempPath[MAX_PATH]{};
+        if (GetTempPathW(ARRAYSIZE(tempPath), tempPath))
+        {
+            const auto logPath = std::filesystem::path{ tempPath } / L"wt-launch-debug.log";
+            std::ofstream output{ logPath, std::ios::binary | std::ios::app };
+            if (output)
+            {
+                const auto utf8 = til::u16u8(std::wstring{ L"IslandWindow::Initialize after DesktopWindowXamlSource\n" });
+                output.write(utf8.data(), gsl::narrow_cast<std::streamsize>(utf8.size()));
+            }
+        }
+    }
+#endif
 
     auto interop = _source.as<IDesktopWindowXamlSourceNative>();
     winrt::check_hresult(interop->AttachToWindow(_window.get()));
+#ifdef _DEBUG
+    {
+        wchar_t tempPath[MAX_PATH]{};
+        if (GetTempPathW(ARRAYSIZE(tempPath), tempPath))
+        {
+            const auto logPath = std::filesystem::path{ tempPath } / L"wt-launch-debug.log";
+            std::ofstream output{ logPath, std::ios::binary | std::ios::app };
+            if (output)
+            {
+                const auto utf8 = til::u16u8(std::wstring{ L"IslandWindow::Initialize after AttachToWindow\n" });
+                output.write(utf8.data(), gsl::narrow_cast<std::streamsize>(utf8.size()));
+            }
+        }
+    }
+#endif
 
     // stash the child interop handle so we can resize it when the main hwnd is resized
     interop->get_WindowHandle(&_interopWindowHandle);
@@ -386,7 +453,37 @@ void IslandWindow::Initialize()
     ShowWindow(_interopWindowHandle, SW_HIDE);
 
     _rootGrid = winrt::Windows::UI::Xaml::Controls::Grid();
+#ifdef _DEBUG
+    {
+        wchar_t tempPath[MAX_PATH]{};
+        if (GetTempPathW(ARRAYSIZE(tempPath), tempPath))
+        {
+            const auto logPath = std::filesystem::path{ tempPath } / L"wt-launch-debug.log";
+            std::ofstream output{ logPath, std::ios::binary | std::ios::app };
+            if (output)
+            {
+                const auto utf8 = til::u16u8(std::wstring{ L"IslandWindow::Initialize after Grid\n" });
+                output.write(utf8.data(), gsl::narrow_cast<std::streamsize>(utf8.size()));
+            }
+        }
+    }
+#endif
     _source.Content(_rootGrid);
+#ifdef _DEBUG
+    {
+        wchar_t tempPath[MAX_PATH]{};
+        if (GetTempPathW(ARRAYSIZE(tempPath), tempPath))
+        {
+            const auto logPath = std::filesystem::path{ tempPath } / L"wt-launch-debug.log";
+            std::ofstream output{ logPath, std::ios::binary | std::ios::app };
+            if (output)
+            {
+                const auto utf8 = til::u16u8(std::wstring{ L"IslandWindow::Initialize after Content\n" });
+                output.write(utf8.data(), gsl::narrow_cast<std::streamsize>(utf8.size()));
+            }
+        }
+    }
+#endif
 
     // initialize the taskbar object
     if (auto taskbar = wil::CoCreateInstanceNoThrow<ITaskbarList3>(CLSID_TaskbarList))

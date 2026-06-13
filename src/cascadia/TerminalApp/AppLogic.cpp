@@ -82,6 +82,34 @@ static winrt::hstring _GetErrorText(SettingsLoadErrors error)
 
 namespace winrt::TerminalApp::implementation
 {
+#ifdef _DEBUG
+    namespace
+    {
+        void _appendLaunchDebugLog(const std::wstring_view message)
+        {
+            try
+            {
+                wchar_t tempPath[MAX_PATH]{};
+                if (!GetTempPathW(ARRAYSIZE(tempPath), tempPath))
+                {
+                    return;
+                }
+
+                const auto logPath = std::filesystem::path{ tempPath } / L"wt-launch-debug.log";
+                std::ofstream output{ logPath, std::ios::binary | std::ios::app };
+                if (!output)
+                {
+                    return;
+                }
+
+                const auto utf8 = til::u16u8(std::wstring{ message } + L"\n");
+                output.write(utf8.data(), gsl::narrow_cast<std::streamsize>(utf8.size()));
+            }
+            CATCH_LOG();
+        }
+    }
+#endif
+
     // Function Description:
     // - Get the AppLogic for the current active Xaml application, or null if there isn't one.
     // Return value:
@@ -121,6 +149,9 @@ namespace winrt::TerminalApp::implementation
 
     AppLogic::AppLogic()
     {
+#ifdef _DEBUG
+        _appendLaunchDebugLog(L"AppLogic::ctor enter");
+#endif
         // For your own sanity, it's better to do setup outside the ctor.
         // If you do any setup in the ctor that ends up throwing an exception,
         // then it might look like App just failed to activate, which will
@@ -133,6 +164,9 @@ namespace winrt::TerminalApp::implementation
 
         _isElevated = ::Microsoft::Console::Utils::IsRunningElevated();
         _canDragDrop = ::Microsoft::Console::Utils::CanUwpDragDrop();
+#ifdef _DEBUG
+        _appendLaunchDebugLog(L"AppLogic::ctor privilege-state");
+#endif
 
         _reloadSettings = std::make_shared<ThrottledFunc<>>(
             DispatcherQueue::GetForCurrentThread(),
@@ -147,17 +181,36 @@ namespace winrt::TerminalApp::implementation
                     self->ReloadSettings();
                 }
             });
+#ifdef _DEBUG
+        _appendLaunchDebugLog(L"AppLogic::ctor reloadSettings-created");
+#endif
 
-        _languageProfileNotifier = winrt::make_self<LanguageProfileNotifier>([this]() {
-            // TODO: This is really bad, because we reset any current user customizations.
-            // See GH#11522.
-            ReloadSettingsThrottled();
-        });
+        try
+        {
+            _languageProfileNotifier = winrt::make_self<LanguageProfileNotifier>([this]() {
+                // TODO: This is really bad, because we reset any current user customizations.
+                // See GH#11522.
+                ReloadSettingsThrottled();
+            });
+#ifdef _DEBUG
+            _appendLaunchDebugLog(L"AppLogic::ctor languageProfileNotifier-created");
+#endif
+        }
+        catch (...)
+        {
+            LOG_CAUGHT_EXCEPTION();
+#ifdef _DEBUG
+            _appendLaunchDebugLog(std::wstring{ L"AppLogic::ctor languageProfileNotifier-failed hr=" } + std::to_wstring(static_cast<uint32_t>(winrt::to_hresult())));
+#endif
+        }
 
         // Do this here, rather than at the top of main. This will prevent us from
         // including this variable in the vars we serialize in the
         // Remoting::CommandlineArgs up in HandleCommandlineArgs.
         _setupFolderPathEnvVar();
+#ifdef _DEBUG
+        _appendLaunchDebugLog(L"AppLogic::ctor folder-env-ready");
+#endif
     }
 
     // Method Description:
@@ -374,12 +427,18 @@ namespace winrt::TerminalApp::implementation
     //     a background thread.
     void AppLogic::ReloadSettings()
     {
+#ifdef _DEBUG
+        _appendLaunchDebugLog(L"AppLogic::ReloadSettings enter");
+#endif
         // Attempt to load our settings.
         // If it fails,
         //  - don't change the settings (and don't actually apply the new settings)
         //  - don't persist them.
         //  - display a loading error
         _settingsLoadedResult = _TryLoadSettings();
+#ifdef _DEBUG
+        _appendLaunchDebugLog(std::wstring{ L"AppLogic::ReloadSettings TryLoadSettings hr=" } + std::to_wstring(static_cast<uint32_t>(_settingsLoadedResult)));
+#endif
 
         const auto initialLoad = !_loadedInitialSettings;
         _loadedInitialSettings = true;
@@ -412,12 +471,22 @@ namespace winrt::TerminalApp::implementation
         }
 
         _ApplyLanguageSettingChange();
+#ifdef _DEBUG
+        _appendLaunchDebugLog(L"AppLogic::ReloadSettings language-applied");
+#endif
         _ProcessLazySettingsChanges();
+#ifdef _DEBUG
+        _appendLaunchDebugLog(L"AppLogic::ReloadSettings lazy-processed");
+#endif
 
         if (initialLoad)
         {
             // Register for directory change notification.
             _RegisterSettingsChange();
+            _RegisterWorkspaceChange();
+#ifdef _DEBUG
+            _appendLaunchDebugLog(L"AppLogic::ReloadSettings change-registered");
+#endif
             return;
         }
 
@@ -516,9 +585,51 @@ namespace winrt::TerminalApp::implementation
         return *window;
     }
 
+
     winrt::TerminalApp::ContentManager AppLogic::ContentManager()
     {
         return _contentManager;
+    }
+
+    void AppLogic::_RegisterWorkspaceChange()
+    {
+        const auto workspacePath = Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::DefaultPath();
+        _workspaceReader.create(
+            workspacePath.parent_path().c_str(),
+            false,
+            wil::FolderChangeEvents::FileName | wil::FolderChangeEvents::LastWriteTime,
+            [this, workspaceBasename = workspacePath.filename()](wil::FolderChangeEvent, PCWSTR fileModified) {
+               const auto modifiedBasename = std::filesystem::path{ fileModified }.filename();
+               if (modifiedBasename == workspaceBasename)
+               {
+                   WorkspaceDefinitionsChanged.raise(*this, nullptr);
+               }
+            });
+    }
+
+    std::vector<ActionAndArgs> AppLogic::ConsumeInitialWorkspaceStartupActions()
+    {
+        if (_initialWorkspaceConsumed)
+        {
+            return {};
+        }
+
+        _initialWorkspaceConsumed = true;
+
+        const auto state = Microsoft::Terminal::Settings::Model::implementation::WorkspaceStateManager::Load();
+        const auto& lastWorkspaceId = state.LastOpenedWorkspaceId();
+        if (lastWorkspaceId.empty())
+        {
+            return {};
+        }
+
+        const auto manager = Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::Load();
+        if (const auto workspace = manager.FindById(lastWorkspaceId.c_str()))
+        {
+            return manager.BuildStartupActions(*workspace, _settings);
+        }
+
+        return {};
     }
 
     // Function Description

@@ -65,7 +65,7 @@ namespace winrt::TerminalApp::implementation
     {
     public:
         TerminalWindow(const TerminalApp::SettingsLoadEventArgs& settingsLoadedResult, const TerminalApp::ContentManager& manager);
-        ~TerminalWindow() = default;
+        ~TerminalWindow();
 
         STDMETHODIMP Initialize(HWND hwnd);
 
@@ -136,9 +136,11 @@ namespace winrt::TerminalApp::implementation
 
         Microsoft::Terminal::Settings::Model::Theme Theme();
         void UpdateSettingsHandler(const winrt::Windows::Foundation::IInspectable& sender, const winrt::TerminalApp::SettingsLoadEventArgs& arg);
+        void WorkspaceDefinitionsChangedHandler(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::Foundation::IInspectable& arg);
 
         void WindowName(const winrt::hstring& value);
         void WindowId(const uint64_t& value);
+        winrt::hstring CurrentWorkspaceId() const noexcept;
 
         bool IsQuakeWindow() const noexcept { return _WindowProperties->IsQuakeWindow(); }
         TerminalApp::WindowProperties WindowProperties() { return *_WindowProperties; }
@@ -176,6 +178,7 @@ namespace winrt::TerminalApp::implementation
         bool _gotSettingsStartupActions{ false };
         std::vector<winrt::Microsoft::Terminal::Settings::Model::ActionAndArgs> _settingsStartupArgs{};
         Windows::Foundation::IReference<Windows::Foundation::Rect> _contentBounds{ nullptr };
+        winrt::hstring _initialWorkspaceId{};
 
         winrt::com_ptr<TerminalApp::implementation::WindowProperties> _WindowProperties{ nullptr };
 

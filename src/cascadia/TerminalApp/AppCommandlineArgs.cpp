@@ -9,6 +9,34 @@
 using namespace winrt::Microsoft::Terminal::Settings::Model;
 using namespace TerminalApp;
 
+#ifdef _DEBUG
+namespace
+{
+    void _appendLaunchDebugLog(const std::wstring_view message)
+    {
+        try
+        {
+            wchar_t tempPath[MAX_PATH]{};
+            if (!GetTempPathW(ARRAYSIZE(tempPath), tempPath))
+            {
+                return;
+            }
+
+            const auto logPath = std::filesystem::path{ tempPath } / L"wt-launch-debug.log";
+            std::ofstream output{ logPath, std::ios::binary | std::ios::app };
+            if (!output)
+            {
+                return;
+            }
+
+            const auto utf8 = til::u16u8(std::wstring{ message } + L"\n");
+            output.write(utf8.data(), gsl::narrow_cast<std::streamsize>(utf8.size()));
+        }
+        CATCH_LOG();
+    }
+}
+#endif
+
 // Either a ; at the start of a line, or a ; preceded by any non-\ char.
 const std::wregex AppCommandlineArgs::_commandDelimiterRegex{ LR"(^;|[^\\];)" };
 
@@ -1063,6 +1091,19 @@ std::optional<til::size> AppCommandlineArgs::GetSize() const noexcept
 // - 0 if the commandline was successfully parsed
 int AppCommandlineArgs::ParseArgs(winrt::array_view<const winrt::hstring> args)
 {
+#ifdef _DEBUG
+    {
+        std::wstring log{ L"ParseArgs raw:" };
+        for (const auto& arg : args)
+        {
+            log.append(L" [");
+            log.append(arg);
+            log.push_back(L']');
+        }
+        _appendLaunchDebugLog(log);
+    }
+#endif
+
     if (args.size() == 2 && args[1] == L"-Embedding")
     {
         return 0;
@@ -1077,7 +1118,61 @@ int AppCommandlineArgs::ParseArgs(winrt::array_view<const winrt::hstring> args)
         return 0;
     }
 
-    auto commands = ::TerminalApp::AppCommandlineArgs::BuildCommands(args);
+    std::vector<winrt::hstring> filteredArgs;
+    filteredArgs.reserve(args.size());
+
+    bool skipServerNameValue = false;
+    for (const auto& arg : args)
+    {
+        const std::wstring_view argView{ arg };
+
+        if (skipServerNameValue)
+        {
+            skipServerNameValue = false;
+            continue;
+        }
+
+        if (til::starts_with_insensitive_ascii(argView, L"-ServerName:") ||
+            til::starts_with_insensitive_ascii(argView, L"/ServerName:"))
+        {
+            continue;
+        }
+
+        if (til::equals_insensitive_ascii(argView, L"-ServerName") ||
+            til::equals_insensitive_ascii(argView, L"/ServerName"))
+        {
+            skipServerNameValue = true;
+            continue;
+        }
+
+        if (til::equals_insensitive_ascii(argView, L"-Embedding") ||
+            til::equals_insensitive_ascii(argView, L"--from-toast"))
+        {
+            continue;
+        }
+
+        filteredArgs.emplace_back(arg);
+    }
+
+    if (filteredArgs.empty())
+    {
+        return 0;
+    }
+
+#ifdef _DEBUG
+    {
+        std::wstring log{ L"ParseArgs filtered:" };
+        for (const auto& arg : filteredArgs)
+        {
+            log.append(L" [");
+            log.append(arg);
+            log.push_back(L']');
+        }
+        _appendLaunchDebugLog(log);
+    }
+#endif
+
+    auto commands = ::TerminalApp::AppCommandlineArgs::BuildCommands(filteredArgs);
 
     for (auto& cmdBlob : commands)
     {
@@ -1102,12 +1197,18 @@ int AppCommandlineArgs::ParseArgs(winrt::array_view<const winrt::hstring> args)
         // exit(result), to exit the program.
         if (result != 0)
         {
+#ifdef _DEBUG
+            _appendLaunchDebugLog(L"ParseArgs result: nonzero");
+#endif
             return result;
         }
     }
 
     // If all the args were successfully parsed, we'll have some commands
     // built in _appArgs, which we'll use when the application starts up.
+#ifdef _DEBUG
+    _appendLaunchDebugLog(L"ParseArgs result: 0");
+#endif
     return 0;
 }
 

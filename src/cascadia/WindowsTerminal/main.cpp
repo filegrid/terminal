@@ -105,7 +105,6 @@ int __stdcall wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int nCmdShow)
     // This should only be applicable to developer versions. The package installation process
     // should choose and install the correct one from the bundle.
     EnsureNativeArchitecture();
-
     // Make sure to call this so we get WM_POINTER messages.
     EnableMouseInPointer(true);
 

@@ -74,9 +74,31 @@
     </ProjectConfiguration>
   </ItemGroup>
 
+  <PropertyGroup>
+    <PreferredVsInstallRoot Condition="'$(PreferredVsInstallRoot)'=='' and Exists('C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.Default.props')">C:\Program Files\Microsoft Visual Studio\18\Community\</PreferredVsInstallRoot>
+    <PreferredVsInstallRoot Condition="'$(PreferredVsInstallRoot)'=='' and Exists('C:\Program Files\Microsoft Visual Studio\18\Professional\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.Default.props')">C:\Program Files\Microsoft Visual Studio\18\Professional\</PreferredVsInstallRoot>
+    <PreferredVsInstallRoot Condition="'$(PreferredVsInstallRoot)'=='' and Exists('C:\Program Files\Microsoft Visual Studio\18\Enterprise\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.Default.props')">C:\Program Files\Microsoft Visual Studio\18\Enterprise\</PreferredVsInstallRoot>
+    <PreferredVsInstallRoot Condition="'$(PreferredVsInstallRoot)'=='' and Exists('C:\BuildTools2026\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.Default.props')">C:\BuildTools2026\</PreferredVsInstallRoot>
+    <PreferredVsInstallRoot Condition="'$(PreferredVsInstallRoot)'=='' and Exists('C:\Program Files\Microsoft Visual Studio\17\Community\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Default.props')">C:\Program Files\Microsoft Visual Studio\17\Community\</PreferredVsInstallRoot>
+    <PreferredVsInstallRoot Condition="'$(PreferredVsInstallRoot)'=='' and Exists('C:\Program Files\Microsoft Visual Studio\17\Professional\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Default.props')">C:\Program Files\Microsoft Visual Studio\17\Professional\</PreferredVsInstallRoot>
+    <PreferredVsInstallRoot Condition="'$(PreferredVsInstallRoot)'=='' and Exists('C:\Program Files\Microsoft Visual Studio\17\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Default.props')">C:\Program Files\Microsoft Visual Studio\17\Enterprise\</PreferredVsInstallRoot>
+    <PreferredVsInstallRoot Condition="'$(PreferredVsInstallRoot)'=='' and Exists('C:\BuildTools2022\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Default.props')">C:\BuildTools2022\</PreferredVsInstallRoot>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(VsInstallRoot)' == '' and '$(PreferredVsInstallRoot)' != ''">
+    <VsInstallRoot>$(PreferredVsInstallRoot)</VsInstallRoot>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(VCTargetsPath)' == '' and '$(VsInstallRoot)' != ''">
+    <VCTargetsPath Condition="Exists('$(VsInstallRoot)MSBuild\Microsoft\VC\v180\Microsoft.Cpp.Default.props')">$(VsInstallRoot)MSBuild\Microsoft\VC\v180\</VCTargetsPath>
+    <VCTargetsPath Condition="'$(VCTargetsPath)' == '' and Exists('$(VsInstallRoot)MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Default.props')">$(VsInstallRoot)MSBuild\Microsoft\VC\v170\</VCTargetsPath>
+  </PropertyGroup>
+
   <PropertyGroup Label="Globals">
     <WindowsTargetPlatformVersion Condition="'$(WindowsTargetPlatformVersion)' == ''">10.0.22621.0</WindowsTargetPlatformVersion>
     <WindowsTargetPlatformMinVersion Condition="'$(WindowsTargetPlatformMinVersion)' == ''">10.0.18362.0</WindowsTargetPlatformMinVersion>
+    <VisualStudioVersion Condition="'$(VisualStudioVersion)' == '' and '$(VsInstallRoot)' != '' and Exists('$(VsInstallRoot)MSBuild\Microsoft\VC\v180\Microsoft.Cpp.Default.props')">18.0</VisualStudioVersion>
+    <VisualStudioVersion Condition="'$(VisualStudioVersion)' == ''">17.0</VisualStudioVersion>
   </PropertyGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -95,7 +117,8 @@
 
   <!-- For ALL build types-->
   <PropertyGroup Label="Configuration">
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset Condition="'$(PlatformToolset)'=='' and '$(VisualStudioVersion)' &gt;= '18.0'">v145</PlatformToolset>
+    <PlatformToolset Condition="'$(PlatformToolset)'==''">v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
     <LinkIncremental>false</LinkIncremental>
     <PreferredToolArchitecture>x64</PreferredToolArchitecture>

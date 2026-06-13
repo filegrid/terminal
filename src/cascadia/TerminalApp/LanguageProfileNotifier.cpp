@@ -12,10 +12,11 @@ LanguageProfileNotifier::LanguageProfileNotifier(std::function<void()>&& callbac
 {
     const auto manager = wil::CoCreateInstance<ITfThreadMgr>(CLSID_TF_ThreadMgr);
     _source = manager.query<ITfSource>();
-    if (FAILED(_source->AdviseSink(IID_ITfInputProcessorProfileActivationSink, static_cast<ITfInputProcessorProfileActivationSink*>(this), &_cookie)))
+    const auto hr = _source->AdviseSink(IID_ITfInputProcessorProfileActivationSink, static_cast<ITfInputProcessorProfileActivationSink*>(this), &_cookie);
+    if (FAILED(hr))
     {
         _cookie = TF_INVALID_COOKIE;
-        THROW_LAST_ERROR();
+        THROW_IF_FAILED(hr);
     }
 }
 

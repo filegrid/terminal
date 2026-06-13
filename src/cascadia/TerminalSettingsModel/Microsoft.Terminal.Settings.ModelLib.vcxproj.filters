@@ -46,6 +46,7 @@
       <Filter>profileGeneration</Filter>
     </ClCompile>
     <ClCompile Include="TestHooks.cpp" />
+    <ClCompile Include="Workspace.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
@@ -97,6 +98,7 @@
     </ClInclude>
     <ClInclude Include="ActionArgsMagic.h" />
     <ClInclude Include="NewTabMenuEntry.h" />
+    <ClInclude Include="Workspace.h" />
   </ItemGroup>
   <ItemGroup>
     <Midl Include="ActionArgs.idl" />

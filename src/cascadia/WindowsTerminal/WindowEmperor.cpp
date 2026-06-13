@@ -17,6 +17,7 @@
 #include "AppHost.h"
 #include "resource.h"
 #include "VirtualDesktopUtils.h"
+#include "../TerminalSettingsModel/Workspace.h"
 #include "../../types/inc/User32Utils.hpp"
 #include "../../types/inc/utils.hpp"
 
@@ -27,6 +28,34 @@ using namespace winrt::Windows::Foundation;
 using namespace ::Microsoft::Console;
 using namespace std::chrono_literals;
 using VirtualKeyModifiers = winrt::Windows::System::VirtualKeyModifiers;
+
+#ifdef _DEBUG
+namespace
+{
+    void _appendLaunchDebugLog(const std::wstring_view message)
+    {
+        try
+        {
+            wchar_t tempPath[MAX_PATH]{};
+            if (!GetTempPathW(ARRAYSIZE(tempPath), tempPath))
+            {
+                return;
+            }
+
+            const auto logPath = std::filesystem::path{ tempPath } / L"wt-launch-debug.log";
+            std::ofstream output{ logPath, std::ios::binary | std::ios::app };
+            if (!output)
+            {
+                return;
+            }
+
+            const auto utf8 = til::u16u8(std::wstring{ message } + L"\n");
+            output.write(utf8.data(), gsl::narrow_cast<std::streamsize>(utf8.size()));
+        }
+        CATCH_LOG();
+    }
+}
+#endif
 
 #ifdef _WIN64
 static constexpr ULONG_PTR TERMINAL_HANDOFF_MAGIC = 0x4c414e494d524554; // 'TERMINAL'
@@ -266,11 +295,23 @@ void WindowEmperor::CreateNewWindow(winrt::TerminalApp::WindowRequestedArgs args
         args.Id(newId + 1);
     }
 
+#ifdef _DEBUG
+    _appendLaunchDebugLog(std::wstring{ L"CreateNewWindow id=" } + std::to_wstring(args.Id()));
+#endif
     auto host = std::make_shared<AppHost>(this, _app.Logic(), std::move(args));
+#ifdef _DEBUG
+    _appendLaunchDebugLog(L"CreateNewWindow host-created");
+#endif
     host->Initialize();
+#ifdef _DEBUG
+    _appendLaunchDebugLog(L"CreateNewWindow host-initialized");
+#endif
 
     _windowCount += 1;
     _windows.emplace_back(std::move(host));
+#ifdef _DEBUG
+    _appendLaunchDebugLog(std::wstring{ L"CreateNewWindow window-count=" } + std::to_wstring(_windowCount));
+#endif
 
     if (_windowCount == 1)
     {
@@ -417,6 +458,9 @@ void WindowEmperor::_setupAumid(const std::wstring& aumid)
 
 void WindowEmperor::HandleCommandlineArgs(int nCmdShow)
 {
+#ifdef _DEBUG
+    _appendLaunchDebugLog(L"HandleCommandlineArgs enter");
+#endif
     // When running without package identity, set an explicit AppUserModelID so
     // that toast notifications (and other shell features like taskbar grouping)
     // work correctly. We include...
@@ -479,11 +523,21 @@ void WindowEmperor::HandleCommandlineArgs(int nCmdShow)
         }
     }
 
+#ifdef _DEBUG
+    _appendLaunchDebugLog(L"HandleCommandlineArgs identity-ready");
+#endif
+
     // Windows Terminal is a single-instance application. Either acquire ownership
     // over the mutex, or hand off the command line to the existing instance.
     const auto mutex = acquireMutexOrAttemptHandoff(windowClassName.c_str(), nCmdShow);
+#ifdef _DEBUG
+    _appendLaunchDebugLog(mutex ? L"HandleCommandlineArgs mutex-acquired" : L"HandleCommandlineArgs mutex-null");
+#endif
     if (!mutex)
     {
+#ifdef _DEBUG
+        _appendLaunchDebugLog(L"HandleCommandlineArgs handoff");
+#endif
         // The command line has been handed off. We can now exit.
         // We do it with TerminateProcess() primarily to avoid WinUI shutdown issues.
         TerminateProcess(GetCurrentProcess(), gsl::narrow_cast<UINT>(0));
@@ -491,9 +545,31 @@ void WindowEmperor::HandleCommandlineArgs(int nCmdShow)
     }
 
     _app = winrt::TerminalApp::App{};
-    _app.Logic().ReloadSettings();
+#ifdef _DEBUG
+    _appendLaunchDebugLog(L"HandleCommandlineArgs app-created");
+#endif
+#ifdef _DEBUG
+    _appendLaunchDebugLog(L"HandleCommandlineArgs before ReloadSettings");
+#endif
+    try
+    {
+        _app.Logic().ReloadSettings();
+#ifdef _DEBUG
+        _appendLaunchDebugLog(L"HandleCommandlineArgs settings-reloaded");
+#endif
+    }
+    catch (...)
+    {
+#ifdef _DEBUG
+        _appendLaunchDebugLog(std::wstring{ L"HandleCommandlineArgs ReloadSettings failed hr=" } + std::to_wstring(static_cast<uint32_t>(winrt::to_hresult())));
+#endif
+        throw;
+    }
 
     _createMessageWindow(windowClassName.c_str());
+#ifdef _DEBUG
+    _appendLaunchDebugLog(L"HandleCommandlineArgs message-window-created");
+#endif
     _setupGlobalHotkeys();
     _checkWindowsForNotificationIcon();
     _setupSessionPersistence(_app.Logic().Settings().GlobalSettings().ShouldUsePersistedLayout());
@@ -546,6 +622,9 @@ void WindowEmperor::HandleCommandlineArgs(int nCmdShow)
             // Create another window if needed: There aren't any yet, OR we got an explicit command line.
             if (_windows.empty() || args.size() != 1)
             {
+#ifdef _DEBUG
+                _appendLaunchDebugLog(std::wstring{ L"HandleCommandlineArgs dispatch args size=" } + std::to_wstring(args.size()));
+#endif
                 _dispatchCommandlineCommon(args, cwd, env, showCmd);
             }
 
@@ -797,10 +876,16 @@ void WindowEmperor::_dispatchCommandline(winrt::TerminalApp::CommandlineArgs arg
 
     if (window)
     {
+#ifdef _DEBUG
+        _appendLaunchDebugLog(L"_dispatchCommandline existing-window");
+#endif
         window->DispatchCommandline(std::move(args));
     }
     else
     {
+#ifdef _DEBUG
+        _appendLaunchDebugLog(L"_dispatchCommandline new-window");
+#endif
         winrt::TerminalApp::WindowRequestedArgs request{ windowId, std::move(args) };
         request.WindowName(std::move(windowName));
         CreateNewWindow(std::move(request));

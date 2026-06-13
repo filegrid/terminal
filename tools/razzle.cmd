@@ -20,25 +20,34 @@ set OPENCON=%OPENCON_TOOLS:~0,-7%
 rem Add nuget to PATH
 set PATH=%OPENCON%\dep\nuget;%PATH%
 
-rem Run nuget restore so you can use vswhere
-nuget restore %OPENCON%\OpenConsole.slnx -Verbosity quiet
+rem Restore NuGet package.config dependencies used by the tooling scripts
 nuget restore %OPENCON%\dep\nuget\packages.config -Verbosity quiet
 
 :FIND_MSBUILD
-set MSBUILD=
+set "MSBUILD="
+set "VSWHERE="
+set "VSINSTALLROOT="
 
 rem GH#1313: If msbuild is already on the path, we don't need to look for it.
 for %%X in (msbuild.exe) do (set MSBUILD=%%~$PATH:X)
 if defined MSBUILD (
-    echo Using MsBuild at %MSBUILD% which was already on the path.
-    goto :FOUND_MSBUILD
+    echo %MSBUILD% | find /I "\Framework\" >nul
+    if errorlevel 1 (
+        echo Using MsBuild at %MSBUILD% which was already on the path.
+        goto :FOUND_MSBUILD
+    )
+    set "MSBUILD="
 )
 
 rem Find vswhere
 rem from https://github.com/microsoft/vs-setup-samples/blob/master/tools/vswhere.cmd
-for /f "usebackq delims=" %%I in (`dir /b /aD /o-N /s "%~dp0..\packages\vswhere*" 2^>nul`) do (
-    for /f "usebackq delims=" %%J in (`where /r "%%I" vswhere.exe 2^>nul`) do (
-        set VSWHERE=%%J
+if exist "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" (
+    set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+) else (
+    for /f "usebackq delims=" %%I in (`dir /b /aD /o-N /s "%~dp0..\packages\vswhere*" 2^>nul`) do (
+        for /f "usebackq delims=" %%J in (`where /r "%%I" vswhere.exe 2^>nul`) do (
+            set "VSWHERE=%%J"
+        )
     )
 )
 
@@ -46,6 +55,7 @@ if not defined VSWHERE (
     echo Could not find vswhere on your machine. Please set the VSWHERE variable to the location of vswhere.exe and run razzle again.
     goto :EXIT
 )
+for %%V in ("%VSWHERE%") do set "PATH=%%~dpV;%PATH%"
 
 rem Add path to MSBuild Binaries
 rem
@@ -54,8 +64,16 @@ rem are using VS 2022 use that from the commandline over the 2019 version. This
 rem will use whatever the newest version of VS is, regardless if it's stable or
 rem not.
 rem
-for /f "usebackq tokens=*" %%B in (`%VSWHERE% -latest -prerelease -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe 2^>nul`) do (
-    set MSBUILD=%%B
+for /f "usebackq tokens=*" %%B in (`"%VSWHERE%" -latest -prerelease -products * -requires Microsoft.Component.MSBuild -property installationPath 2^>nul`) do (
+    set "VSINSTALLROOT=%%B"
+)
+for /f "usebackq tokens=*" %%B in (`"%VSWHERE%" -latest -prerelease -products * -requires Microsoft.Component.MSBuild -find MSBuild\Current\Bin\amd64\MSBuild.exe 2^>nul`) do (
+    set "MSBUILD=%%B"
+)
+if not defined MSBUILD (
+    for /f "usebackq tokens=*" %%B in (`"%VSWHERE%" -latest -prerelease -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe 2^>nul`) do (
+        set "MSBUILD=%%B"
+    )
 )
 
 if not defined MSBUILD (
@@ -65,7 +83,7 @@ if not defined MSBUILD (
 
 :FOUND_MSBUILD
 
-set PATH=%PATH%%MSBUILD%\..;
+for %%M in ("%MSBUILD%") do set "PATH=%PATH%;%%~dpM"
 
 if "%PROCESSOR_ARCHITECTURE%" == "AMD64" (
     set ARCH=x64
@@ -116,6 +134,26 @@ shift
 goto :ARGS_LOOP
 
 :POST_ARGS_LOOP
+if defined VSINSTALLROOT (
+    if exist "%VSINSTALLROOT%\Common7\Tools\VsDevCmd.bat" (
+        if "%PROCESSOR_ARCHITECTURE%" == "AMD64" (
+            call "%VSINSTALLROOT%\Common7\Tools\VsDevCmd.bat" -arch=%ARCH% -host_arch=x64 >nul
+        ) else (
+            call "%VSINSTALLROOT%\Common7\Tools\VsDevCmd.bat" -arch=%ARCH% >nul
+        )
+    )
+    if exist "%VSINSTALLROOT%\MSBuild\Microsoft\VC\v180\Microsoft.Cpp.Default.props" (
+        set "VisualStudioVersion=18.0"
+        set "VsInstallRoot=%VSINSTALLROOT%\"
+        set "VCTargetsPath=%VSINSTALLROOT%\MSBuild\Microsoft\VC\v180\"
+        set "VCPKG_PLATFORM_TOOLSET=v145"
+    ) else if exist "%VSINSTALLROOT%\MSBuild\Microsoft\VC\v170\Microsoft.Cpp.Default.props" (
+        set "VisualStudioVersion=17.0"
+        set "VsInstallRoot=%VSINSTALLROOT%\"
+        set "VCTargetsPath=%VSINSTALLROOT%\MSBuild\Microsoft\VC\v170\"
+        set "VCPKG_PLATFORM_TOOLSET=v143"
+    )
+)
 set TAEF=%OPENCON%\packages\Microsoft.Taef.10.100.251104001\build\Binaries\%ARCH%\TE.exe
 rem Set this envvar so setup won't repeat itself
 set OpenConBuild=true

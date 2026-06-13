@@ -25,6 +25,7 @@ Author(s):
 
 #include "GlobalAppSettings.h"
 #include "Profile.h"
+#include "SshHostGenerator.h"
 
 namespace winrt::Microsoft::Terminal::Settings::Model
 {
@@ -209,8 +210,13 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         void _writeSettingsToDisk(std::string_view contents);
 
         void _resolveDefaultProfile() const;
+        void _ensureRuntimeSshMenuFolder();
         void _resolveNewTabMenuProfiles() const;
-        void _resolveNewTabMenuProfilesSet(const winrt::Windows::Foundation::Collections::IVector<Model::NewTabMenuEntry> entries, winrt::Windows::Foundation::Collections::IMap<int, Model::Profile>& remainingProfiles, Model::RemainingProfilesEntry& remainingProfilesEntry) const;
+        void _resolveNewTabMenuProfilesSet(const winrt::Windows::Foundation::Collections::IVector<Model::NewTabMenuEntry> entries,
+                                           winrt::Windows::Foundation::Collections::IMap<int, Model::Profile>& remainingProfiles,
+                                           Model::RemainingProfilesEntry& remainingProfilesEntry,
+                                           const std::vector<SshHostGenerator::ConfiguredHost>& configuredSshHosts,
+                                           std::vector<std::pair<std::wstring, uint16_t>>& displayedSshTargets) const;
 
         void _validateSettings();
         void _validateAllSchemesExist();
@@ -239,6 +245,7 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         winrt::Windows::Foundation::IReference<Model::SettingsLoadErrors> _loadError;
         winrt::hstring _deserializationErrorMessage;
         bool _foundInvalidUserResources{ false };
+        bool _runtimeInjectedSshFolder{ false };
 
         // defterm
         winrt::Windows::Foundation::Collections::IObservableVector<Model::DefaultTerminal> _defaultTerminals{ nullptr };

@@ -57,6 +57,23 @@ function Import-LocalModule
     }
 }
 
+function Get-VSWherePath
+{
+    $installerVsWhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (Test-Path $installerVsWhere)
+    {
+        return $installerVsWhere
+    }
+
+    $command = Get-Command vswhere.exe -ErrorAction SilentlyContinue
+    if ($null -ne $command)
+    {
+        return $command.Source
+    }
+
+    throw "Could not find vswhere.exe."
+}
+
 #.SYNOPSIS
 # Grabs all environment variable set after vcvarsall.bat is called and pulls
 # them into the Powershell environment.
@@ -68,17 +85,36 @@ function Set-MsbuildDevEnvironment
     )
 
     $ErrorActionPreference = 'Stop'
-
-    Import-LocalModule -Name 'VSSetup'
+    $vswhere = Get-VSWherePath
+    $vswhereArgs = @(
+        '-latest'
+        '-products', '*'
+        '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64'
+        '-property', 'installationPath'
+    )
+    if ($Prerelease)
+    {
+        $vswhereArgs = @('-latest', '-prerelease', '-products', '*', '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', '-property', 'installationPath')
+    }
 
     Write-Verbose 'Searching for VC++ instances'
-    $vsinfo = `
-        Get-VSSetupInstance  -All -Prerelease:$Prerelease `
-        | Select-VSSetupInstance `
-            -Latest -Product * `
-            -Require 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64'
+    $vspath = (& $vswhere @vswhereArgs | Select-Object -First 1).Trim()
+    if ([string]::IsNullOrWhiteSpace($vspath))
+    {
+        Import-LocalModule -Name 'VSSetup'
+        $vsinfo = `
+            Get-VSSetupInstance  -All -Prerelease:$Prerelease `
+            | Select-VSSetupInstance `
+                -Latest -Product * `
+                -Require 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64'
 
-    $vspath = $vsinfo.InstallationPath
+        $vspath = $vsinfo.InstallationPath
+    }
+
+    if ([string]::IsNullOrWhiteSpace($vspath))
+    {
+        throw 'Could not find a Visual Studio installation with VC tools.'
+    }
 
     switch ($env:PROCESSOR_ARCHITECTURE) {
         "amd64" { $arch = "x64" }
@@ -96,6 +132,22 @@ function Set-MsbuildDevEnvironment
         -devCmdArguments "-arch=$arch" | Out-Null
 
     Set-Item -Force -path "Env:\Platform" -Value $arch
+    Set-Item -Force -Path 'Env:\VsInstallRoot' -Value ("{0}\" -f $vspath)
+
+    $vcTargets180 = Join-Path $vspath 'MSBuild\Microsoft\VC\v180'
+    $vcTargets170 = Join-Path $vspath 'MSBuild\Microsoft\VC\v170'
+    if (Test-Path (Join-Path $vcTargets180 'Microsoft.Cpp.Default.props'))
+    {
+        Set-Item -Force -Path 'Env:\VisualStudioVersion' -Value '18.0'
+        Set-Item -Force -Path 'Env:\VCTargetsPath' -Value ("{0}\" -f $vcTargets180)
+        Set-Item -Force -Path 'Env:\VCPKG_PLATFORM_TOOLSET' -Value 'v145'
+    }
+    elseif (Test-Path (Join-Path $vcTargets170 'Microsoft.Cpp.Default.props'))
+    {
+        Set-Item -Force -Path 'Env:\VisualStudioVersion' -Value '17.0'
+        Set-Item -Force -Path 'Env:\VCTargetsPath' -Value ("{0}\" -f $vcTargets170)
+        Set-Item -Force -Path 'Env:\VCPKG_PLATFORM_TOOLSET' -Value 'v143'
+    }
 
     Write-Host "Dev environment variables set" -ForegroundColor Green
 }

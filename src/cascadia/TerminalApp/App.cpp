@@ -14,10 +14,41 @@ using namespace winrt::Windows::UI::Xaml::Navigation;
 
 namespace xaml = ::winrt::Windows::UI::Xaml;
 
+#ifdef _DEBUG
+namespace
+{
+    void _appendLaunchDebugLog(const std::wstring_view message)
+    {
+        try
+        {
+            wchar_t tempPath[MAX_PATH]{};
+            if (!GetTempPathW(ARRAYSIZE(tempPath), tempPath))
+            {
+                return;
+            }
+
+            const auto logPath = std::filesystem::path{ tempPath } / L"wt-launch-debug.log";
+            std::ofstream output{ logPath, std::ios::binary | std::ios::app };
+            if (!output)
+            {
+                return;
+            }
+
+            const auto utf8 = til::u16u8(std::wstring{ message } + L"\n");
+            output.write(utf8.data(), gsl::narrow_cast<std::streamsize>(utf8.size()));
+        }
+        CATCH_LOG();
+    }
+}
+#endif
+
 namespace winrt::TerminalApp::implementation
 {
     App::App()
     {
+#ifdef _DEBUG
+        _appendLaunchDebugLog(L"App::App ctor enter");
+#endif
         Initialize();
 
         // Disable XAML's automatic backplating of text when in High Contrast
@@ -28,17 +59,39 @@ namespace winrt::TerminalApp::implementation
 
     void App::Initialize()
     {
+#ifdef _DEBUG
+        _appendLaunchDebugLog(L"App::Initialize enter");
+#endif
         // LOAD BEARING
+#ifdef _DEBUG
+        _appendLaunchDebugLog(L"App::Initialize before Control provider");
+#endif
         AddOtherProvider(winrt::Microsoft::Terminal::Control::XamlMetaDataProvider{});
+#ifdef _DEBUG
+        _appendLaunchDebugLog(L"App::Initialize after Control provider");
+        _appendLaunchDebugLog(L"App::Initialize before MUX provider");
+#endif
         AddOtherProvider(winrt::Microsoft::UI::Xaml::XamlTypeInfo::XamlControlsXamlMetaDataProvider{});
+#ifdef _DEBUG
+        _appendLaunchDebugLog(L"App::Initialize providers-added");
+#endif
 
         const auto dispatcherQueue = winrt::Windows::System::DispatcherQueue::GetForCurrentThread();
         if (!dispatcherQueue)
         {
+#ifdef _DEBUG
+            _appendLaunchDebugLog(L"App::Initialize before WindowsXamlManager");
+#endif
             _windowsXamlManager = xaml::Hosting::WindowsXamlManager::InitializeForCurrentThread();
+#ifdef _DEBUG
+            _appendLaunchDebugLog(L"App::Initialize after WindowsXamlManager");
+#endif
         }
         else
         {
+#ifdef _DEBUG
+            _appendLaunchDebugLog(L"App::Initialize dispatcher-already-exists");
+#endif
             FAIL_FAST_MSG("Terminal is not intended to run as a Universal Windows Application");
         }
     }

@@ -35,14 +35,31 @@
                  TabWidthMode="Equal">
 
         <mux:TabView.TabStripHeader>
-            <!--  EA18 is the "Shield" glyph  -->
-            <FontIcon x:Uid="ElevationShield"
-                      Margin="9,4,0,4"
-                      FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                      FontSize="16"
-                      Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
-                      Glyph="&#xEA18;"
-                      Visibility="{x:Bind ShowElevationShield, Mode=OneWay}" />
+            <StackPanel Orientation="Horizontal">
+                <!--  EA18 is the "Shield" glyph  -->
+                <FontIcon x:Uid="ElevationShield"
+                          Margin="9,4,0,4"
+                          FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                          FontSize="16"
+                          Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                          Glyph="&#xEA18;"
+                          Visibility="{x:Bind ShowElevationShield, Mode=OneWay}" />
+                <Border Margin="8,4,0,4"
+                        Padding="8,0"
+                        MinHeight="24"
+                        VerticalAlignment="Stretch"
+                        Background="{ThemeResource TabViewButtonBackground}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        Visibility="{x:Bind WorkspaceNameVisibility, Mode=OneWay}">
+                    <TextBlock VerticalAlignment="Center"
+                               Foreground="{ThemeResource TabViewButtonForeground}"
+                               FontWeight="SemiBold"
+                               Text="{x:Bind WorkspaceName, Mode=OneWay}"
+                               TextTrimming="CharacterEllipsis" />
+                </Border>
+            </StackPanel>
         </mux:TabView.TabStripHeader>
 
         <mux:TabView.TabStripFooter>

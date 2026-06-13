@@ -29,6 +29,7 @@
 using namespace winrt::Windows::Foundation::Collections;
 using namespace winrt::Windows::ApplicationModel::AppExtensions;
 using namespace winrt::Microsoft::Terminal::Settings;
+using winrt::Microsoft::Terminal::Settings::Model::SshHostGenerator;
 using namespace winrt::Microsoft::Terminal::Settings::Model::implementation;
 
 static constexpr std::wstring_view SettingsFilename{ L"settings.json" };
@@ -97,6 +98,128 @@ static std::filesystem::path buildPath(const std::wstring_view& lhs, const std::
     buffer.append(lhs);
     buffer.append(rhs);
     return { std::move(buffer) };
+}
+
+static void _logSshMenuDebug(const std::wstring& message) noexcept
+{
+    const auto line = fmt::format(FMT_COMPILE(L"[WT SSH MENU] {}\n"), message);
+    OutputDebugStringW(line.c_str());
+
+    try
+    {
+        std::ofstream file{ std::filesystem::temp_directory_path() / "wt-ssh-debug.log", std::ios::app | std::ios::binary };
+        file << til::u16u8(line);
+    }
+    CATCH_LOG();
+}
+
+static std::wstring_view _originTagName(const Model::OriginTag origin) noexcept
+{
+    switch (origin)
+    {
+    case Model::OriginTag::None:
+        return L"none";
+    case Model::OriginTag::User:
+        return L"user";
+    case Model::OriginTag::Generated:
+        return L"generated";
+    case Model::OriginTag::Fragment:
+        return L"fragment";
+    default:
+        return L"unknown";
+    }
+}
+
+static bool _containsResolvedSshTarget(const std::vector<std::pair<std::wstring, uint16_t>>& displayedSshTargets,
+                                       const std::pair<std::wstring, uint16_t>& candidate) noexcept
+{
+    return std::any_of(displayedSshTargets.begin(), displayedSshTargets.end(), [&](const auto& target) {
+        return target.second == candidate.second && til::equals_insensitive_ascii(target.first, candidate.first);
+    });
+}
+
+static std::optional<std::pair<std::wstring, uint16_t>> _tryGetResolvedSshTarget(const Model::Profile& profile,
+                                                                                  const std::vector<winrt::Microsoft::Terminal::Settings::Model::SshHostGenerator::ConfiguredHost>& configuredSshHosts) noexcept
+{
+    winrt::Microsoft::Terminal::Settings::Model::SshHostGenerator::ConfiguredHost resolvedHost;
+    if (!winrt::Microsoft::Terminal::Settings::Model::SshHostGenerator::TryResolveCommandline(profile.Commandline().c_str(), configuredSshHosts, resolvedHost))
+    {
+        return std::nullopt;
+    }
+
+    const auto& hostName = !resolvedHost.HostName.empty() ? resolvedHost.HostName : resolvedHost.Host;
+    if (hostName.empty())
+    {
+        return std::nullopt;
+    }
+
+    return std::pair<std::wstring, uint16_t>{ hostName, resolvedHost.Port };
+}
+
+static bool _isSshFolder(const Model::NewTabMenuEntry& entry) noexcept
+{
+    if (entry == nullptr || entry.Type() != Model::NewTabMenuEntryType::Folder)
+    {
+        return false;
+    }
+
+    const auto folderEntry = entry.as<Model::FolderEntry>();
+    if (folderEntry.Name() != L"SSH")
+    {
+        return false;
+    }
+
+    const auto rawEntries = folderEntry.RawEntries();
+    if (rawEntries == nullptr || rawEntries.Size() != 1)
+    {
+        return false;
+    }
+
+    const auto rawEntry = rawEntries.GetAt(0);
+    if (rawEntry == nullptr || rawEntry.Type() != Model::NewTabMenuEntryType::MatchProfiles)
+    {
+        return false;
+    }
+
+    const auto matchEntry = rawEntry.as<Model::MatchProfilesEntry>();
+    return matchEntry.Source() == SshHostGenerator{}.GetNamespace();
+}
+
+static Model::NewTabMenuEntry _createRuntimeSshFolderEntry()
+{
+    SshHostGenerator sshGenerator;
+    auto matchProfilesEntry = winrt::make_self<winrt::Microsoft::Terminal::Settings::Model::implementation::MatchProfilesEntry>();
+    matchProfilesEntry->Source(winrt::hstring{ sshGenerator.GetNamespace() });
+
+    auto folderEntry = winrt::make_self<winrt::Microsoft::Terminal::Settings::Model::implementation::FolderEntry>();
+    folderEntry->Name(L"SSH");
+    folderEntry->Icon(MediaResource::FromString(winrt::hstring{ sshGenerator.GetIcon() }));
+    folderEntry->Inlining(Model::FolderEntryInlining::Never);
+    folderEntry->RawEntries(winrt::single_threaded_vector<Model::NewTabMenuEntry>({ *matchProfilesEntry }));
+    return folderEntry.as<Model::NewTabMenuEntry>();
+}
+
+static bool _hasNonGeneratedSshProfileForTarget(const winrt::Windows::Foundation::Collections::IObservableVector<Model::Profile>& activeProfiles,
+                                                const std::pair<std::wstring, uint16_t>& target,
+                                                const std::vector<winrt::Microsoft::Terminal::Settings::Model::SshHostGenerator::ConfiguredHost>& configuredSshHosts) noexcept
+{
+    for (const auto& candidate : activeProfiles)
+    {
+        if (candidate.Source() == SshHostGenerator{}.GetNamespace())
+        {
+            continue;
+        }
+
+        if (const auto candidateTarget = _tryGetResolvedSshTarget(candidate, configuredSshHosts))
+        {
+            if (candidateTarget->second == target.second && til::equals_insensitive_ascii(candidateTarget->first, target.first))
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 void ParsedSettings::clear()
@@ -519,12 +642,22 @@ bool SettingsLoader::DisableDeletedProfiles()
 
     for (const auto& profile : _getNonUserOriginProfiles())
     {
+        // SSH dynamic profiles are now runtime-only menu entries backed by .ssh/config.
+        // Don't treat previously seen SSH hosts as "deleted" just because they aren't
+        // serialized into settings.json anymore.
+        if (profile->Source() == SshHostGenerator{}.GetNamespace())
+        {
+            _logSshMenuDebug(fmt::format(FMT_COMPILE(L"disable-deleted skip-ssh name={} source={}"), profile->Name(), profile->Source()));
+            continue;
+        }
+
         if (generatedProfileIds.emplace(profile->Guid()).second)
         {
             newGeneratedProfiles = true;
         }
         else
         {
+            _logSshMenuDebug(fmt::format(FMT_COMPILE(L"disable-deleted hide name={} source={}"), profile->Name(), profile->Source()));
             profile->Deleted(true);
             profile->Hidden(true);
         }
@@ -542,27 +675,6 @@ bool SettingsLoader::DisableDeletedProfiles()
 // the settings need to be saved to disk.
 bool SettingsLoader::AddDynamicProfileFolders()
 {
-    // Keep track of generated folders to avoid regenerating them
-    const auto state = get_self<ApplicationState>(ApplicationState::SharedInstance());
-
-    // If the SSH generator is enabled, try to create an "SSH" folder with all the generated profiles
-    if (sshProfilesGenerated && !state->SSHFolderGenerated())
-    {
-        SshHostGenerator sshGenerator;
-        auto matchProfilesEntry = make_self<implementation::MatchProfilesEntry>();
-        matchProfilesEntry->Source(hstring{ sshGenerator.GetNamespace() });
-
-        auto folderEntry = make_self<implementation::FolderEntry>();
-        folderEntry->Name(L"SSH");
-        folderEntry->Icon(MediaResource::FromString(hstring{ sshGenerator.GetIcon() }));
-        folderEntry->Inlining(FolderEntryInlining::Auto);
-        folderEntry->RawEntries(winrt::single_threaded_vector<Model::NewTabMenuEntry>({ *matchProfilesEntry }));
-
-        // NewTabMenu is guaranteed to exist by FixupUserSettings, which runs before this fixup.
-        userSettings.globals->NewTabMenu().Append(folderEntry.as<Model::NewTabMenuEntry>());
-        state->SSHFolderGenerated(true);
-        return true;
-    }
     return false;
 }
 
@@ -1274,7 +1386,6 @@ try
     // Similarly FixupUserSettings returns true, when it encountered settings that were patched up.
     mustWriteToDisk |= loader.DisableDeletedProfiles();
     mustWriteToDisk |= loader.FixupUserSettings();
-    mustWriteToDisk |= loader.AddDynamicProfileFolders();
 
     // If this throws, the app will catch it and use the default settings.
     const auto settings = winrt::make_self<CascadiaSettings>(std::move(loader));
@@ -1479,6 +1590,7 @@ CascadiaSettings::CascadiaSettings(SettingsLoader&& loader) :
     _themesChangeLog = std::move(loader.userSettings.themesChangeLog);
 
     _resolveDefaultProfile();
+    _ensureRuntimeSshMenuFolder();
     _resolveNewTabMenuProfiles();
     _validateSettings();
 
@@ -1643,6 +1755,32 @@ Json::Value CascadiaSettings::ToJson() const
 {
     // top-level json object
     auto json{ _globals->ToJson() };
+    if (_runtimeInjectedSshFolder)
+    {
+        auto& newTabMenu = json[JsonKey("newTabMenu")];
+        if (newTabMenu.isArray())
+        {
+            Json::Value filtered{ Json::arrayValue };
+            for (const auto& entry : newTabMenu)
+            {
+                const auto isInjectedSshFolder =
+                    entry.isObject() &&
+                    entry["type"].asString() == "folder" &&
+                    entry["name"].asString() == "SSH" &&
+                    entry["entries"].isArray() &&
+                    entry["entries"].size() == 1 &&
+                    entry["entries"][0].isObject() &&
+                    entry["entries"][0]["type"].asString() == "matchProfiles" &&
+                    entry["entries"][0]["source"].asString() == til::u16u8(SshHostGenerator{}.GetNamespace());
+
+                if (!isInjectedSshFolder)
+                {
+                    filtered.append(entry);
+                }
+            }
+            newTabMenu = std::move(filtered);
+        }
+    }
     json["$help"] = "https://aka.ms/terminal-documentation";
     json["$schema"] =
 #if defined(WT_BRANDING_RELEASE)
@@ -1700,6 +1838,43 @@ Json::Value CascadiaSettings::ToJson() const
     return json;
 }
 
+void CascadiaSettings::_ensureRuntimeSshMenuFolder()
+{
+    auto hasVisibleSshProfile = false;
+    auto visibleSshProfileCount = 0;
+    for (const auto& profile : _activeProfiles)
+    {
+        if (profile.Source() == SshHostGenerator{}.GetNamespace())
+        {
+            hasVisibleSshProfile = true;
+            ++visibleSshProfileCount;
+        }
+    }
+
+    _logSshMenuDebug(fmt::format(FMT_COMPILE(L"ensure-folder activeProfiles={} visibleSshProfiles={}"), _activeProfiles.Size(), visibleSshProfileCount));
+
+    if (!hasVisibleSshProfile)
+    {
+        _logSshMenuDebug(L"ensure-folder skip-no-visible-ssh-profiles");
+        return;
+    }
+
+    for (const auto& entry : _globals->NewTabMenu())
+    {
+        if (_isSshFolder(entry))
+        {
+            const auto folderEntry = entry.as<Model::FolderEntry>();
+            folderEntry.Inlining(FolderEntryInlining::Never);
+            _logSshMenuDebug(fmt::format(FMT_COMPILE(L"ensure-folder reuse-existing name={} rawEntries={}"), folderEntry.Name(), folderEntry.RawEntries() ? folderEntry.RawEntries().Size() : 0));
+            return;
+        }
+    }
+
+    _globals->NewTabMenu().Append(_createRuntimeSshFolderEntry());
+    _runtimeInjectedSshFolder = true;
+    _logSshMenuDebug(L"ensure-folder append-runtime-ssh-folder");
+}
+
 // Method Description:
 // - Resolves the "defaultProfile", which can be a profile name, to a GUID
 //   and stores it back to the globals.
@@ -1730,6 +1905,10 @@ void CascadiaSettings::_resolveDefaultProfile() const
 void CascadiaSettings::_resolveNewTabMenuProfiles() const
 {
     Model::RemainingProfilesEntry remainingProfilesEntry = nullptr;
+    std::vector<std::pair<std::wstring, uint16_t>> displayedSshTargets;
+    std::vector<SshHostGenerator::ConfiguredHost> configuredSshHosts;
+    SshHostGenerator::GetConfiguredHosts(configuredSshHosts);
+    _logSshMenuDebug(fmt::format(FMT_COMPILE(L"resolve-menu configuredHosts={} activeProfiles={} menuEntries={}"), configuredSshHosts.size(), _activeProfiles.Size(), _globals->NewTabMenu().Size()));
 
     // The TerminalPage needs to know which profile has which profile ID. To prevent
     // continuous lookups in the _activeProfiles vector, we create a map <int, Profile>
@@ -1748,7 +1927,7 @@ void CascadiaSettings::_resolveNewTabMenuProfiles() const
 
     // We call a recursive helper function to process the entries
     auto entries = _globals->NewTabMenu();
-    _resolveNewTabMenuProfilesSet(entries, remainingProfiles, remainingProfilesEntry);
+    _resolveNewTabMenuProfilesSet(entries, remainingProfiles, remainingProfilesEntry, configuredSshHosts, displayedSshTargets);
 
     // If a "remainingProfiles" entry has been found, assign to it the remaining profiles
     if (remainingProfilesEntry != nullptr)
@@ -1760,7 +1939,11 @@ void CascadiaSettings::_resolveNewTabMenuProfiles() const
 // Method Description:
 // - Helper function that processes a set of tab menu entries and resolves any profile names
 //   or source fields as necessary - see function above for a more detailed explanation.
-void CascadiaSettings::_resolveNewTabMenuProfilesSet(const IVector<Model::NewTabMenuEntry> entries, IMap<int, Model::Profile>& remainingProfilesMap, Model::RemainingProfilesEntry& remainingProfilesEntry) const
+void CascadiaSettings::_resolveNewTabMenuProfilesSet(const IVector<Model::NewTabMenuEntry> entries,
+                                                     IMap<int, Model::Profile>& remainingProfilesMap,
+                                                     Model::RemainingProfilesEntry& remainingProfilesEntry,
+                                                     const std::vector<SshHostGenerator::ConfiguredHost>& configuredSshHosts,
+                                                     std::vector<std::pair<std::wstring, uint16_t>>& displayedSshTargets) const
 {
     if (entries == nullptr || entries.Size() == 0)
     {
@@ -1806,6 +1989,11 @@ void CascadiaSettings::_resolveNewTabMenuProfilesSet(const IVector<Model::NewTab
             // Remove from remaining profiles list (map)
             remainingProfilesMap.TryRemove(profileIndex);
 
+            if (const auto sshTarget = _tryGetResolvedSshTarget(profile, configuredSshHosts))
+            {
+                displayedSshTargets.emplace_back(*sshTarget);
+            }
+
             break;
         }
 
@@ -1834,19 +2022,24 @@ void CascadiaSettings::_resolveNewTabMenuProfilesSet(const IVector<Model::NewTab
             const auto folderEntry{ winrt::get_self<implementation::FolderEntry>(entry.as<Model::FolderEntry>()) };
 
             auto folderEntries = folderEntry->RawEntries();
-            _resolveNewTabMenuProfilesSet(folderEntries, remainingProfilesMap, remainingProfilesEntry);
+            _resolveNewTabMenuProfilesSet(folderEntries, remainingProfilesMap, remainingProfilesEntry, configuredSshHosts, displayedSshTargets);
             break;
         }
 
         // For a "matchProfiles" entry, we iterate through the list of all profiles and
         // find all those matching: generated by the same source, having the same name, or
         // having the same commandline. This can be expanded with regex support in the future.
-        // We make sure that none of the matches are included in the "remaining profiles" section.
         case NewTabMenuEntryType::MatchProfiles:
         {
             // We need to access the matching function, which is not exposed in the projected class.
             // So, we need to first obtain our implementation struct instance, to access this field.
             const auto matchEntry{ winrt::get_self<implementation::MatchProfilesEntry>(entry.as<Model::MatchProfilesEntry>()) };
+            const auto isSshMatchEntry = til::equals_insensitive_ascii(matchEntry->Source(), SshHostGenerator{}.GetNamespace());
+
+            if (isSshMatchEntry)
+            {
+                _logSshMenuDebug(fmt::format(FMT_COMPILE(L"match-entry ssh source={}"), matchEntry->Source()));
+            }
 
             matchEntry->Profiles(single_threaded_map<int, Model::Profile>());
 
@@ -1858,6 +2051,33 @@ void CascadiaSettings::_resolveNewTabMenuProfilesSet(const IVector<Model::NewTab
                 // On a match, we store it in the entry and remove it from the remaining list
                 if (matchEntry->MatchesProfile(profile))
                 {
+                    if (isSshMatchEntry)
+                    {
+                        _logSshMenuDebug(fmt::format(FMT_COMPILE(L"match-candidate name={} origin={} source={} cmd={}"), profile.Name(), _originTagName(profile.Origin()), profile.Source(), profile.Commandline()));
+                        if (const auto sshTarget = _tryGetResolvedSshTarget(profile, configuredSshHosts))
+                        {
+                            if (_containsResolvedSshTarget(displayedSshTargets, *sshTarget))
+                            {
+                                _logSshMenuDebug(fmt::format(FMT_COMPILE(L"match-skip already-displayed target={}:{} name={}"), sshTarget->first, sshTarget->second, profile.Name()));
+                                remainingProfilesMap.TryRemove(profileIndex);
+                                continue;
+                            }
+
+                            if (_hasNonGeneratedSshProfileForTarget(_activeProfiles, *sshTarget, configuredSshHosts))
+                            {
+                                _logSshMenuDebug(fmt::format(FMT_COMPILE(L"match-skip overridden-by-user target={}:{} name={}"), sshTarget->first, sshTarget->second, profile.Name()));
+                                remainingProfilesMap.TryRemove(profileIndex);
+                                continue;
+                            }
+
+                            _logSshMenuDebug(fmt::format(FMT_COMPILE(L"match-keep generated target={}:{} name={}"), sshTarget->first, sshTarget->second, profile.Name()));
+                        }
+                        else
+                        {
+                            _logSshMenuDebug(fmt::format(FMT_COMPILE(L"match-no-target name={} cmd={}"), profile.Name(), profile.Commandline()));
+                        }
+                    }
+
                     matchEntry->Profiles().Insert(profileIndex, profile);
                     remainingProfilesMap.TryRemove(profileIndex);
                 }

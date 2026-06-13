@@ -145,6 +145,16 @@ namespace winrt::TerminalApp::implementation
         // registered?" when it definitely is.
     }
 
+    TerminalWindow::~TerminalWindow()
+    {
+        if (const auto windowId = _WindowProperties ? _WindowProperties->WindowId() : 0; windowId != 0)
+        {
+            auto state = Microsoft::Terminal::Settings::Model::implementation::WorkspaceStateManager::Load();
+            state.RemoveWindow(windowId);
+            state.Save();
+        }
+    }
+
     // Method Description:
     // - Implements the IInitializeWithWindow interface from shobjidl_core.
     HRESULT TerminalWindow::Initialize(HWND hwnd)
@@ -205,6 +215,29 @@ namespace winrt::TerminalApp::implementation
         {
             _root->SetStartupActions(_settingsStartupArgs);
         }
+        else if (!_hasCommandLineArguments &&
+                 _initialContentArgs.empty())
+        {
+            if (const auto appLogic = AppLogic::Current())
+            {
+                auto workspaceActions = appLogic->ConsumeInitialWorkspaceStartupActions();
+                if (!workspaceActions.empty())
+                {
+                    _initialWorkspaceId = winrt::hstring{ Microsoft::Terminal::Settings::Model::implementation::WorkspaceStateManager::Load().LastOpenedWorkspaceId() };
+                    _root->SetStartupActions(std::move(workspaceActions));
+                }
+            }
+        }
+        else if (!_hasCommandLineArguments &&
+                 !_initialContentArgs.empty())
+        {
+            auto state = Microsoft::Terminal::Settings::Model::implementation::WorkspaceStateManager::Load();
+            if (const auto workspaceId = state.ConsumePendingWorkspaceLaunch(); !workspaceId.empty())
+            {
+                _initialWorkspaceId = winrt::hstring{ workspaceId };
+                state.Save();
+            }
+        }
 
         _root->SetSettings(_settings, false); // We're on our UI thread right now, so this is safe
         _root->Loaded({ get_weak(), &TerminalWindow::_OnLoaded });
@@ -214,7 +247,17 @@ namespace winrt::TerminalApp::implementation
         _root->ShowLoadWarningsDialog({ get_weak(), &TerminalWindow::_ShowLoadWarningsDialog });
         _root->Create();
 
+        if (!_initialWorkspaceId.empty())
+        {
+            _root->CurrentWorkspaceId(_initialWorkspaceId);
+        }
+        else
+        {
+            _root->RefreshWorkspaceWindowState();
+        }
+
         AppLogic::Current()->SettingsChanged({ get_weak(), &TerminalWindow::UpdateSettingsHandler });
+        AppLogic::Current()->WorkspaceDefinitionsChanged({ get_weak(), &TerminalWindow::WorkspaceDefinitionsChangedHandler });
 
         _RefreshThemeRoutine();
 
@@ -1203,6 +1246,15 @@ namespace winrt::TerminalApp::implementation
         UpdateSettings(args);
     }
 
+    void TerminalWindow::WorkspaceDefinitionsChangedHandler(const winrt::IInspectable& /*sender*/,
+                                                            const winrt::IInspectable& /*arg*/)
+    {
+        if (_root)
+        {
+            _root->WorkspaceDefinitionsChanged();
+        }
+    }
+
     void TerminalWindow::IdentifyWindow()
     {
         if (_root)
@@ -1237,10 +1289,24 @@ namespace winrt::TerminalApp::implementation
             _root->SetFocusMode(true);
             IsQuakeWindowChanged.raise(*this, nullptr);
         }
+        _root->RefreshWorkspaceWindowState();
     }
     void TerminalWindow::WindowId(const uint64_t& id)
     {
         _WindowProperties->WindowId(id);
+        if (_root)
+        {
+            _root->RefreshWorkspaceWindowState();
+        }
+    }
+
+    winrt::hstring TerminalWindow::CurrentWorkspaceId() const noexcept
+    {
+        if (_root)
+        {
+            return _root->CurrentWorkspaceId();
+        }
+        return _initialWorkspaceId;
     }
 
     // Method Description:

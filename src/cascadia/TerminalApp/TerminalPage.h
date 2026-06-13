@@ -15,6 +15,7 @@
 #include "Toast.h"
 
 #include "WindowsPackageManagerFactory.h"
+#include "../TerminalSettingsModel/Workspace.h"
 
 #define DECLARE_ACTION_HANDLER(action) void _Handle##action(const IInspectable& sender, const Microsoft::Terminal::Settings::Model::ActionEventArgs& args);
 
@@ -160,7 +161,10 @@ namespace winrt::TerminalApp::implementation
 
         void ShowKeyboardServiceWarning() const;
         winrt::hstring KeyboardServiceDisabledText();
-
+        void CurrentWorkspaceId(const winrt::hstring& value);
+        winrt::hstring CurrentWorkspaceId() const noexcept;
+        void RefreshWorkspaceWindowState();
+        void WorkspaceDefinitionsChanged();
         void IdentifyWindow();
         void ActionSaved(winrt::hstring input, winrt::hstring name, winrt::hstring keyChord);
         void ActionSaveFailed(winrt::hstring message);
@@ -289,6 +293,14 @@ namespace winrt::TerminalApp::implementation
         winrt::Windows::UI::Xaml::Controls::TextBox::LayoutUpdated_revoker _renamerLayoutUpdatedRevoker;
         int _renamerLayoutCount{ 0 };
         bool _renamerPressedEnter{ false };
+        winrt::Windows::UI::Xaml::Controls::TextBox::LayoutUpdated_revoker _workspaceSaverLayoutUpdatedRevoker;
+        int _workspaceSaverLayoutCount{ 0 };
+        bool _workspaceSaverPressedEnter{ false };
+        winrt::hstring _currentWorkspaceId{};
+        winrt::Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager _workspaceEditorManager{};
+        size_t _workspaceEditorSelectedIndex{ 0 };
+        bool _workspaceEditorEditMode{ false };
+        bool _workspaceDefinitionsDirty{ false };
 
         TerminalApp::WindowProperties _WindowProperties{ nullptr };
         PaneResources _paneResources;
@@ -323,6 +335,29 @@ namespace winrt::TerminalApp::implementation
         winrt::Windows::UI::Xaml::Controls::IconElement _CreateNewTabFlyoutIcon(const winrt::hstring& icon);
         winrt::Windows::UI::Xaml::Controls::MenuFlyoutItem _CreateNewTabFlyoutProfile(const Microsoft::Terminal::Settings::Model::Profile profile, int profileIndex, const winrt::hstring& iconPathOverride);
         winrt::Windows::UI::Xaml::Controls::MenuFlyoutItem _CreateNewTabFlyoutAction(const winrt::hstring& actionId, const winrt::hstring& iconPathOverride);
+        winrt::Windows::UI::Xaml::Controls::MenuFlyoutSubItem _CreateWorkspaceFlyout();
+        safe_void_coroutine _OpenWorkspace(const winrt::hstring& workspaceId, bool openInNewWindow);
+        safe_void_coroutine _OpenWorkspaceManager();
+        void _OpenWorkspaceSaver();
+        void _SaveCurrentWindowAsWorkspace(const winrt::hstring& workspaceName = {});
+        bool _TryCaptureCurrentWorkspace(winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace& workspace) const;
+        bool _CurrentWorkspaceNeedsSave() const;
+        void _LoadWorkspaceEditorState(bool preserveSelection = true);
+        void _RebuildWorkspaceManagerDialog();
+        void _AddWorkspaceDefinition();
+        void _DeleteSelectedWorkspaceDefinition();
+        void _AddWorkspaceNode();
+        void _DeleteWorkspaceNode(size_t nodeIndex);
+        void _SetSelectedWorkspaceIndex(size_t index);
+        winrt::Windows::UI::Xaml::UIElement _BuildWorkspaceManagerContent();
+        winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace* _SelectedWorkspaceForEditing() noexcept;
+        const winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace* _SelectedWorkspaceForEditing() const noexcept;
+        std::wstring _SelectedWorkspaceId() const;
+        std::wstring _WorkspaceDisplayName(const winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace& workspace) const;
+        std::wstring _CurrentWorkspaceDisplayName() const;
+        std::wstring _CurrentWorkspaceTabRowName() const;
+        std::optional<uint64_t> _FindOpenWorkspaceWindowId(std::wstring_view workspaceId) const;
+        void _UpdateWorkspaceTabRow();
 
         void _OpenNewTabDropdown();
         HRESULT _OpenNewTab(const Microsoft::Terminal::Settings::Model::INewContentArgs& newContentArgs);
@@ -408,6 +443,7 @@ namespace winrt::TerminalApp::implementation
         std::optional<uint32_t> _GetTabIndex(const TerminalApp::Tab& tab) const noexcept;
         TerminalApp::Tab _GetFocusedTab() const noexcept;
         winrt::com_ptr<Tab> _GetFocusedTabImpl() const noexcept;
+        std::optional<Microsoft::Terminal::Settings::Model::NewTerminalArgs> _BuildWorkspaceNodeArgs(const winrt::com_ptr<Tab>& tab) const;
         TerminalApp::Tab _GetTabByTabViewItem(const IInspectable& tabViewItem) const noexcept;
 
         void _HandleClosePaneRequested(std::shared_ptr<Pane> pane);
@@ -531,6 +567,10 @@ namespace winrt::TerminalApp::implementation
         void _RequestWindowRename(const winrt::hstring& newName);
         void _WindowRenamerKeyDown(const IInspectable& sender, const winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs& e);
         void _WindowRenamerKeyUp(const IInspectable& sender, const winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs& e);
+        void _WorkspaceManagerPrimaryButtonClick(const IInspectable& sender, const winrt::Windows::UI::Xaml::Controls::ContentDialogButtonClickEventArgs& eventArgs);
+        void _WorkspaceSaverActionClick(const IInspectable& sender, const IInspectable& eventArgs);
+        void _WorkspaceSaverKeyDown(const IInspectable& sender, const winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs& e);
+        void _WorkspaceSaverKeyUp(const IInspectable& sender, const winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs& e);
 
         void _UpdateTeachingTipTheme(winrt::Windows::UI::Xaml::FrameworkElement element);
 

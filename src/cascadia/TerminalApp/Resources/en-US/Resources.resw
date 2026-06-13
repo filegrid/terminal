@@ -961,4 +961,145 @@
   <data name="InvalidRegex" xml:space="preserve">
     <value>An invalid regular expression was found.</value>
   </data>
+ <data name="WorkspaceMenuItem" xml:space="preserve">
+   <value>Workspaces</value>
+ </data>
+ <data name="WorkspaceDefaultUnsaved" xml:space="preserve">
+   <value>Default (unsaved)</value>
+ </data>
+ <data name="WorkspaceNoneSaved" xml:space="preserve">
+   <value>No workspaces</value>
+ </data>
+ <data name="WorkspaceOpenInNewWindow" xml:space="preserve">
+   <value>Open workspace in new window</value>
+ </data>
+ <data name="WorkspaceManageMenuItem" xml:space="preserve">
+   <value>Manage workspaces</value>
+ </data>
+ <data name="WorkspaceSaveMenuItem" xml:space="preserve">
+   <value>Save workspace</value>
+ </data>
+ <data name="WorkspaceGeneratedName" xml:space="preserve">
+   <value>Workspace {0}</value>
+ </data>
+ <data name="WorkspaceSaveFailedNoSavableTabs" xml:space="preserve">
+   <value>Could not save workspace because this window has no savable tabs.</value>
+ </data>
+ <data name="WorkspaceSaveFailedWorkspacesFile" xml:space="preserve">
+   <value>Failed to save workspace to workspaces.yaml.</value>
+ </data>
+ <data name="WorkspaceSaveFailedStateFile" xml:space="preserve">
+   <value>Failed to save workspace state to workspace-state.yaml.</value>
+ </data>
+ <data name="WorkspaceSaveFailedGeneric" xml:space="preserve">
+   <value>Failed to save workspace.</value>
+ </data>
+ <data name="WorkspaceManagerDialog_Title" xml:space="preserve">
+   <value>Manage workspaces</value>
+ </data>
+ <data name="WorkspaceManagerDialog_PrimaryButtonText" xml:space="preserve">
+   <value>Save</value>
+ </data>
+ <data name="WorkspaceManagerDialog_SecondaryButtonText" xml:space="preserve">
+   <value>Close</value>
+ </data>
+ <data name="WorkspaceSaver_Title" xml:space="preserve">
+   <value>Save workspace</value>
+ </data>
+ <data name="WorkspaceSaver_Subtitle" xml:space="preserve">
+   <value>Enter a workspace name</value>
+ </data>
+ <data name="WorkspaceSaver_ActionButtonContent" xml:space="preserve">
+   <value>Save</value>
+ </data>
+ <data name="WorkspaceSaver_CloseButtonContent" xml:space="preserve">
+   <value>Cancel</value>
+ </data>
+ <data name="WorkspaceEditor_DialogTitleBrowse" xml:space="preserve">
+   <value>Browse workspaces</value>
+ </data>
+ <data name="WorkspaceEditor_DialogTitleEdit" xml:space="preserve">
+   <value>Edit workspaces</value>
+ </data>
+ <data name="WorkspaceEditor_DialogPrimaryButton" xml:space="preserve">
+   <value>Save</value>
+ </data>
+ <data name="WorkspaceEditor_DialogSecondaryButtonClose" xml:space="preserve">
+   <value>Close</value>
+ </data>
+ <data name="WorkspaceEditor_DialogSecondaryButtonCancel" xml:space="preserve">
+   <value>Cancel</value>
+ </data>
+ <data name="WorkspaceEditor_WorkspaceLabel" xml:space="preserve">
+   <value>Workspace</value>
+ </data>
+ <data name="WorkspaceEditor_EditButton" xml:space="preserve">
+   <value>Edit workspace</value>
+ </data>
+ <data name="WorkspaceEditor_DoneEditingButton" xml:space="preserve">
+   <value>Done editing</value>
+ </data>
+ <data name="WorkspaceEditor_NewWorkspaceButton" xml:space="preserve">
+   <value>New workspace</value>
+ </data>
+ <data name="WorkspaceEditor_DeleteWorkspaceButton" xml:space="preserve">
+   <value>Delete workspace</value>
+ </data>
+ <data name="WorkspaceEditor_EditHint" xml:space="preserve">
+   <value>Edit mode is on. Add or remove nodes here, then save to write workspaces.yaml.</value>
+ </data>
+ <data name="WorkspaceEditor_BrowseHint" xml:space="preserve">
+   <value>Browse mode is on. Enter edit mode to add or remove workspaces and nodes.</value>
+ </data>
+ <data name="WorkspaceEditor_CurrentStatus" xml:space="preserve">
+   <value>Current workspace: {0}</value>
+ </data>
+ <data name="WorkspaceEditor_UnsavedHint" xml:space="preserve">
+   <value>This window is still using the default unsaved workspace. Save it when you want to reuse this layout later.</value>
+ </data>
+ <data name="WorkspaceEditor_NoneSaved" xml:space="preserve">
+   <value>No workspaces saved yet.</value>
+ </data>
+ <data name="WorkspaceEditor_WorkspaceName" xml:space="preserve">
+   <value>Workspace name</value>
+ </data>
+ <data name="WorkspaceEditor_Description" xml:space="preserve">
+   <value>Description</value>
+ </data>
+ <data name="WorkspaceEditor_Nodes" xml:space="preserve">
+   <value>Nodes</value>
+ </data>
+ <data name="WorkspaceEditor_AddNodeButton" xml:space="preserve">
+   <value>Add node</value>
+ </data>
+ <data name="WorkspaceEditor_NoNodes" xml:space="preserve">
+   <value>No nodes in this workspace.</value>
+ </data>
+ <data name="WorkspaceEditor_DeleteNodeButton" xml:space="preserve">
+   <value>Delete</value>
+ </data>
+ <data name="WorkspaceEditor_NodeName" xml:space="preserve">
+   <value>Node name</value>
+ </data>
+ <data name="WorkspaceEditor_NodeGeneratedName" xml:space="preserve">
+   <value>Node {0}</value>
+ </data>
+ <data name="WorkspaceEditor_Profile" xml:space="preserve">
+   <value>Profile</value>
+ </data>
+ <data name="WorkspaceEditor_ConnectionReference" xml:space="preserve">
+   <value>Connection reference</value>
+ </data>
+ <data name="WorkspaceEditor_StartupDirectory" xml:space="preserve">
+   <value>Startup directory</value>
+ </data>
+ <data name="WorkspaceEditor_StartupCommandOrScript" xml:space="preserve">
+   <value>Startup command or script</value>
+ </data>
+ <data name="WorkspaceEditor_ExternalChangeError" xml:space="preserve">
+   <value>workspaces.yaml changed on disk while the editor has unsaved changes.</value>
+ </data>
+ <data name="WorkspaceEditor_SaveFailed" xml:space="preserve">
+   <value>Failed to save workspace changes to workspaces.yaml.</value>
+ </data>
 </root>

@@ -36,7 +36,7 @@ jobs:
       - name: Restore NuGet packages
         shell: pwsh
         run: |
-          nuget restore .\OpenConsole.slnx -Verbosity quiet
+          msbuild .\OpenConsole.slnx /restore /t:ValidateSolutionConfiguration /m /p:Configuration=Debug /p:Platform=x64
           nuget restore .\dep\nuget\packages.config -Verbosity quiet
 
       - name: Detect VS vcpkg or bootstrap locally

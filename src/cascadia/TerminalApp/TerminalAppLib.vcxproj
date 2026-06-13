@@ -83,6 +83,7 @@
   </ItemGroup>
   <!-- ========================= Headers ======================== -->
   <ItemGroup>
+    <ClInclude Include="../TerminalSettingsModel/Workspace.h" />
     <ClInclude Include="App.base.h" />
     <ClInclude Include="AppCommandlineArgs.h" />
     <ClInclude Include="Commandline.h" />
@@ -186,6 +187,7 @@
   </ItemGroup>
   <!-- ========================= Cpp Files ======================== -->
   <ItemGroup>
+    <ClCompile Include="../TerminalSettingsModel/Workspace.cpp" />
     <ClCompile Include="init.cpp" />
     <ClCompile Include="AppCommandlineArgs.cpp" />
     <ClCompile Include="Commandline.cpp" />

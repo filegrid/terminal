@@ -175,12 +175,72 @@ void AppHost::_HandleCommandlineArgs(const winrt::TerminalApp::WindowRequestedAr
 void AppHost::Initialize()
 {
     // You aren't allowed to do ANY XAML before this line!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+#ifdef _DEBUG
+    {
+        wchar_t tempPath[MAX_PATH]{};
+        if (GetTempPathW(ARRAYSIZE(tempPath), tempPath))
+        {
+            const auto logPath = std::filesystem::path{ tempPath } / L"wt-launch-debug.log";
+            std::ofstream output{ logPath, std::ios::binary | std::ios::app };
+            if (output)
+            {
+                const auto utf8 = til::u16u8(std::wstring{ L"AppHost::Initialize before window->Initialize\n" });
+                output.write(utf8.data(), gsl::narrow_cast<std::streamsize>(utf8.size()));
+            }
+        }
+    }
+#endif
     _window->Initialize();
+#ifdef _DEBUG
+    {
+        wchar_t tempPath[MAX_PATH]{};
+        if (GetTempPathW(ARRAYSIZE(tempPath), tempPath))
+        {
+            const auto logPath = std::filesystem::path{ tempPath } / L"wt-launch-debug.log";
+            std::ofstream output{ logPath, std::ios::binary | std::ios::app };
+            if (output)
+            {
+                const auto utf8 = til::u16u8(std::wstring{ L"AppHost::Initialize after window->Initialize\n" });
+                output.write(utf8.data(), gsl::narrow_cast<std::streamsize>(utf8.size()));
+            }
+        }
+    }
+#endif
 
     if (auto withWindow{ _windowLogic.try_as<IInitializeWithWindow>() })
     {
         // You aren't allowed to do anything with the TerminalPage before this line!!!!!!!
+#ifdef _DEBUG
+        {
+            wchar_t tempPath[MAX_PATH]{};
+            if (GetTempPathW(ARRAYSIZE(tempPath), tempPath))
+            {
+                const auto logPath = std::filesystem::path{ tempPath } / L"wt-launch-debug.log";
+                std::ofstream output{ logPath, std::ios::binary | std::ios::app };
+                if (output)
+                {
+                    const auto utf8 = til::u16u8(std::wstring{ L"AppHost::Initialize before InitializeWithWindow\n" });
+                    output.write(utf8.data(), gsl::narrow_cast<std::streamsize>(utf8.size()));
+                }
+            }
+        }
+#endif
         withWindow->Initialize(_window->GetHandle());
+#ifdef _DEBUG
+        {
+            wchar_t tempPath[MAX_PATH]{};
+            if (GetTempPathW(ARRAYSIZE(tempPath), tempPath))
+            {
+                const auto logPath = std::filesystem::path{ tempPath } / L"wt-launch-debug.log";
+                std::ofstream output{ logPath, std::ios::binary | std::ios::app };
+                if (output)
+                {
+                    const auto utf8 = til::u16u8(std::wstring{ L"AppHost::Initialize after InitializeWithWindow\n" });
+                    output.write(utf8.data(), gsl::narrow_cast<std::streamsize>(utf8.size()));
+                }
+            }
+        }
+#endif
     }
 
     if (_useNonClientArea)
@@ -248,8 +308,38 @@ void AppHost::Initialize()
     // already prepared to listen for the change notification
     _revokers.PropertyChanged = _windowLogic.PropertyChanged(winrt::auto_revoke, { this, &AppHost::_PropertyChangedHandler });
 
+#ifdef _DEBUG
+    {
+        wchar_t tempPath[MAX_PATH]{};
+        if (GetTempPathW(ARRAYSIZE(tempPath), tempPath))
+        {
+            const auto logPath = std::filesystem::path{ tempPath } / L"wt-launch-debug.log";
+            std::ofstream output{ logPath, std::ios::binary | std::ios::app };
+            if (output)
+            {
+                const auto utf8 = til::u16u8(std::wstring{ L"AppHost::Initialize before app/window create\n" });
+                output.write(utf8.data(), gsl::narrow_cast<std::streamsize>(utf8.size()));
+            }
+        }
+    }
+#endif
     _appLogic.Create();
     _windowLogic.Create();
+#ifdef _DEBUG
+    {
+        wchar_t tempPath[MAX_PATH]{};
+        if (GetTempPathW(ARRAYSIZE(tempPath), tempPath))
+        {
+            const auto logPath = std::filesystem::path{ tempPath } / L"wt-launch-debug.log";
+            std::ofstream output{ logPath, std::ios::binary | std::ios::app };
+            if (output)
+            {
+                const auto utf8 = til::u16u8(std::wstring{ L"AppHost::Initialize after app/window create\n" });
+                output.write(utf8.data(), gsl::narrow_cast<std::streamsize>(utf8.size()));
+            }
+        }
+    }
+#endif
 
     _revokers.TitleChanged = _windowLogic.TitleChanged(winrt::auto_revoke, { this, &AppHost::_AppTitleChanged });
     _revokers.CloseWindowRequested = _windowLogic.CloseWindowRequested(winrt::auto_revoke, { this, &AppHost::_CloseRequested });
@@ -303,8 +393,38 @@ void AppHost::Initialize()
 
     // Set up the content of the application. If the app has a custom titlebar,
     // set that content as well.
+#ifdef _DEBUG
+    {
+        wchar_t tempPath[MAX_PATH]{};
+        if (GetTempPathW(ARRAYSIZE(tempPath), tempPath))
+        {
+            const auto logPath = std::filesystem::path{ tempPath } / L"wt-launch-debug.log";
+            std::ofstream output{ logPath, std::ios::binary | std::ios::app };
+            if (output)
+            {
+                const auto utf8 = til::u16u8(std::wstring{ L"AppHost::Initialize before SetContent\n" });
+                output.write(utf8.data(), gsl::narrow_cast<std::streamsize>(utf8.size()));
+            }
+        }
+    }
+#endif
     _window->SetContent(_windowLogic.GetRoot());
     _window->OnAppInitialized();
+#ifdef _DEBUG
+    {
+        wchar_t tempPath[MAX_PATH]{};
+        if (GetTempPathW(ARRAYSIZE(tempPath), tempPath))
+        {
+            const auto logPath = std::filesystem::path{ tempPath } / L"wt-launch-debug.log";
+            std::ofstream output{ logPath, std::ios::binary | std::ios::app };
+            if (output)
+            {
+                const auto utf8 = til::u16u8(std::wstring{ L"AppHost::Initialize after SetContent\n" });
+                output.write(utf8.data(), gsl::narrow_cast<std::streamsize>(utf8.size()));
+            }
+        }
+    }
+#endif
 }
 
 void AppHost::Close()
@@ -1055,13 +1175,23 @@ void AppHost::_WindowSizeChanged(const winrt::Windows::Foundation::IInspectable&
 }
 
 void AppHost::_SummonWindowRequested(const winrt::Windows::Foundation::IInspectable&,
-                                     const winrt::Windows::Foundation::IInspectable&)
+                                     const winrt::Windows::Foundation::IInspectable& args)
 {
     winrt::TerminalApp::SummonWindowBehavior summonArgs;
     summonArgs.MoveToCurrentDesktop(false);
     summonArgs.DropdownDuration(0);
     summonArgs.ToMonitor(winrt::TerminalApp::MonitorBehavior::InPlace);
     summonArgs.ToggleVisibility(false); // Do not toggle, just make visible.
+
+    if (const auto targetWindowId = args.try_as<winrt::Windows::Foundation::IReference<uint64_t>>())
+    {
+        if (const auto targetWindow = _windowManager->GetWindowById(targetWindowId.Value()))
+        {
+            targetWindow->HandleSummon(std::move(summonArgs));
+            return;
+        }
+    }
+
     HandleSummon(std::move(summonArgs));
 }
 

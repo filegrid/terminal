@@ -155,6 +155,15 @@
             </TextBlock>
         </ContentDialog>
 
+        <ContentDialog x:Name="WorkspaceManagerDialog"
+                       x:Uid="WorkspaceManagerDialog"
+                       Grid.Row="2"
+                       x:Load="False"
+                       DefaultButton="Primary"
+                       PrimaryButtonText="Save"
+                       SecondaryButtonText="Close"
+                       PrimaryButtonClick="_WorkspaceManagerPrimaryButtonClick" />
+
         <local:CommandPalette x:Name="CommandPaletteElement"
                               Grid.Row="2"
                               VerticalAlignment="Stretch"
@@ -193,6 +202,26 @@
                          KeyDown="_WindowRenamerKeyDown"
                          KeyUp="_WindowRenamerKeyUp"
                          Text="{x:Bind WindowProperties.WindowName, Mode=OneWay}">
+                    <TextBox.ContextFlyout>
+                        <mtu:TextMenuFlyout />
+                    </TextBox.ContextFlyout>
+                </TextBox>
+            </mux:TeachingTip.Content>
+        </mux:TeachingTip>
+
+        <mux:TeachingTip x:Name="WorkspaceSaver"
+                         x:Uid="WorkspaceSaver"
+                         Title="Save Window as Workspace"
+                         Subtitle="Enter a workspace name"
+                         ActionButtonContent="Save"
+                         x:Load="False"
+                         ActionButtonClick="_WorkspaceSaverActionClick"
+                         ActionButtonStyle="{ThemeResource AccentButtonStyle}"
+                         IsLightDismissEnabled="True">
+            <mux:TeachingTip.Content>
+                <TextBox x:Name="WorkspaceSaverTextBox"
+                         KeyDown="_WorkspaceSaverKeyDown"
+                         KeyUp="_WorkspaceSaverKeyUp">
                     <TextBox.ContextFlyout>
                         <mtu:TextMenuFlyout />
                     </TextBox.ContextFlyout>

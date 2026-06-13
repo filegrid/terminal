@@ -68,6 +68,8 @@ namespace TerminalAppLocalTests
         TEST_METHOD(TestSimpleExecuteCommandlineAction);
         TEST_METHOD(TestMultipleCommandExecuteCommandlineAction);
         TEST_METHOD(TestInvalidExecuteCommandlineAction);
+        TEST_METHOD(ParseIgnoresServerNameArgument);
+        TEST_METHOD(ParseIgnoresSplitServerNameArgument);
         TEST_METHOD(TestLaunchMode);
         TEST_METHOD(TestLaunchModeWithNoCommand);
 
@@ -1662,6 +1664,34 @@ namespace TerminalAppLocalTests
         ExecuteCommandlineArgs args{ L"split-pane -H -V" };
         auto actions = winrt::TerminalApp::implementation::TerminalPage::ConvertExecuteCommandlineToActions(args);
         VERIFY_ARE_EQUAL(0u, actions.size());
+    }
+
+    void CommandlineTest::ParseIgnoresServerNameArgument()
+    {
+        AppCommandlineArgs appArgs{};
+        std::vector<winrt::hstring> args{ L"wtd.exe", L"-ServerName:App.AppXabc123", L"-Embedding" };
+        const winrt::array_view<const winrt::hstring> argsView{ args };
+
+        const auto result = appArgs.ParseArgs(argsView);
+        VERIFY_ARE_EQUAL(0, result);
+
+        appArgs.ValidateStartupCommands();
+        VERIFY_ARE_EQUAL(1u, appArgs.GetStartupActions().size());
+        VERIFY_ARE_EQUAL(ShortcutAction::NewTab, appArgs.GetStartupActions().front().Action());
+    }
+
+    void CommandlineTest::ParseIgnoresSplitServerNameArgument()
+    {
+        AppCommandlineArgs appArgs{};
+        std::vector<winrt::hstring> args{ L"wtd.exe", L"-ServerName", L"App.AppXabc123", L"-Embedding" };
+        const winrt::array_view<const winrt::hstring> argsView{ args };
+
+        const auto result = appArgs.ParseArgs(argsView);
+        VERIFY_ARE_EQUAL(0, result);
+
+        appArgs.ValidateStartupCommands();
+        VERIFY_ARE_EQUAL(1u, appArgs.GetStartupActions().size());
+        VERIFY_ARE_EQUAL(ShortcutAction::NewTab, appArgs.GetStartupActions().front().Action());
     }
 
     void CommandlineTest::TestLaunchMode()
