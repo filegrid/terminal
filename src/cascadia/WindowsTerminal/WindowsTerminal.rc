@@ -84,6 +84,8 @@ BEGIN
     IDS_ERROR_ARCHITECTURE_FORMAT
                             "Windows Terminal is designed to run on your system's native architecture (%s).\nYou are currently using the %s version.\n\nPlease use the version of Windows Terminal that matches your system's native architecture."
     IDS_X86_ARCHITECTURE    "i386"
+    IDS_ERROR_UNPACKAGED_ADMIN_ACCOUNT
+                            "Unpackaged Windows Terminal cannot start from the built-in Administrator (SID-500) account on this machine.\n\nUse a regular desktop user or admin account instead."
 END
 
 STRINGTABLE
@@ -108,4 +110,3 @@ END
 
 /////////////////////////////////////////////////////////////////////////////
 #endif    // not APSTUDIO_INVOKED
-
