@@ -42,7 +42,10 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
     X(FileSource::Shared, Windows::Foundation::Collections::IVector<winrt::Microsoft::Terminal::Settings::Model::InfoBarMessage>, DismissedMessages, "dismissedMessages") \
     X(FileSource::Local, Windows::Foundation::Collections::IVector<hstring>, AllowedCommandlines, "allowedCommandlines")                                                  \
     X(FileSource::Local, std::unordered_set<hstring>, DismissedBadges, "dismissedBadges")                                                                                 \
-    X(FileSource::Shared, bool, SSHFolderGenerated, "sshFolderGenerated", false)
+    X(FileSource::Shared, bool, SSHFolderGenerated, "sshFolderGenerated", false)                                                                                           \
+    X(FileSource::Shared, winrt::hstring, LastOpenedWorkspaceId, "lastOpenedWorkspaceId")                                                                                  \
+    X(FileSource::Shared, bool, OpenInNewWindow, "openInNewWindow", true)                                                                                                  \
+    X(FileSource::Shared, Windows::Foundation::Collections::IVector<hstring>, PendingWorkspaceLaunches, "pendingWorkspaceLaunches")
 
     struct WindowLayout : WindowLayoutT<WindowLayout>
     {
@@ -74,6 +77,9 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         void AppendPersistedWindowLayout(Model::WindowLayout layout);
         bool DismissBadge(const hstring& badgeId);
         bool BadgeDismissed(const hstring& badgeId) const;
+        void EnqueuePendingWorkspaceLaunch(const hstring& workspaceId);
+        hstring ConsumePendingWorkspaceLaunch();
+        void RemovePendingWorkspaceLaunch(const hstring& workspaceId) noexcept;
 
         // State getters/setters
 #define MTSM_APPLICATION_STATE_GEN(source, type, name, key, ...) \

@@ -300,3 +300,14 @@ profiles.json
 **/tmp/
 **/temp/
 **/.tmp/
+
+# Top-level directories not present on main
+/.PowershellModules/
+/.vs/
+/AppPackages/
+/artifacts/
+/bin/
+/obj/
+/packages/
+/packages-ref/
+/WTP/

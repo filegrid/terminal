@@ -341,6 +341,91 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         return false;
     }
 
+    void ApplicationState::EnqueuePendingWorkspaceLaunch(const hstring& workspaceId)
+    {
+        if (workspaceId.empty())
+        {
+            return;
+        }
+
+        {
+            const auto state = _state.lock();
+            if (!state->PendingWorkspaceLaunches || !*state->PendingWorkspaceLaunches)
+            {
+                state->PendingWorkspaceLaunches = winrt::single_threaded_vector<hstring>();
+            }
+
+            const auto pending = *state->PendingWorkspaceLaunches;
+            if (std::find(pending.begin(), pending.end(), workspaceId) == pending.end())
+            {
+                pending.Append(workspaceId);
+            }
+        }
+
+        _throttler();
+    }
+
+    hstring ApplicationState::ConsumePendingWorkspaceLaunch()
+    {
+        hstring workspaceId;
+
+        {
+            const auto state = _state.lock();
+            if (!state->PendingWorkspaceLaunches || !*state->PendingWorkspaceLaunches)
+            {
+                return {};
+            }
+
+            const auto pending = *state->PendingWorkspaceLaunches;
+            if (pending.Size() == 0)
+            {
+                return {};
+            }
+
+            workspaceId = pending.GetAt(0);
+            pending.RemoveAt(0);
+        }
+
+        _throttler();
+        return workspaceId;
+    }
+
+    void ApplicationState::RemovePendingWorkspaceLaunch(const hstring& workspaceId) noexcept
+    {
+        if (workspaceId.empty())
+        {
+            return;
+        }
+
+        bool removed = false;
+        {
+            const auto state = _state.lock();
+            if (!state->PendingWorkspaceLaunches || !*state->PendingWorkspaceLaunches)
+            {
+                return;
+            }
+
+            const auto pending = *state->PendingWorkspaceLaunches;
+            for (uint32_t index = 0; index < pending.Size();)
+            {
+                if (pending.GetAt(index) == workspaceId)
+                {
+                    pending.RemoveAt(index);
+                    removed = true;
+                }
+                else
+                {
+                    ++index;
+                }
+            }
+        }
+
+        if (removed)
+        {
+            _throttler();
+        }
+    }
+
     // Generate all getter/setters
 #define MTSM_APPLICATION_STATE_GEN(source, type, name, key, ...) \
     type ApplicationState::name() const noexcept                 \

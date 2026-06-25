@@ -23,6 +23,12 @@ namespace winrt::TerminalApp::implementation
     TabRowControl::TabRowControl()
     {
         InitializeComponent();
+
+        if (const auto resources = WUX::Application::Current().Resources())
+        {
+            WorkspaceBackgroundBrush(resources.Lookup(winrt::box_value(L"TabViewButtonBackground")).try_as<WUX::Media::Brush>());
+            WorkspaceForegroundBrush(resources.Lookup(winrt::box_value(L"TabViewButtonForeground")).try_as<WUX::Media::Brush>());
+        }
     }
 
     // Method Description:

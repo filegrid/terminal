@@ -5,7 +5,6 @@ using System.IO.Compression;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
-using System.Security.Principal;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
@@ -21,7 +20,6 @@ internal static class Program
     {
         try
         {
-            EnsurePortableLaunchSupported();
             var launcherPath = GetLauncherPath();
             var payloadInfo = ReadPayloadInfo(launcherPath);
             var extractionRoot = EnsureExtractedPayload(launcherPath, payloadInfo);
@@ -47,22 +45,6 @@ internal static class Program
         {
             MessageBox.Show(ex.Message, "Windows Terminal Portable", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return Marshal.GetHRForException(ex);
-        }
-    }
-
-    private static void EnsurePortableLaunchSupported()
-    {
-        if (IsBuiltInAdministratorAccount())
-        {
-            throw new InvalidOperationException("Portable Windows Terminal cannot start from the built-in Administrator (SID-500) account on this machine. Use a regular desktop user or admin account instead.");
-        }
-    }
-
-    private static bool IsBuiltInAdministratorAccount()
-    {
-        using (var identity = WindowsIdentity.GetCurrent())
-        {
-            return identity?.User?.Value?.EndsWith("-500", StringComparison.Ordinal) == true;
         }
     }
 

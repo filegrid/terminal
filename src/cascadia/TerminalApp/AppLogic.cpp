@@ -616,8 +616,8 @@ namespace winrt::TerminalApp::implementation
 
         _initialWorkspaceConsumed = true;
 
-        const auto state = Microsoft::Terminal::Settings::Model::implementation::WorkspaceStateManager::Load();
-        const auto& lastWorkspaceId = state.LastOpenedWorkspaceId();
+        const auto state = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
+        const auto lastWorkspaceId = state.LastOpenedWorkspaceId();
         if (lastWorkspaceId.empty())
         {
             return {};

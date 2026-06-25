@@ -21,12 +21,14 @@ namespace winrt::TerminalApp::implementation
 
     void WorkspaceManagerPaneContent::UpdateContent(const UIElement& content)
     {
+        _root.Background(BackgroundBrush());
         _root.Content(content);
     }
 
     void WorkspaceManagerPaneContent::UpdateSettings(const CascadiaSettings& settings)
     {
         _requestedTheme = settings.GlobalSettings().CurrentTheme().RequestedTheme();
+        _root.Background(BackgroundBrush());
     }
 
     FrameworkElement WorkspaceManagerPaneContent::GetRoot()

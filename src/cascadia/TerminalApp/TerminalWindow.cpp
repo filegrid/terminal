@@ -174,6 +174,12 @@ namespace winrt::TerminalApp::implementation
         }
         else if (!_initialContentArgs.empty())
         {
+            const auto state = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
+            if (const auto workspaceId = state.ConsumePendingWorkspaceLaunch(); !workspaceId.empty())
+            {
+                _initialWorkspaceId = workspaceId;
+                state.Flush();
+            }
             _root->SetStartupActions(std::move(_initialContentArgs));
         }
         else if (const auto& layout = LoadPersistedLayout())
@@ -223,22 +229,11 @@ namespace winrt::TerminalApp::implementation
                 auto workspaceActions = appLogic->ConsumeInitialWorkspaceStartupActions();
                 if (!workspaceActions.empty())
                 {
-                    _initialWorkspaceId = winrt::hstring{ Microsoft::Terminal::Settings::Model::implementation::WorkspaceStateManager::Load().LastOpenedWorkspaceId() };
+                    _initialWorkspaceId = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance().LastOpenedWorkspaceId();
                     _root->SetStartupActions(std::move(workspaceActions));
                 }
             }
         }
-        else if (!_hasCommandLineArguments &&
-                 !_initialContentArgs.empty())
-        {
-            auto state = Microsoft::Terminal::Settings::Model::implementation::WorkspaceStateManager::Load();
-            if (const auto workspaceId = state.ConsumePendingWorkspaceLaunch(); !workspaceId.empty())
-            {
-                _initialWorkspaceId = winrt::hstring{ workspaceId };
-                state.Save();
-            }
-        }
-
         _root->SetSettings(_settings, false); // We're on our UI thread right now, so this is safe
         _root->Loaded({ get_weak(), &TerminalWindow::_OnLoaded });
         _root->Initialized({ get_weak(), &TerminalWindow::_pageInitialized });

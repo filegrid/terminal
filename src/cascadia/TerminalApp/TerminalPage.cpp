@@ -66,6 +66,96 @@ namespace
     using Workspace = winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace;
     using WorkspaceNode = winrt::Microsoft::Terminal::Settings::Model::implementation::WorkspaceNode;
 
+    static constexpr std::array<std::wstring_view, 12> _workspaceColorPalette{
+        L"#C50F1F",
+        L"#0063B1",
+        L"#0F7B0F",
+        L"#CA5010",
+        L"#8E562E",
+        L"#744DA9",
+        L"#038387",
+        L"#881798",
+        L"#498205",
+        L"#515C6B",
+        L"#567C73",
+        L"#7A7574",
+    };
+
+    bool _isHexDigit(const wchar_t ch) noexcept
+    {
+        return (ch >= L'0' && ch <= L'9') ||
+               (ch >= L'a' && ch <= L'f') ||
+               (ch >= L'A' && ch <= L'F');
+    }
+
+    std::wstring _normalizeWorkspaceColor(std::wstring_view color)
+    {
+        if (color.size() != 7 || color[0] != L'#')
+        {
+            return {};
+        }
+
+        std::wstring normalized;
+        normalized.reserve(color.size());
+        normalized.push_back(L'#');
+
+        for (size_t i = 1; i < color.size(); ++i)
+        {
+            if (!_isHexDigit(color[i]))
+            {
+                return {};
+            }
+            normalized.push_back(static_cast<wchar_t>(std::towupper(color[i])));
+        }
+
+        return normalized;
+    }
+
+    std::optional<winrt::Windows::UI::Color> _parseWorkspaceColor(std::wstring_view color)
+    {
+        const auto normalized = _normalizeWorkspaceColor(color);
+        if (normalized.empty())
+        {
+            return std::nullopt;
+        }
+
+        return static_cast<winrt::Windows::UI::Color>(::Microsoft::Console::Utils::ColorFromHexString(til::u16u8(normalized)));
+    }
+
+    std::wstring _workspaceColorToString(const winrt::Windows::UI::Color& color)
+    {
+        return til::u8u16(::Microsoft::Console::Utils::ColorToHexString(til::color{ color }));
+    }
+
+    std::wstring _pickUnusedWorkspaceColor(const std::vector<Workspace>& workspaces)
+    {
+        std::unordered_set<std::wstring> usedColors;
+        usedColors.reserve(workspaces.size());
+        for (const auto& workspace : workspaces)
+        {
+            if (const auto normalized = _normalizeWorkspaceColor(workspace.BackgroundColor); !normalized.empty())
+            {
+                usedColors.emplace(std::move(normalized));
+            }
+        }
+
+        for (const auto color : _workspaceColorPalette)
+        {
+            if (!usedColors.contains(std::wstring{ color }))
+            {
+                return std::wstring{ color };
+            }
+        }
+
+        return std::wstring{ _workspaceColorPalette[workspaces.size() % _workspaceColorPalette.size()] };
+    }
+
+    winrt::Windows::UI::Color _workspaceForegroundColor(const winrt::Windows::UI::Color& color)
+    {
+        constexpr auto lightnessThreshold = 0.6f;
+        return ColorFix::GetLightness(til::color{ color }) >= lightnessThreshold ? Colors::Black() : Colors::White();
+    }
+
     bool _workspaceNodeEquivalent(const WorkspaceNode& lhs, const WorkspaceNode& rhs)
     {
         return lhs.Name == rhs.Name &&
@@ -289,40 +379,32 @@ namespace winrt::TerminalApp::implementation
         _WindowProperties.PropertyChanged({ get_weak(), &TerminalPage::_windowPropertyChanged });
     }
 
-    WUX::Controls::MenuFlyoutSubItem TerminalPage::_CreateWorkspaceFlyout()
+    WUX::Controls::MenuFlyout TerminalPage::_CreateWorkspaceFlyout()
     {
-        auto workspaceFlyout = WUX::Controls::MenuFlyoutSubItem{};
-        workspaceFlyout.Text(RS_(L"WorkspaceMenuItem"));
-
-        WUX::Controls::SymbolIcon workspaceIcon{};
-        workspaceIcon.Symbol(WUX::Controls::Symbol::OpenFile);
-        workspaceFlyout.Icon(workspaceIcon);
+        auto workspaceFlyout = WUX::Controls::MenuFlyout{};
 
         auto manager = Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::Load();
-        auto state = Microsoft::Terminal::Settings::Model::implementation::WorkspaceStateManager::Load();
+        auto windowState = Microsoft::Terminal::Settings::Model::implementation::WorkspaceStateManager::Load();
+        const auto appState = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
 
         const auto& workspaces = manager.Workspaces();
-
-        if (_currentWorkspaceId.empty())
-        {
-            auto defaultWorkspaceItem = WUX::Controls::MenuFlyoutItem{};
-            defaultWorkspaceItem.Text(RS_(L"WorkspaceDefaultUnsaved"));
-            defaultWorkspaceItem.IsEnabled(false);
-            workspaceFlyout.Items().Append(defaultWorkspaceItem);
-        }
 
         for (const auto& workspace : workspaces)
         {
             auto workspaceItem = WUX::Controls::ToggleMenuFlyoutItem{};
-            const auto isOpen = std::find_if(state.Windows().begin(), state.Windows().end(), [&](const auto& window) {
-                return window.WorkspaceId == workspace.Id;
-            }) != state.Windows().end();
+            const auto isOpen = std::find_if(windowState.Windows().begin(), windowState.Windows().end(), [&](const auto& window) {
+                                    return window.WorkspaceId == workspace.Id;
+                                }) != windowState.Windows().end();
             workspaceItem.Text(winrt::hstring{ _WorkspaceDisplayName(workspace) });
+            if (const auto color = _parseWorkspaceColor(workspace.BackgroundColor))
+            {
+                workspaceItem.Foreground(SolidColorBrush{ *color });
+            }
             workspaceItem.IsChecked(isOpen);
             workspaceItem.Click([workspaceId{ winrt::hstring{ workspace.Id } }, weakThis{ get_weak() }](auto&&, auto&&) {
                 if (auto page{ weakThis.get() })
                 {
-                    page->_OpenWorkspace(workspaceId, Microsoft::Terminal::Settings::Model::implementation::WorkspaceStateManager::Load().OpenInNewWindow());
+                    page->_OpenWorkspace(workspaceId, Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance().OpenInNewWindow());
                 }
             });
             workspaceFlyout.Items().Append(workspaceItem);
@@ -345,21 +427,65 @@ namespace winrt::TerminalApp::implementation
 
         workspaceFlyout.Items().Append(WUX::Controls::MenuFlyoutSeparator{});
 
+        auto newWorkspaceItem = WUX::Controls::MenuFlyoutItem{};
+        newWorkspaceItem.Text(RS_(L"WorkspaceNewMenuItem"));
+        {
+            WUX::Controls::SymbolIcon icon{};
+            icon.Symbol(WUX::Controls::Symbol::Add);
+            newWorkspaceItem.Icon(icon);
+        }
+        newWorkspaceItem.Click([weakThis{ get_weak() }](auto&&, auto&&) {
+            if (auto page{ weakThis.get() })
+            {
+                page->_OpenNewWindow(NewTerminalArgs{});
+            }
+        });
+        workspaceFlyout.Items().Append(newWorkspaceItem);
+
+        auto lockWorkspaceItem = WUX::Controls::ToggleMenuFlyoutItem{};
+        lockWorkspaceItem.Text(_CurrentWorkspaceLocked() ? RS_(L"WorkspaceLockedStateLocked") : RS_(L"WorkspaceLockedStateUnlocked"));
+        lockWorkspaceItem.IsChecked(_CurrentWorkspaceLocked());
+        lockWorkspaceItem.IsEnabled(!_currentWorkspaceId.empty());
+        {
+            WUX::Controls::FontIcon icon{};
+            icon.FontFamily(Media::FontFamily{ L"Segoe Fluent Icons, Segoe MDL2 Assets" });
+            icon.Glyph(_CurrentWorkspaceLocked() ? L"\xE72E" : L"\xE785");
+            lockWorkspaceItem.Icon(icon);
+        }
+        lockWorkspaceItem.Click([weakThis{ get_weak() }](auto&& sender, auto&&) {
+            if (auto page{ weakThis.get() })
+            {
+                if (const auto toggle = sender.try_as<WUX::Controls::ToggleMenuFlyoutItem>())
+                {
+                    const auto locked = !page->_CurrentWorkspaceLocked();
+                    toggle.IsChecked(locked);
+                    toggle.Text(locked ? RS_(L"WorkspaceLockedStateLocked") : RS_(L"WorkspaceLockedStateUnlocked"));
+                    if (const auto icon = toggle.Icon().try_as<WUX::Controls::FontIcon>())
+                    {
+                        icon.Glyph(locked ? L"\xE72E" : L"\xE785");
+                    }
+                    page->_SetCurrentWorkspaceLocked(locked);
+                }
+            }
+        });
+        workspaceFlyout.Items().Append(lockWorkspaceItem);
+
         auto openInNewWindowItem = WUX::Controls::ToggleMenuFlyoutItem{};
         openInNewWindowItem.Text(RS_(L"WorkspaceOpenInNewWindow"));
-        openInNewWindowItem.IsChecked(state.OpenInNewWindow());
+        openInNewWindowItem.IsChecked(appState.OpenInNewWindow());
         openInNewWindowItem.Click([](auto&& sender, auto&&) {
             if (const auto toggle = sender.try_as<WUX::Controls::ToggleMenuFlyoutItem>())
             {
-                auto current = Microsoft::Terminal::Settings::Model::implementation::WorkspaceStateManager::Load();
+                const auto current = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
                 current.OpenInNewWindow(toggle.IsChecked());
-                current.Save();
+                current.Flush();
             }
         });
         workspaceFlyout.Items().Append(openInNewWindowItem);
 
         auto manageWorkspacesItem = WUX::Controls::MenuFlyoutItem{};
         manageWorkspacesItem.Text(RS_(L"WorkspaceManageMenuItem"));
+        manageWorkspacesItem.IsEnabled(!_CurrentWorkspaceLocked());
 
         WUX::Controls::SymbolIcon manageWorkspacesIcon{};
         manageWorkspacesIcon.Symbol(WUX::Controls::Symbol::Setting);
@@ -385,7 +511,7 @@ namespace winrt::TerminalApp::implementation
             saveWorkspaceItem.Click([weakThis{ get_weak() }](auto&&, auto&&) {
                 if (auto page{ weakThis.get() })
                 {
-                    if (page->CurrentWorkspaceId().empty())
+                    if (page->_ResolvedWorkspaceSaveTargetId().empty())
                     {
                         page->_OpenWorkspaceSaver();
                     }
@@ -405,12 +531,12 @@ namespace winrt::TerminalApp::implementation
     {
         const auto strong = get_strong();
 
-        auto state = Microsoft::Terminal::Settings::Model::implementation::WorkspaceStateManager::Load();
-        state.LastOpenedWorkspaceId(std::wstring{ workspaceId.c_str() });
+        const auto appState = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
+        appState.LastOpenedWorkspaceId(workspaceId);
 
         if (const auto existingWindowId = _FindOpenWorkspaceWindowId(workspaceId.c_str()))
         {
-            state.Save();
+            appState.Flush();
             SummonWindowRequested.raise(*this, winrt::box_value(*existingWindowId));
             co_return;
         }
@@ -419,14 +545,14 @@ namespace winrt::TerminalApp::implementation
         const auto workspace = manager.FindById(workspaceId.c_str());
         if (workspace == nullptr)
         {
-            state.Save();
+            appState.Flush();
             co_return;
         }
 
         auto startupActions = manager.BuildStartupActions(*workspace, _settings);
         if (startupActions.empty())
         {
-            state.Save();
+            appState.Flush();
             co_return;
         }
 
@@ -439,13 +565,15 @@ namespace winrt::TerminalApp::implementation
 
         if (openInNewWindow)
         {
-            state.EnqueuePendingWorkspaceLaunch(std::wstring{ workspaceId.c_str() });
-            state.Save();
+            appState.RemovePendingWorkspaceLaunch(workspaceId);
+            appState.EnqueuePendingWorkspaceLaunch(workspaceId);
+            appState.Flush();
             _MoveContent(std::move(startupActions), L"new", 0);
             co_return;
         }
 
-        state.Save();
+        CurrentWorkspaceId(workspaceId);
+        appState.Flush();
 
         auto suspend = !tabsToReplace.empty();
         for (size_t i = 0; i < startupActions.size(); ++i)
@@ -498,9 +626,22 @@ namespace winrt::TerminalApp::implementation
 
     safe_void_coroutine TerminalPage::_OpenWorkspaceManager()
     {
-        _workspaceEditorEditMode = false;
+        if (_CurrentWorkspaceLocked())
+        {
+            co_return;
+        }
+
+        _workspaceEditorEditMode = true;
         _workspaceDefinitionsDirty = false;
         _LoadWorkspaceEditorState(false);
+        if (_workspaceEditorManager.Workspaces().empty())
+        {
+            _workspaceManagerNavSelection = 0;
+        }
+        else
+        {
+            _workspaceManagerNavSelection = 1000 + gsl::narrow_cast<int32_t>(_workspaceEditorSelectedIndex * 100);
+        }
         if (!_workspaceManagerTab)
         {
             _workspaceManagerContent = winrt::make_self<WorkspaceManagerPaneContent>(_BuildWorkspaceManagerContent(), _settings);
@@ -601,7 +742,7 @@ namespace winrt::TerminalApp::implementation
     {
         if (_currentWorkspaceId.empty())
         {
-            return {};
+            return { RS_(L"WorkspaceUnsavedName").c_str() };
         }
 
         auto manager = Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::Load();
@@ -611,6 +752,98 @@ namespace winrt::TerminalApp::implementation
         }
 
         return std::wstring{ _currentWorkspaceId.c_str() };
+    }
+
+    std::wstring TerminalPage::_ResolvedWorkspaceSaveTargetId() const
+    {
+        if (!_currentWorkspaceId.empty())
+        {
+            return std::wstring{ _currentWorkspaceId.c_str() };
+        }
+
+        if (_lastWorkspaceId.empty())
+        {
+            return {};
+        }
+
+        const auto manager = Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::Load();
+        return manager.FindById(_lastWorkspaceId) ? _lastWorkspaceId : std::wstring{};
+    }
+
+    std::wstring TerminalPage::_ResolvedWorkspaceSaveTargetName() const
+    {
+        if (const auto targetId = _ResolvedWorkspaceSaveTargetId(); !targetId.empty())
+        {
+            const auto manager = Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::Load();
+            if (const auto workspace = manager.FindById(targetId))
+            {
+                return _WorkspaceDisplayName(*workspace);
+            }
+        }
+
+        return {};
+    }
+
+    std::optional<winrt::Windows::UI::Color> TerminalPage::_CurrentWorkspaceColor() const
+    {
+        if (_currentWorkspaceId.empty())
+        {
+            return std::nullopt;
+        }
+
+        auto manager = Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::Load();
+        if (const auto workspace = manager.FindById(_currentWorkspaceId.c_str()))
+        {
+            return _parseWorkspaceColor(workspace->BackgroundColor);
+        }
+
+        return std::nullopt;
+    }
+
+    bool TerminalPage::_CurrentWorkspaceLocked() const
+    {
+        if (_currentWorkspaceId.empty())
+        {
+            return false;
+        }
+
+        const auto manager = Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::Load();
+        if (const auto workspace = manager.FindById(_currentWorkspaceId.c_str()))
+        {
+            return workspace->Locked;
+        }
+
+        return false;
+    }
+
+    void TerminalPage::_SetCurrentWorkspaceLocked(const bool locked)
+    {
+        if (_currentWorkspaceId.empty())
+        {
+            return;
+        }
+
+        auto manager = Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::Load();
+        auto& workspaces = manager.Workspaces();
+        const auto it = std::find_if(workspaces.begin(), workspaces.end(), [&](const auto& workspace) {
+            return workspace.Id == _currentWorkspaceId.c_str();
+        });
+        if (it == workspaces.end())
+        {
+            return;
+        }
+
+        it->Locked = locked;
+        if (!manager.Save())
+        {
+            ActionSaveFailed(RS_(L"WorkspaceSaveFailedWorkspacesFile"));
+            return;
+        }
+
+        _LoadWorkspaceEditorState();
+        _UpdateWorkspaceTabRow();
+        _UpdateWorkspaceInteractionState();
+        _updateAllTabCloseButtons();
     }
 
     std::optional<uint64_t> TerminalPage::_FindOpenWorkspaceWindowId(const std::wstring_view workspaceId) const
@@ -633,6 +866,30 @@ namespace winrt::TerminalApp::implementation
         return found->WindowId;
     }
 
+    Settings::Model::TabCloseButtonVisibility TerminalPage::_CurrentTabCloseButtonVisibility() const
+    {
+        if (_CurrentWorkspaceLocked())
+        {
+            return Settings::Model::TabCloseButtonVisibility::Never;
+        }
+        return Settings::Model::TabCloseButtonVisibility::Always;
+    }
+
+    void TerminalPage::_UpdateWorkspaceInteractionState()
+    {
+        const auto locked = _CurrentWorkspaceLocked();
+        const auto canDragDrop = CanDragDrop() && !locked;
+        if (_tabView)
+        {
+            _tabView.CanReorderTabs(canDragDrop);
+            _tabView.CanDragTabs(canDragDrop);
+        }
+        if (_newTabButton)
+        {
+            _newTabButton.Visibility(locked ? WUX::Visibility::Collapsed : WUX::Visibility::Visible);
+        }
+    }
+
     void TerminalPage::_UpdateWorkspaceTabRow()
     {
         if (!_tabRow)
@@ -641,8 +898,119 @@ namespace winrt::TerminalApp::implementation
         }
 
         const auto name = _CurrentWorkspaceTabRowName();
+        const auto dirty = !_CurrentWorkspaceLocked() && _CurrentWorkspaceNeedsSave();
         _tabRow.WorkspaceName(winrt::hstring{ name });
         _tabRow.WorkspaceNameVisibility(name.empty() ? WUX::Visibility::Collapsed : WUX::Visibility::Visible);
+        _tabRow.WorkspaceDirtyVisibility(dirty ? WUX::Visibility::Visible : WUX::Visibility::Collapsed);
+        _tabRow.WorkspaceSaveVisibility(dirty ? WUX::Visibility::Visible : WUX::Visibility::Collapsed);
+        _tabRow.WorkspaceLockGlyph(_CurrentWorkspaceLocked() ? L"\xE72E" : L"\xE785");
+        _tabRow.WorkspaceLockVisibility(_currentWorkspaceId.empty() ? WUX::Visibility::Collapsed : WUX::Visibility::Visible);
+
+        if (const auto color = _CurrentWorkspaceColor())
+        {
+            _tabRow.WorkspaceBackgroundBrush(SolidColorBrush{ *color });
+            _tabRow.WorkspaceForegroundBrush(SolidColorBrush{ _workspaceForegroundColor(*color) });
+        }
+        else if (const auto resources = Application::Current().Resources())
+        {
+            _tabRow.WorkspaceBackgroundBrush(resources.Lookup(winrt::box_value(L"TabViewButtonBackground")).try_as<Media::Brush>());
+            _tabRow.WorkspaceForegroundBrush(resources.Lookup(winrt::box_value(L"TabViewButtonForeground")).try_as<Media::Brush>());
+        }
+    }
+
+    void TerminalPage::_ShowWorkspaceNameMenu()
+    {
+        if (!_tabRow)
+        {
+            return;
+        }
+
+        auto tabRowImpl = winrt::get_self<implementation::TabRowControl>(_tabRow);
+        const auto button = tabRowImpl->WorkspaceNameButton();
+        const auto flyout = _CreateWorkspaceFlyout();
+        flyout.ShowAt(button);
+    }
+
+    void TerminalPage::_BeginWorkspaceNameEdit()
+    {
+        if (!_tabRow || _CurrentWorkspaceLocked())
+        {
+            return;
+        }
+
+        auto tabRowImpl = winrt::get_self<implementation::TabRowControl>(_tabRow);
+        const auto button = tabRowImpl->WorkspaceNameButton();
+        const auto editor = tabRowImpl->WorkspaceNameEditor();
+        button.Visibility(WUX::Visibility::Collapsed);
+        editor.Text(_currentWorkspaceId.empty() ? RS_(L"WorkspaceUnsavedName") : winrt::hstring{ _CurrentWorkspaceDisplayName() });
+        editor.Visibility(WUX::Visibility::Visible);
+        editor.Focus(FocusState::Programmatic);
+        editor.SelectAll();
+        _workspaceNamePressedEnter = false;
+    }
+
+    void TerminalPage::_CommitWorkspaceNameEdit()
+    {
+        if (!_tabRow)
+        {
+            return;
+        }
+
+        auto tabRowImpl = winrt::get_self<implementation::TabRowControl>(_tabRow);
+        const auto button = tabRowImpl->WorkspaceNameButton();
+        const auto editor = tabRowImpl->WorkspaceNameEditor();
+        const auto newName = editor.Text();
+        editor.Visibility(WUX::Visibility::Collapsed);
+        button.Visibility(WUX::Visibility::Visible);
+
+        if (newName.empty())
+        {
+            return;
+        }
+
+        if (_currentWorkspaceId.empty())
+        {
+            _SaveCurrentWindowAsWorkspace(newName);
+            return;
+        }
+
+        auto manager = Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::Load();
+        auto& workspaces = manager.Workspaces();
+        const auto it = std::find_if(workspaces.begin(), workspaces.end(), [&](const auto& workspace) {
+            return workspace.Id == _currentWorkspaceId.c_str();
+        });
+        if (it == workspaces.end())
+        {
+            return;
+        }
+
+        it->Name = newName.c_str();
+        if (!manager.Save())
+        {
+            ActionSaveFailed(RS_(L"WorkspaceRenameFailed"));
+            return;
+        }
+
+        _LoadWorkspaceEditorState();
+        _CreateNewTabFlyout();
+        _UpdateWorkspaceTabRow();
+        if (_workspaceManagerContent)
+        {
+            _RebuildWorkspaceManagerTab();
+        }
+    }
+
+    void TerminalPage::_CancelWorkspaceNameEdit()
+    {
+        if (!_tabRow)
+        {
+            return;
+        }
+
+        auto tabRowImpl = winrt::get_self<implementation::TabRowControl>(_tabRow);
+        tabRowImpl->WorkspaceNameEditor().Visibility(WUX::Visibility::Collapsed);
+        tabRowImpl->WorkspaceNameButton().Visibility(WUX::Visibility::Visible);
+        _workspaceNamePressedEnter = false;
     }
 
     bool TerminalPage::_TryCaptureCurrentWorkspace(Microsoft::Terminal::Settings::Model::implementation::Workspace& workspace) const
@@ -783,6 +1151,31 @@ namespace winrt::TerminalApp::implementation
 
         workspace->Nodes.erase(workspace->Nodes.begin() + gsl::narrow_cast<ptrdiff_t>(nodeIndex));
         _workspaceDefinitionsDirty = true;
+
+        if (_workspaceManagerNavSelection >= 1000)
+        {
+            const auto workspaceIndex = gsl::narrow_cast<size_t>((_workspaceManagerNavSelection - 1000) / 100);
+            const auto workspaceSubSelection = (_workspaceManagerNavSelection - 1000) % 100;
+            if (workspaceIndex == _workspaceEditorSelectedIndex && workspaceSubSelection >= 10)
+            {
+                const auto selectedNodeIndex = gsl::narrow_cast<size_t>(workspaceSubSelection - 10);
+                if (selectedNodeIndex == nodeIndex)
+                {
+                    if (nodeIndex > 0)
+                    {
+                        _workspaceManagerNavSelection = 1000 + gsl::narrow_cast<int32_t>(_workspaceEditorSelectedIndex * 100) + 10 + gsl::narrow_cast<int32_t>(nodeIndex - 1);
+                    }
+                    else
+                    {
+                        _workspaceManagerNavSelection = 1000 + gsl::narrow_cast<int32_t>(_workspaceEditorSelectedIndex * 100);
+                    }
+                }
+                else if (selectedNodeIndex > nodeIndex)
+                {
+                    _workspaceManagerNavSelection -= 1;
+                }
+            }
+        }
     }
 
     void TerminalPage::_RebuildWorkspaceManagerTab()
@@ -798,383 +1191,666 @@ namespace winrt::TerminalApp::implementation
         const auto marginBottom = [](const double bottom) {
             return WUX::ThicknessHelper::FromLengths(0, 0, 0, bottom);
         };
-        auto outerGrid = Grid{};
-        outerGrid.Margin(WUX::ThicknessHelper::FromLengths(0, 4, 0, 0));
-
-        auto leftColumn = ColumnDefinition{};
-        leftColumn.Width(GridLengthHelper::FromValueAndType(300, GridUnitType::Pixel));
-        outerGrid.ColumnDefinitions().Append(leftColumn);
-
-        auto rightColumn = ColumnDefinition{};
-        rightColumn.Width(GridLengthHelper::FromValueAndType(1.0, GridUnitType::Star));
-        outerGrid.ColumnDefinitions().Append(rightColumn);
-
-        auto leftPanel = StackPanel{};
-        leftPanel.Margin(WUX::ThicknessHelper::FromLengths(0, 0, 16, 0));
-        Controls::Grid::SetColumn(leftPanel, 0);
-
-        auto workspaceLabel = TextBlock{};
-        workspaceLabel.Text(RS_(L"WorkspaceEditor_WorkspaceLabel"));
-        workspaceLabel.FontWeight(Windows::UI::Text::FontWeights::SemiBold());
-        workspaceLabel.Margin(marginBottom(8));
-        leftPanel.Children().Append(workspaceLabel);
-
-        auto currentWorkspaceStatus = TextBlock{};
-        currentWorkspaceStatus.Text(RS_fmt(L"WorkspaceEditor_CurrentStatus", _CurrentWorkspaceDisplayName()));
-        currentWorkspaceStatus.TextWrapping(TextWrapping::Wrap);
-        currentWorkspaceStatus.Margin(marginBottom(_currentWorkspaceId.empty() ? 4 : 12));
-        leftPanel.Children().Append(currentWorkspaceStatus);
-
-        if (_currentWorkspaceId.empty())
-        {
-            auto unsavedWorkspaceHint = TextBlock{};
-            unsavedWorkspaceHint.Text(RS_(L"WorkspaceEditor_UnsavedHint"));
-            unsavedWorkspaceHint.TextWrapping(TextWrapping::Wrap);
-            unsavedWorkspaceHint.Margin(marginBottom(12));
-            leftPanel.Children().Append(unsavedWorkspaceHint);
-        }
-
-        auto hint = TextBlock{};
-        hint.Text(_workspaceEditorEditMode ? RS_(L"WorkspaceEditor_EditHint") :
-                                             RS_(L"WorkspaceEditor_BrowseHint"));
-        hint.TextWrapping(TextWrapping::Wrap);
-        hint.Margin(marginBottom(12));
-        leftPanel.Children().Append(hint);
-
-        auto commandBar = StackPanel{};
-        commandBar.Orientation(Orientation::Horizontal);
-        commandBar.Margin(marginBottom(12));
-
-        auto editButton = Button{};
-        editButton.Content(box_value(_workspaceEditorEditMode ? RS_(L"WorkspaceEditor_DoneEditingButton") : RS_(L"WorkspaceEditor_EditButton")));
-        editButton.Margin(WUX::ThicknessHelper::FromLengths(0, 0, 8, 0));
-        editButton.Click([weakThis{ get_weak() }](auto&&, auto&&) {
-            if (auto self{ weakThis.get() })
-            {
-                self->_workspaceEditorEditMode = !self->_workspaceEditorEditMode;
-                self->_RebuildWorkspaceManagerTab();
-            }
-        });
-        commandBar.Children().Append(editButton);
-
-        if (_workspaceEditorEditMode)
-        {
-            auto newWorkspaceButton = Button{};
-            newWorkspaceButton.Content(box_value(RS_(L"WorkspaceEditor_NewWorkspaceButton")));
-            newWorkspaceButton.Margin(WUX::ThicknessHelper::FromLengths(0, 0, 8, 0));
-            newWorkspaceButton.Click([weakThis{ get_weak() }](auto&&, auto&&) {
-                if (auto self{ weakThis.get() })
-                {
-                    self->_AddWorkspaceDefinition();
-                    self->_RebuildWorkspaceManagerTab();
-                }
-            });
-            commandBar.Children().Append(newWorkspaceButton);
-
-            auto deleteWorkspaceButton = Button{};
-            deleteWorkspaceButton.Content(box_value(RS_(L"WorkspaceEditor_DeleteWorkspaceButton")));
-            deleteWorkspaceButton.IsEnabled(_SelectedWorkspaceForEditing() != nullptr);
-            deleteWorkspaceButton.Click([weakThis{ get_weak() }](auto&&, auto&&) {
-                if (auto self{ weakThis.get() })
-                {
-                    self->_DeleteSelectedWorkspaceDefinition();
-                    self->_RebuildWorkspaceManagerTab();
-                }
-            });
-            commandBar.Children().Append(deleteWorkspaceButton);
-        }
-        leftPanel.Children().Append(commandBar);
-
-        auto workspaceList = ListView{};
-        workspaceList.SelectionMode(ListViewSelectionMode::Single);
-        workspaceList.MaxHeight(560);
-        {
-            const auto& workspaces = _workspaceEditorManager.Workspaces();
-            for (const auto& workspace : workspaces)
-            {
-                auto item = ListViewItem{};
-                item.Content(box_value(_WorkspaceDisplayName(workspace)));
-                workspaceList.Items().Append(item);
-            }
-
-            if (!workspaces.empty())
-            {
-                workspaceList.SelectedIndex(gsl::narrow_cast<int32_t>(_workspaceEditorSelectedIndex));
-            }
-        }
-        workspaceList.SelectionChanged([weakThis{ get_weak() }](auto&& sender, auto&&) {
-            if (auto self{ weakThis.get() })
-            {
-                if (const auto list = sender.try_as<ListView>())
-                {
-                    const auto selectedIndex = list.SelectedIndex();
-                    if (selectedIndex >= 0)
-                    {
-                        self->_SetSelectedWorkspaceIndex(gsl::narrow_cast<size_t>(selectedIndex));
-                        self->_RebuildWorkspaceManagerTab();
-                    }
-                }
-            }
-        });
-        leftPanel.Children().Append(workspaceList);
-        outerGrid.Children().Append(leftPanel);
-
-        auto scrollViewer = ScrollViewer{};
-        scrollViewer.VerticalScrollBarVisibility(ScrollBarVisibility::Auto);
-        scrollViewer.MaxHeight(620);
-        Controls::Grid::SetColumn(scrollViewer, 1);
-
-        auto root = StackPanel{};
-        scrollViewer.Content(root);
-
-        auto* workspace = _SelectedWorkspaceForEditing();
-        if (workspace == nullptr)
-        {
-            auto empty = TextBlock{};
-            empty.Text(RS_(L"WorkspaceEditor_NoneSaved"));
-            empty.TextWrapping(TextWrapping::Wrap);
-            root.Children().Append(empty);
-            outerGrid.Children().Append(scrollViewer);
-            return outerGrid;
-        }
-
-        const auto addLabeledTextBox = [&](const wchar_t* labelText, const std::wstring& initialValue, const auto& onChanged, const bool readOnly, const bool multiline = false) {
-            auto label = TextBlock{};
-            label.Text(labelText);
-            label.Margin(marginBottom(4));
-            root.Children().Append(label);
-
-            auto textBox = TextBox{};
-            textBox.Text(initialValue);
-            textBox.IsReadOnly(readOnly);
-            textBox.AcceptsReturn(multiline);
-            textBox.TextWrapping(multiline ? TextWrapping::Wrap : TextWrapping::NoWrap);
-            textBox.Margin(marginBottom(12));
-            if (!readOnly)
-            {
-                textBox.TextChanged(onChanged);
-            }
-            root.Children().Append(textBox);
+        const auto sectionBorder = [&]() {
+            auto border = Border{};
+            border.BorderBrush(SolidColorBrush{ Colors::DarkGray() });
+            border.BorderThickness(WUX::ThicknessHelper::FromLengths(1, 1, 1, 1));
+            border.Padding(WUX::ThicknessHelper::FromLengths(16, 16, 16, 16));
+            border.Margin(marginBottom(16));
+            return border;
         };
 
-        addLabeledTextBox(RS_(L"WorkspaceEditor_WorkspaceName").c_str(), workspace->Name, [weakThis{ get_weak() }](auto&& sender, auto&&) {
-            if (auto self{ weakThis.get() })
-            {
-                if (auto* current = self->_SelectedWorkspaceForEditing())
-                {
-                    current->Name = sender.as<TextBox>().Text().c_str();
-                    self->_workspaceDefinitionsDirty = true;
-                }
-            }
-        }, !_workspaceEditorEditMode);
+        const auto makeSectionTitle = [&](const winrt::hstring& text) {
+            auto title = TextBlock{};
+            title.Text(text);
+            title.FontSize(18);
+            title.FontWeight(FontWeights::SemiBold());
+            title.Margin(marginBottom(8));
+            return title;
+        };
+        const auto workspaceGeneralNavTag = [](const size_t workspaceIndex) {
+            return 1000 + gsl::narrow_cast<int32_t>(workspaceIndex * 100);
+        };
+        const auto workspaceNodeNavTag = [](const size_t workspaceIndex, const size_t nodeIndex) {
+            return 1000 + gsl::narrow_cast<int32_t>(workspaceIndex * 100) + 10 + gsl::narrow_cast<int32_t>(nodeIndex);
+        };
+        const auto workspaceIndexFromNavTag = [](const int32_t navTag) {
+            return gsl::narrow_cast<size_t>((navTag - 1000) / 100);
+        };
+        const auto workspaceSubSelectionFromNavTag = [](const int32_t navTag) {
+            return (navTag - 1000) % 100;
+        };
 
-        addLabeledTextBox(RS_(L"WorkspaceEditor_Description").c_str(), workspace->Description, [weakThis{ get_weak() }](auto&& sender, auto&&) {
-            if (auto self{ weakThis.get() })
-            {
-                if (auto* current = self->_SelectedWorkspaceForEditing())
-                {
-                    current->Description = sender.as<TextBox>().Text().c_str();
-                    self->_workspaceDefinitionsDirty = true;
-                }
-            }
-        }, !_workspaceEditorEditMode, true);
+        auto nav = MUX::Controls::NavigationView{};
+        nav.Background(SolidColorBrush{ Colors::Transparent() });
+        nav.IsBackButtonVisible(MUX::Controls::NavigationViewBackButtonVisible::Collapsed);
+        nav.IsPaneToggleButtonVisible(false);
+        nav.IsSettingsVisible(false);
+        nav.PaneDisplayMode(MUX::Controls::NavigationViewPaneDisplayMode::Left);
+        nav.OpenPaneLength(320);
+        nav.AlwaysShowHeader(false);
 
-        auto nodesHeader = StackPanel{};
-        nodesHeader.Orientation(Orientation::Horizontal);
-        nodesHeader.Margin(marginBottom(8));
-
-        auto nodesLabel = TextBlock{};
-        nodesLabel.Text(RS_(L"WorkspaceEditor_Nodes"));
-        nodesLabel.VerticalAlignment(VerticalAlignment::Center);
-        nodesLabel.Margin(WUX::ThicknessHelper::FromLengths(0, 0, 8, 0));
-        nodesHeader.Children().Append(nodesLabel);
-
-        if (_workspaceEditorEditMode)
+        const auto& workspaces = _workspaceEditorManager.Workspaces();
+        if (_workspaceManagerNavSelection >= 1000)
         {
-            auto addNodeButton = Button{};
-            addNodeButton.Content(box_value(RS_(L"WorkspaceEditor_AddNodeButton")));
-            addNodeButton.Click([weakThis{ get_weak() }](auto&&, auto&&) {
-                if (auto self{ weakThis.get() })
-                {
-                    self->_AddWorkspaceNode();
-                    self->_RebuildWorkspaceManagerTab();
-                }
-            });
-            nodesHeader.Children().Append(addNodeButton);
+            const auto workspaceIndex = workspaceIndexFromNavTag(_workspaceManagerNavSelection);
+            if (workspaces.empty())
+            {
+                _workspaceManagerNavSelection = 0;
+            }
+            else if (workspaceIndex >= workspaces.size())
+            {
+                _workspaceManagerNavSelection = workspaceGeneralNavTag(std::min(_workspaceEditorSelectedIndex, workspaces.size() - 1));
+            }
         }
 
-        root.Children().Append(nodesHeader);
-
-        if (workspace->Nodes.empty())
+        auto behaviorItem = MUX::Controls::NavigationViewItem{};
+        behaviorItem.Content(box_value(RS_(L"WorkspaceEditor_BehaviorTitle")));
+        behaviorItem.Tag(box_value(0));
         {
-            auto emptyNodes = TextBlock{};
-            emptyNodes.Text(RS_(L"WorkspaceEditor_NoNodes"));
-            emptyNodes.Margin(marginBottom(12));
-            root.Children().Append(emptyNodes);
+            WUX::Controls::SymbolIcon icon{};
+            icon.Symbol(WUX::Controls::Symbol::Setting);
+            behaviorItem.Icon(icon);
+        }
+        nav.MenuItems().Append(behaviorItem);
+
+        nav.MenuItems().Append(MUX::Controls::NavigationViewItemHeader{});
+        if (const auto headerItem = nav.MenuItems().GetAt(nav.MenuItems().Size() - 1).try_as<MUX::Controls::NavigationViewItemHeader>())
+        {
+            headerItem.Content(box_value(RS_(L"WorkspaceEditor_WorkspaceLabel")));
         }
 
-        const auto profiles = _settings.ActiveProfiles();
-        for (size_t nodeIndex = 0; nodeIndex < workspace->Nodes.size(); ++nodeIndex)
+        std::vector<MUX::Controls::NavigationViewItem> workspaceGeneralItems;
+        workspaceGeneralItems.reserve(workspaces.size());
+        std::vector<std::vector<MUX::Controls::NavigationViewItem>> workspaceNodeItems;
+        workspaceNodeItems.reserve(workspaces.size());
+        for (uint32_t index = 0; index < workspaces.size(); ++index)
         {
-            const auto& node = workspace->Nodes.at(nodeIndex);
+            const auto& workspace = workspaces[index];
+            auto item = MUX::Controls::NavigationViewItem{};
+            item.Content(box_value(_WorkspaceDisplayName(workspace)));
+            item.SelectsOnInvoked(false);
+            item.IsExpanded(_workspaceManagerNavSelection >= 1000 && workspaceIndexFromNavTag(_workspaceManagerNavSelection) == index);
 
-            auto nodeBorder = Border{};
-            nodeBorder.BorderBrush(SolidColorBrush{ Colors::DarkGray() });
-            nodeBorder.BorderThickness(WUX::ThicknessHelper::FromLengths(1, 1, 1, 1));
-            nodeBorder.Padding(WUX::ThicknessHelper::FromLengths(12, 12, 12, 12));
-            nodeBorder.Margin(marginBottom(12));
+            WUX::Controls::SymbolIcon icon{};
+            icon.Symbol(WUX::Controls::Symbol::OpenFile);
+            item.Icon(icon);
 
-            auto nodeRoot = StackPanel{};
-            nodeBorder.Child(nodeRoot);
-
-            auto nodeHeader = StackPanel{};
-            nodeHeader.Orientation(Orientation::Horizontal);
-            nodeHeader.Margin(marginBottom(8));
-
-            auto nodeTitle = TextBlock{};
-            nodeTitle.Text(node.Name.empty() ? node.Id : node.Name);
-            nodeTitle.VerticalAlignment(VerticalAlignment::Center);
-            nodeTitle.Margin(WUX::ThicknessHelper::FromLengths(0, 0, 8, 0));
-            nodeHeader.Children().Append(nodeTitle);
-
-            if (_workspaceEditorEditMode)
+            auto generalItem = MUX::Controls::NavigationViewItem{};
+            generalItem.Content(box_value(RS_(L"WorkspaceEditor_GeneralNav")));
+            generalItem.Tag(box_value(workspaceGeneralNavTag(index)));
             {
-                auto deleteNodeButton = Button{};
-                deleteNodeButton.Content(box_value(RS_(L"WorkspaceEditor_DeleteNodeButton")));
-                deleteNodeButton.Click([weakThis{ get_weak() }, nodeIndex](auto&&, auto&&) {
-                    if (auto self{ weakThis.get() })
+                WUX::Controls::SymbolIcon childIcon{};
+                childIcon.Symbol(WUX::Controls::Symbol::Bullets);
+                generalItem.Icon(childIcon);
+            }
+            item.MenuItems().Append(generalItem);
+            workspaceGeneralItems.emplace_back(generalItem);
+
+            std::vector<MUX::Controls::NavigationViewItem> nodeItems;
+            nodeItems.reserve(workspace.Nodes.size());
+            for (uint32_t nodeIndex = 0; nodeIndex < workspace.Nodes.size(); ++nodeIndex)
+            {
+                const auto& node = workspace.Nodes[nodeIndex];
+                auto nodeItem = MUX::Controls::NavigationViewItem{};
+                nodeItem.Content(box_value(winrt::hstring{ node.Name.empty() ? node.Id : node.Name }));
+                nodeItem.Tag(box_value(workspaceNodeNavTag(index, nodeIndex)));
+                {
+                    WUX::Controls::SymbolIcon childIcon{};
+                    childIcon.Symbol(WUX::Controls::Symbol::Page);
+                    nodeItem.Icon(childIcon);
+                }
+                item.MenuItems().Append(nodeItem);
+                nodeItems.emplace_back(nodeItem);
+            }
+            workspaceNodeItems.emplace_back(std::move(nodeItems));
+
+            nav.MenuItems().Append(item);
+        }
+
+        auto openYamlItem = MUX::Controls::NavigationViewItem{};
+        openYamlItem.Content(box_value(RS_(L"WorkspaceEditor_OpenYaml")));
+        openYamlItem.Tag(box_value(-1));
+        openYamlItem.SelectsOnInvoked(false);
+        {
+            WUX::Controls::SymbolIcon icon{};
+            icon.Symbol(WUX::Controls::Symbol::Document);
+            openYamlItem.Icon(icon);
+        }
+        nav.FooterMenuItems().Append(openYamlItem);
+
+        if (_workspaceManagerNavSelection == 0)
+        {
+            nav.SelectedItem(behaviorItem);
+        }
+        else if (_workspaceManagerNavSelection >= 1000)
+        {
+            const auto workspaceIndex = workspaceIndexFromNavTag(_workspaceManagerNavSelection);
+            const auto workspaceSubSelection = workspaceSubSelectionFromNavTag(_workspaceManagerNavSelection);
+            if (workspaceIndex < workspaceGeneralItems.size())
+            {
+                if (workspaceSubSelection < 10)
+                {
+                    nav.SelectedItem(workspaceGeneralItems[workspaceIndex]);
+                }
+                else
+                {
+                    const auto nodeIndex = gsl::narrow_cast<size_t>(workspaceSubSelection - 10);
+                    if (workspaceIndex < workspaceNodeItems.size() && nodeIndex < workspaceNodeItems[workspaceIndex].size())
                     {
-                        self->_DeleteWorkspaceNode(nodeIndex);
-                        self->_RebuildWorkspaceManagerTab();
+                        nav.SelectedItem(workspaceNodeItems[workspaceIndex][nodeIndex]);
                     }
-                });
-                nodeHeader.Children().Append(deleteNodeButton);
-            }
-
-            nodeRoot.Children().Append(nodeHeader);
-
-            const auto addNodeTextBox = [&](const wchar_t* labelText, const std::wstring& initialValue, const auto& onChanged, const bool multiline = false) {
-                auto label = TextBlock{};
-                label.Text(labelText);
-                label.Margin(marginBottom(4));
-                nodeRoot.Children().Append(label);
-
-                auto textBox = TextBox{};
-                textBox.Text(initialValue);
-                textBox.IsReadOnly(!_workspaceEditorEditMode);
-                textBox.AcceptsReturn(multiline);
-                textBox.TextWrapping(multiline ? TextWrapping::Wrap : TextWrapping::NoWrap);
-                textBox.Margin(marginBottom(8));
-                if (_workspaceEditorEditMode)
-                {
-                    textBox.TextChanged(onChanged);
-                }
-                nodeRoot.Children().Append(textBox);
-            };
-
-            addNodeTextBox(RS_(L"WorkspaceEditor_NodeName").c_str(), node.Name, [weakThis{ get_weak() }, nodeIndex](auto&& sender, auto&&) {
-                if (auto self{ weakThis.get() })
-                {
-                    if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
+                    else
                     {
-                        current->Nodes.at(nodeIndex).Name = sender.as<TextBox>().Text().c_str();
-                        self->_workspaceDefinitionsDirty = true;
+                        nav.SelectedItem(workspaceGeneralItems[workspaceIndex]);
                     }
                 }
-            });
+            }
+        }
 
-            auto profileLabel = TextBlock{};
-            profileLabel.Text(RS_(L"WorkspaceEditor_Profile"));
-            profileLabel.Margin(marginBottom(4));
-            nodeRoot.Children().Append(profileLabel);
-
-            auto profilePicker = ComboBox{};
-            profilePicker.Margin(marginBottom(8));
-            profilePicker.IsEnabled(_workspaceEditorEditMode);
-
-            int32_t selectedProfileIndex = -1;
-            for (uint32_t profileIndex = 0; profileIndex < profiles.Size(); ++profileIndex)
+        nav.ItemInvoked([weakThis{ get_weak() }](auto&&, const MUX::Controls::NavigationViewItemInvokedEventArgs& args) {
+            if (auto self{ weakThis.get() })
             {
-                const auto profile = profiles.GetAt(profileIndex);
-                auto item = ComboBoxItem{};
-                item.Content(box_value(profile.Name()));
-                item.Tag(box_value(Utils::GuidToString(profile.Guid())));
-                profilePicker.Items().Append(item);
-                if (Utils::GuidToString(profile.Guid()) == node.ProfileGuid)
+                if (const auto item = args.InvokedItemContainer().try_as<MUX::Controls::NavigationViewItem>())
                 {
-                    selectedProfileIndex = gsl::narrow_cast<int32_t>(profileIndex);
-                }
-            }
-
-            if (selectedProfileIndex < 0 && !node.ProfileGuid.empty())
-            {
-                auto item = ComboBoxItem{};
-                item.Content(box_value(node.ProfileGuid));
-                item.Tag(box_value(node.ProfileGuid));
-                profilePicker.Items().Append(item);
-                selectedProfileIndex = gsl::narrow_cast<int32_t>(profilePicker.Items().Size() - 1);
-            }
-
-            profilePicker.SelectedIndex(selectedProfileIndex);
-            if (_workspaceEditorEditMode)
-            {
-                profilePicker.SelectionChanged([weakThis{ get_weak() }, nodeIndex](auto&& sender, auto&&) {
-                    if (auto self{ weakThis.get() })
+                    if (const auto tag = item.Tag())
                     {
-                        if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
+                        const auto value = winrt::unbox_value<int32_t>(tag);
+                        if (value == -1)
                         {
-                            if (const auto picker = sender.try_as<ComboBox>())
+                            const auto filePath = Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::DefaultPath().wstring();
+                            const auto result = reinterpret_cast<uintptr_t>(ShellExecuteW(nullptr, L"open", filePath.c_str(), nullptr, nullptr, SW_SHOW));
+                            if (result <= 32)
                             {
-                                if (const auto item = picker.SelectedItem().try_as<ComboBoxItem>())
-                                {
-                                    current->Nodes.at(nodeIndex).ProfileGuid = winrt::unbox_value<winrt::hstring>(item.Tag()).c_str();
-                                    self->_workspaceDefinitionsDirty = true;
-                                }
+                                ShellExecuteW(nullptr, L"open", L"notepad", filePath.c_str(), nullptr, SW_SHOW);
                             }
                         }
                     }
-                });
+                    else if (item.MenuItems().Size() > 0)
+                    {
+                        item.IsExpanded(!item.IsExpanded());
+                    }
+                }
             }
-            nodeRoot.Children().Append(profilePicker);
+        });
 
-            addNodeTextBox(RS_(L"WorkspaceEditor_ConnectionReference").c_str(), node.ConnectionRef, [weakThis{ get_weak() }, nodeIndex](auto&& sender, auto&&) {
-                if (auto self{ weakThis.get() })
+        nav.SelectionChanged([weakThis{ get_weak() }](auto&&, auto&& args) {
+            if (auto self{ weakThis.get() })
+            {
+                if (args.IsSettingsSelected())
                 {
-                    if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
+                    return;
+                }
+
+                if (const auto item = args.SelectedItemContainer().try_as<MUX::Controls::NavigationViewItem>())
+                {
+                    const auto value = winrt::unbox_value<int32_t>(item.Tag());
+                    self->_workspaceManagerNavSelection = value;
+                    if (value >= 1000)
                     {
-                        current->Nodes.at(nodeIndex).ConnectionRef = sender.as<TextBox>().Text().c_str();
-                        self->_workspaceDefinitionsDirty = true;
+                        self->_SetSelectedWorkspaceIndex(gsl::narrow_cast<size_t>((value - 1000) / 100));
                     }
+                    self->_RebuildWorkspaceManagerTab();
+                }
+            }
+        });
+
+        auto contentGrid = Grid{};
+        contentGrid.RowDefinitions().Append(RowDefinition{});
+        auto footerRow = RowDefinition{};
+        footerRow.Height(GridLengthHelper::Auto());
+        contentGrid.RowDefinitions().Append(footerRow);
+
+        auto scrollViewer = ScrollViewer{};
+        scrollViewer.VerticalScrollBarVisibility(ScrollBarVisibility::Auto);
+        scrollViewer.HorizontalScrollBarVisibility(ScrollBarVisibility::Disabled);
+        scrollViewer.HorizontalScrollMode(ScrollMode::Disabled);
+        scrollViewer.HorizontalAlignment(HorizontalAlignment::Stretch);
+        scrollViewer.VerticalAlignment(VerticalAlignment::Stretch);
+
+        auto root = StackPanel{};
+        root.HorizontalAlignment(HorizontalAlignment::Stretch);
+        root.Margin(WUX::ThicknessHelper::FromLengths(16, 0, 16, 16));
+        scrollViewer.Content(root);
+        contentGrid.Children().Append(scrollViewer);
+
+        if (_workspaceManagerNavSelection == 0)
+        {
+            root.Children().Append(makeSectionTitle(RS_(L"WorkspaceEditor_BehaviorTitle")));
+
+            auto behaviorBorder = sectionBorder();
+            auto behaviorPanel = StackPanel{};
+            behaviorBorder.Child(behaviorPanel);
+
+            auto launchToggle = CheckBox{};
+            launchToggle.Content(box_value(RS_(L"WorkspaceOpenInNewWindow")));
+            launchToggle.IsChecked(Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance().OpenInNewWindow());
+            launchToggle.Margin(marginBottom(8));
+            launchToggle.Click([](auto&& sender, auto&&) {
+                if (const auto toggle = sender.try_as<CheckBox>())
+                {
+                    const auto state = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
+                    state.OpenInNewWindow(toggle.IsChecked().GetBoolean());
+                    state.Flush();
                 }
             });
+            behaviorPanel.Children().Append(launchToggle);
 
-            addNodeTextBox(RS_(L"WorkspaceEditor_StartupDirectory").c_str(), node.StartupDirectory, [weakThis{ get_weak() }, nodeIndex](auto&& sender, auto&&) {
-                if (auto self{ weakThis.get() })
-                {
-                    if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
+            root.Children().Append(behaviorBorder);
+        }
+        else
+        {
+            auto* workspace = _SelectedWorkspaceForEditing();
+            const auto selectedWorkspaceSubSelection = workspaceSubSelectionFromNavTag(_workspaceManagerNavSelection);
+            if (workspace == nullptr)
+            {
+                auto empty = TextBlock{};
+                empty.Text(RS_(L"WorkspaceEditor_NoneSaved"));
+                empty.TextWrapping(TextWrapping::Wrap);
+                root.Children().Append(empty);
+            }
+            else
+            {
+                root.Children().Append(makeSectionTitle(winrt::hstring{ _WorkspaceDisplayName(*workspace) }));
+
+                const auto addLabeledTextBox = [&](StackPanel& panel, const wchar_t* labelText, const std::wstring& initialValue, const auto& onChanged, const bool readOnly, const bool multiline = false) {
+                    auto label = TextBlock{};
+                    label.Text(labelText);
+                    label.Margin(marginBottom(4));
+                    panel.Children().Append(label);
+
+                    auto textBox = TextBox{};
+                    textBox.Text(initialValue);
+                    textBox.IsReadOnly(readOnly);
+                    textBox.AcceptsReturn(multiline);
+                    textBox.TextWrapping(multiline ? TextWrapping::Wrap : TextWrapping::NoWrap);
+                    textBox.Margin(marginBottom(12));
+                    if (!readOnly)
                     {
-                        current->Nodes.at(nodeIndex).StartupDirectory = sender.as<TextBox>().Text().c_str();
-                        self->_workspaceDefinitionsDirty = true;
+                        textBox.TextChanged(onChanged);
+                    }
+                    panel.Children().Append(textBox);
+                };
+
+                if (selectedWorkspaceSubSelection < 10)
+                {
+                    auto generalBorder = sectionBorder();
+                    auto generalPanel = StackPanel{};
+                    generalBorder.Child(generalPanel);
+                    generalPanel.Children().Append(makeSectionTitle(RS_(L"WorkspaceEditor_GeneralSection")));
+                    addLabeledTextBox(generalPanel, RS_(L"WorkspaceEditor_WorkspaceName").c_str(), workspace->Name, [weakThis{ get_weak() }](auto&& sender, auto&&) {
+                        if (auto self{ weakThis.get() })
+                        {
+                            if (auto* current = self->_SelectedWorkspaceForEditing())
+                            {
+                                current->Name = sender.as<TextBox>().Text().c_str();
+                                self->_workspaceDefinitionsDirty = true;
+                            }
+                        }
+                    }, !_workspaceEditorEditMode);
+                    addLabeledTextBox(generalPanel, RS_(L"WorkspaceEditor_Description").c_str(), workspace->Description, [weakThis{ get_weak() }](auto&& sender, auto&&) {
+                        if (auto self{ weakThis.get() })
+                        {
+                            if (auto* current = self->_SelectedWorkspaceForEditing())
+                            {
+                                current->Description = sender.as<TextBox>().Text().c_str();
+                                self->_workspaceDefinitionsDirty = true;
+                            }
+                        }
+                    }, !_workspaceEditorEditMode, true);
+
+                    auto colorLabel = TextBlock{};
+                    colorLabel.Text(RS_(L"WorkspaceEditor_BackgroundColor"));
+                    colorLabel.Margin(marginBottom(4));
+                    generalPanel.Children().Append(colorLabel);
+
+                    auto colorPanel = StackPanel{};
+                    colorPanel.Margin(marginBottom(12));
+                    colorPanel.Spacing(8);
+
+                    auto colorPreviewRow = StackPanel{};
+                    colorPreviewRow.Orientation(Orientation::Horizontal);
+                    colorPreviewRow.Spacing(8);
+
+                    auto colorPreview = Border{};
+                    colorPreview.Width(32);
+                    colorPreview.Height(24);
+                    colorPreview.CornerRadius(CornerRadiusHelper::FromUniformRadius(4));
+                    colorPreview.BorderBrush(SolidColorBrush{ Colors::DarkGray() });
+                    colorPreview.BorderThickness(WUX::ThicknessHelper::FromLengths(1, 1, 1, 1));
+
+                    auto colorValue = TextBlock{};
+                    colorValue.VerticalAlignment(VerticalAlignment::Center);
+
+                    const auto applyWorkspaceColorPreview = [colorPreview, colorValue](const std::wstring& colorValueText) {
+                        if (const auto parsedColor = _parseWorkspaceColor(colorValueText))
+                        {
+                            colorPreview.Background(SolidColorBrush{ *parsedColor });
+                            colorValue.Text(winrt::hstring{ _normalizeWorkspaceColor(colorValueText) });
+                        }
+                        else
+                        {
+                            colorPreview.Background(SolidColorBrush{ Colors::Transparent() });
+                            colorValue.Text(RS_(L"WorkspaceEditor_BackgroundColorAuto"));
+                        }
+                    };
+
+                    applyWorkspaceColorPreview(workspace->BackgroundColor);
+                    colorPreviewRow.Children().Append(colorPreview);
+                    colorPreviewRow.Children().Append(colorValue);
+                    colorPanel.Children().Append(colorPreviewRow);
+
+                    if (_workspaceEditorEditMode)
+                    {
+                        auto colorButtons = StackPanel{};
+                        colorButtons.Orientation(Orientation::Horizontal);
+                        colorButtons.Spacing(8);
+
+                        auto chooseColorButton = Button{};
+                        chooseColorButton.Content(box_value(RS_(L"WorkspaceEditor_ChooseColor")));
+
+                        auto clearColorButton = Button{};
+                        clearColorButton.Content(box_value(RS_(L"WorkspaceEditor_ClearColor")));
+                        clearColorButton.IsEnabled(!workspace->BackgroundColor.empty());
+
+                        auto backgroundColorFlyout = winrt::make<ColorPickupFlyout>();
+                        backgroundColorFlyout.ColorSelected([weakThis{ get_weak() }, applyWorkspaceColorPreview, clearColorButton](const winrt::Windows::UI::Color& color) {
+                            if (auto self{ weakThis.get() })
+                            {
+                                if (auto* current = self->_SelectedWorkspaceForEditing())
+                                {
+                                    current->BackgroundColor = _workspaceColorToString(color);
+                                    self->_workspaceDefinitionsDirty = true;
+                                    applyWorkspaceColorPreview(current->BackgroundColor);
+                                    clearColorButton.IsEnabled(true);
+                                }
+                            }
+                        });
+                        backgroundColorFlyout.ColorCleared([weakThis{ get_weak() }, applyWorkspaceColorPreview, clearColorButton]() {
+                            if (auto self{ weakThis.get() })
+                            {
+                                if (auto* current = self->_SelectedWorkspaceForEditing())
+                                {
+                                    current->BackgroundColor.clear();
+                                    self->_workspaceDefinitionsDirty = true;
+                                    applyWorkspaceColorPreview(current->BackgroundColor);
+                                    clearColorButton.IsEnabled(false);
+                                }
+                            }
+                        });
+
+                        chooseColorButton.Click([backgroundColorFlyout, chooseColorButton](auto&&, auto&&) {
+                            backgroundColorFlyout.ShowAt(chooseColorButton);
+                        });
+                        clearColorButton.Click([weakThis{ get_weak() }, applyWorkspaceColorPreview, clearColorButton](auto&&, auto&&) {
+                            if (auto self{ weakThis.get() })
+                            {
+                                if (auto* current = self->_SelectedWorkspaceForEditing())
+                                {
+                                    current->BackgroundColor.clear();
+                                    self->_workspaceDefinitionsDirty = true;
+                                    applyWorkspaceColorPreview(current->BackgroundColor);
+                                    clearColorButton.IsEnabled(false);
+                                }
+                            }
+                        });
+
+                        colorButtons.Children().Append(chooseColorButton);
+                        colorButtons.Children().Append(clearColorButton);
+                        colorPanel.Children().Append(colorButtons);
+                    }
+
+                    generalPanel.Children().Append(colorPanel);
+                    root.Children().Append(generalBorder);
+                }
+
+                if (selectedWorkspaceSubSelection >= 10)
+                {
+                    const auto nodeIndex = gsl::narrow_cast<size_t>(selectedWorkspaceSubSelection - 10);
+                    if (nodeIndex >= workspace->Nodes.size())
+                    {
+                        auto emptyNodes = TextBlock{};
+                        emptyNodes.Text(RS_(L"WorkspaceEditor_NoNodes"));
+                        emptyNodes.Margin(marginBottom(12));
+                        root.Children().Append(emptyNodes);
+                    }
+                    else
+                    {
+                        const auto& node = workspace->Nodes.at(nodeIndex);
+                        const auto profiles = _settings.ActiveProfiles();
+
+                        auto nodeBorder = sectionBorder();
+                        auto nodeRoot = StackPanel{};
+                        nodeBorder.Child(nodeRoot);
+
+                        auto nodeHeader = StackPanel{};
+                        nodeHeader.Orientation(Orientation::Horizontal);
+                        nodeHeader.Margin(marginBottom(8));
+
+                        auto nodeTitle = TextBlock{};
+                        nodeTitle.Text(node.Name.empty() ? node.Id : node.Name);
+                        nodeTitle.VerticalAlignment(VerticalAlignment::Center);
+                        nodeTitle.FontWeight(FontWeights::SemiBold());
+                        nodeTitle.Margin(WUX::ThicknessHelper::FromLengths(0, 0, 8, 0));
+                        nodeHeader.Children().Append(nodeTitle);
+
+                        if (_workspaceEditorEditMode)
+                        {
+                            auto deleteNodeButton = Button{};
+                            deleteNodeButton.Content(box_value(RS_(L"WorkspaceEditor_DeleteNodeButton")));
+                            deleteNodeButton.Click([weakThis{ get_weak() }, nodeIndex](auto&&, auto&&) {
+                                if (auto self{ weakThis.get() })
+                                {
+                                    self->_DeleteWorkspaceNode(nodeIndex);
+                                    self->_RebuildWorkspaceManagerTab();
+                                }
+                            });
+                            nodeHeader.Children().Append(deleteNodeButton);
+                        }
+
+                        nodeRoot.Children().Append(nodeHeader);
+
+                        const auto addNodeTextBox = [&](const wchar_t* labelText, const std::wstring& initialValue, const auto& onChanged, const bool multiline = false) {
+                            auto label = TextBlock{};
+                            label.Text(labelText);
+                            label.Margin(marginBottom(4));
+                            nodeRoot.Children().Append(label);
+
+                            auto textBox = TextBox{};
+                            textBox.Text(initialValue);
+                            textBox.IsReadOnly(!_workspaceEditorEditMode);
+                            textBox.AcceptsReturn(multiline);
+                            textBox.TextWrapping(multiline ? TextWrapping::Wrap : TextWrapping::NoWrap);
+                            textBox.Margin(marginBottom(8));
+                            if (_workspaceEditorEditMode)
+                            {
+                                textBox.TextChanged(onChanged);
+                            }
+                            nodeRoot.Children().Append(textBox);
+                        };
+
+                        addNodeTextBox(RS_(L"WorkspaceEditor_NodeName").c_str(), node.Name, [weakThis{ get_weak() }, nodeIndex](auto&& sender, auto&&) {
+                            if (auto self{ weakThis.get() })
+                            {
+                                if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
+                                {
+                                    current->Nodes.at(nodeIndex).Name = sender.as<TextBox>().Text().c_str();
+                                    self->_workspaceDefinitionsDirty = true;
+                                }
+                            }
+                        });
+
+                        auto profileLabel = TextBlock{};
+                        profileLabel.Text(RS_(L"WorkspaceEditor_Profile"));
+                        profileLabel.Margin(marginBottom(4));
+                        nodeRoot.Children().Append(profileLabel);
+
+                        auto profilePicker = ComboBox{};
+                        profilePicker.Margin(marginBottom(8));
+                        profilePicker.IsEnabled(_workspaceEditorEditMode);
+
+                        int32_t selectedProfileIndex = -1;
+                        for (uint32_t profileIndex = 0; profileIndex < profiles.Size(); ++profileIndex)
+                        {
+                            const auto profile = profiles.GetAt(profileIndex);
+                            auto item = ComboBoxItem{};
+                            item.Content(box_value(profile.Name()));
+                            item.Tag(box_value(Utils::GuidToString(profile.Guid())));
+                            profilePicker.Items().Append(item);
+                            if (Utils::GuidToString(profile.Guid()) == node.ProfileGuid)
+                            {
+                                selectedProfileIndex = gsl::narrow_cast<int32_t>(profileIndex);
+                            }
+                        }
+
+                        if (selectedProfileIndex < 0 && !node.ProfileGuid.empty())
+                        {
+                            auto item = ComboBoxItem{};
+                            item.Content(box_value(node.ProfileGuid));
+                            item.Tag(box_value(node.ProfileGuid));
+                            profilePicker.Items().Append(item);
+                            selectedProfileIndex = gsl::narrow_cast<int32_t>(profilePicker.Items().Size() - 1);
+                        }
+
+                        profilePicker.SelectedIndex(selectedProfileIndex);
+                        if (_workspaceEditorEditMode)
+                        {
+                            profilePicker.SelectionChanged([weakThis{ get_weak() }, nodeIndex](auto&& sender, auto&&) {
+                                if (auto self{ weakThis.get() })
+                                {
+                                    if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
+                                    {
+                                        if (const auto picker = sender.try_as<ComboBox>())
+                                        {
+                                            if (const auto item = picker.SelectedItem().try_as<ComboBoxItem>())
+                                            {
+                                                current->Nodes.at(nodeIndex).ProfileGuid = winrt::unbox_value<winrt::hstring>(item.Tag()).c_str();
+                                                self->_workspaceDefinitionsDirty = true;
+                                            }
+                                        }
+                                    }
+                                }
+                            });
+                        }
+                        nodeRoot.Children().Append(profilePicker);
+
+                        addNodeTextBox(RS_(L"WorkspaceEditor_ConnectionReference").c_str(), node.ConnectionRef, [weakThis{ get_weak() }, nodeIndex](auto&& sender, auto&&) {
+                            if (auto self{ weakThis.get() })
+                            {
+                                if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
+                                {
+                                    current->Nodes.at(nodeIndex).ConnectionRef = sender.as<TextBox>().Text().c_str();
+                                    self->_workspaceDefinitionsDirty = true;
+                                }
+                            }
+                        });
+
+                        addNodeTextBox(RS_(L"WorkspaceEditor_StartupDirectory").c_str(), node.StartupDirectory, [weakThis{ get_weak() }, nodeIndex](auto&& sender, auto&&) {
+                            if (auto self{ weakThis.get() })
+                            {
+                                if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
+                                {
+                                    current->Nodes.at(nodeIndex).StartupDirectory = sender.as<TextBox>().Text().c_str();
+                                    self->_workspaceDefinitionsDirty = true;
+                                }
+                            }
+                        });
+
+                        addNodeTextBox(RS_(L"WorkspaceEditor_StartupCommandOrScript").c_str(), node.StartupAction, [weakThis{ get_weak() }, nodeIndex](auto&& sender, auto&&) {
+                            if (auto self{ weakThis.get() })
+                            {
+                                if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
+                                {
+                                    current->Nodes.at(nodeIndex).StartupAction = sender.as<TextBox>().Text().c_str();
+                                    self->_workspaceDefinitionsDirty = true;
+                                }
+                            }
+                        }, true);
+
+                        root.Children().Append(nodeBorder);
                     }
                 }
-            });
-
-            addNodeTextBox(RS_(L"WorkspaceEditor_StartupCommandOrScript").c_str(), node.StartupAction, [weakThis{ get_weak() }, nodeIndex](auto&& sender, auto&&) {
-                if (auto self{ weakThis.get() })
-                {
-                    if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
-                    {
-                        current->Nodes.at(nodeIndex).StartupAction = sender.as<TextBox>().Text().c_str();
-                        self->_workspaceDefinitionsDirty = true;
-                    }
-                }
-            }, true);
-
-            root.Children().Append(nodeBorder);
+            }
         }
 
-        outerGrid.Children().Append(scrollViewer);
-        return outerGrid;
+        auto footer = Grid{};
+        footer.Height(56);
+        footer.BorderBrush(SolidColorBrush{ Colors::DarkGray() });
+        footer.BorderThickness(WUX::ThicknessHelper::FromLengths(0, 1, 0, 0));
+        footer.Padding(WUX::ThicknessHelper::FromLengths(16, 0, 16, 0));
+        footer.ColumnDefinitions().Append(ColumnDefinition{});
+        auto buttonsColumn = ColumnDefinition{};
+        buttonsColumn.Width(GridLengthHelper::Auto());
+        footer.ColumnDefinitions().Append(buttonsColumn);
+        Controls::Grid::SetRow(footer, 1);
+
+        auto footerButtons = StackPanel{};
+        footerButtons.Orientation(Orientation::Horizontal);
+        footerButtons.HorizontalAlignment(HorizontalAlignment::Right);
+        footerButtons.VerticalAlignment(VerticalAlignment::Center);
+        Controls::Grid::SetColumn(footerButtons, 1);
+
+        auto saveButton = Button{};
+        saveButton.Content(box_value(RS_(L"WorkspaceEditor_DialogPrimaryButton")));
+        saveButton.Style(Application::Current().Resources().Lookup(box_value(L"AccentButtonStyle")).try_as<winrt::Windows::UI::Xaml::Style>());
+        saveButton.IsEnabled(true);
+        saveButton.Margin(WUX::ThicknessHelper::FromLengths(0, 0, 12, 0));
+        saveButton.Click([weakThis{ get_weak() }](auto&&, auto&&) {
+            if (auto self{ weakThis.get() })
+            {
+                if (!self->_workspaceEditorManager.Save())
+                {
+                    self->ActionSaveFailed(RS_(L"WorkspaceEditor_SaveFailed"));
+                    return;
+                }
+
+                if (const auto currentId = self->CurrentWorkspaceId(); !currentId.empty() &&
+                    self->_workspaceEditorManager.FindById(currentId.c_str()) == nullptr)
+                {
+                    self->CurrentWorkspaceId(winrt::hstring{});
+                }
+
+                const auto state = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
+                if (const auto lastWorkspaceId = state.LastOpenedWorkspaceId(); !lastWorkspaceId.empty() &&
+                    self->_workspaceEditorManager.FindById(lastWorkspaceId) == nullptr)
+                {
+                    state.LastOpenedWorkspaceId(L"");
+                    state.Flush();
+                }
+
+                self->_workspaceDefinitionsDirty = false;
+                self->_workspaceEditorEditMode = true;
+                self->_LoadWorkspaceEditorState();
+                self->_CreateNewTabFlyout();
+                self->_UpdateWorkspaceTabRow();
+                self->_RebuildWorkspaceManagerTab();
+            }
+        });
+        footerButtons.Children().Append(saveButton);
+
+        auto resetButton = Button{};
+        resetButton.Content(box_value(RS_(L"WorkspaceEditor_ResetButton")));
+        resetButton.IsEnabled(_workspaceDefinitionsDirty);
+        resetButton.Click([weakThis{ get_weak() }](auto&&, auto&&) {
+            if (auto self{ weakThis.get() })
+            {
+                self->_workspaceDefinitionsDirty = false;
+                self->_workspaceEditorEditMode = true;
+                self->_LoadWorkspaceEditorState(false);
+                if (!self->_workspaceEditorManager.Workspaces().empty())
+                {
+                    self->_workspaceManagerNavSelection = 1000 + gsl::narrow_cast<int32_t>(self->_workspaceEditorSelectedIndex * 100);
+                }
+                self->_RebuildWorkspaceManagerTab();
+            }
+        });
+        footerButtons.Children().Append(resetButton);
+
+        footer.Children().Append(footerButtons);
+        contentGrid.Children().Append(footer);
+
+        nav.Content(contentGrid);
+        return nav;
     }
 
     void TerminalPage::_WorkspaceManagerPrimaryButtonClick(const IInspectable& /*sender*/, const ContentDialogButtonClickEventArgs& eventArgs)
@@ -1192,22 +1868,22 @@ namespace winrt::TerminalApp::implementation
             return;
         }
 
-        auto state = Microsoft::Terminal::Settings::Model::implementation::WorkspaceStateManager::Load();
         if (const auto currentId = CurrentWorkspaceId(); !currentId.empty() &&
             _workspaceEditorManager.FindById(currentId.c_str()) == nullptr)
         {
             CurrentWorkspaceId(winrt::hstring{});
         }
 
-        if (const auto& lastWorkspaceId = state.LastOpenedWorkspaceId(); !lastWorkspaceId.empty() &&
+        const auto state = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
+        if (const auto lastWorkspaceId = state.LastOpenedWorkspaceId(); !lastWorkspaceId.empty() &&
             _workspaceEditorManager.FindById(lastWorkspaceId) == nullptr)
         {
             state.LastOpenedWorkspaceId(L"");
-            state.Save();
+            state.Flush();
         }
 
         _workspaceDefinitionsDirty = false;
-        _workspaceEditorEditMode = false;
+        _workspaceEditorEditMode = true;
         _CreateNewTabFlyout();
     }
 
@@ -1223,7 +1899,17 @@ namespace winrt::TerminalApp::implementation
 
         _UpdateTeachingTipTheme(WorkspaceSaver().try_as<winrt::Windows::UI::Xaml::FrameworkElement>());
 
-        auto suggestedName = _WindowProperties.WindowName();
+        auto tip = WorkspaceSaver();
+        tip.Title(RS_(L"WorkspaceSaver_Title"));
+        tip.Subtitle(RS_(L"WorkspaceSaver_Subtitle"));
+        tip.ActionButtonContent(box_value(RS_(L"WorkspaceSaver_ActionButtonContent")));
+        tip.CloseButtonContent(box_value(RS_(L"WorkspaceSaver_CloseButtonContent")));
+
+        auto suggestedName = _ResolvedWorkspaceSaveTargetName();
+        if (suggestedName.empty())
+        {
+            suggestedName = _WindowProperties.WindowName();
+        }
         if (suggestedName.empty() && NumberOfTabs() == 1)
         {
             suggestedName = _tabs.GetAt(0).Title();
@@ -1270,10 +1956,10 @@ namespace winrt::TerminalApp::implementation
 
             auto manager = WorkspaceManager::Load();
             auto workspaces = manager.Workspaces();
-            const auto currentWorkspaceId = CurrentWorkspaceId();
-            const auto existingWorkspaceIt = !currentWorkspaceId.empty() && workspaceName.empty() ?
+            const auto targetWorkspaceId = workspaceName.empty() ? _ResolvedWorkspaceSaveTargetId() : std::wstring{};
+            const auto existingWorkspaceIt = !targetWorkspaceId.empty() ?
                                                  std::find_if(workspaces.begin(), workspaces.end(), [&](const auto& existingWorkspace) {
-                                                     return existingWorkspace.Id == currentWorkspaceId.c_str();
+                                                     return existingWorkspace.Id == targetWorkspaceId;
                                                  }) :
                                                  workspaces.end();
 
@@ -1288,6 +1974,8 @@ namespace winrt::TerminalApp::implementation
                 workspace.Id = existingWorkspaceIt->Id;
                 workspace.Name = existingWorkspaceIt->Name;
                 workspace.Description = existingWorkspaceIt->Description;
+                workspace.BackgroundColor = existingWorkspaceIt->BackgroundColor;
+                workspace.Locked = true;
 
                 const auto nodeCount = std::min(workspace.Nodes.size(), existingWorkspaceIt->Nodes.size());
                 for (size_t i = 0; i < nodeCount; ++i)
@@ -1312,6 +2000,10 @@ namespace winrt::TerminalApp::implementation
                 {
                     workspace.Name = windowName.c_str();
                 }
+                else if (const auto previousWorkspaceName = _ResolvedWorkspaceSaveTargetName(); !previousWorkspaceName.empty())
+                {
+                    workspace.Name = previousWorkspaceName;
+                }
                 else if (NumberOfTabs() == 1)
                 {
                     workspace.Name = _tabs.GetAt(0).Title().c_str();
@@ -1322,6 +2014,8 @@ namespace winrt::TerminalApp::implementation
                     workspace.Name = RS_fmt(L"WorkspaceGeneratedName", workspaces.size() + 1).c_str();
                 }
 
+                workspace.BackgroundColor = _pickUnusedWorkspaceColor(workspaces);
+                workspace.Locked = true;
                 workspaces.emplace_back(workspace);
             }
 
@@ -1332,15 +2026,14 @@ namespace winrt::TerminalApp::implementation
                 return;
             }
 
-            auto state = Microsoft::Terminal::Settings::Model::implementation::WorkspaceStateManager::Load();
+            const auto state = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
             state.LastOpenedWorkspaceId(workspace.Id);
-            if (!state.Save())
-            {
-                ActionSaveFailed(RS_(L"WorkspaceSaveFailedStateFile"));
-                return;
-            }
+            state.Flush();
 
             CurrentWorkspaceId(winrt::hstring{ workspace.Id });
+            _UpdateWorkspaceTabRow();
+            _UpdateWorkspaceInteractionState();
+            _updateAllTabCloseButtons();
 
             // Rebuilding the attached flyout inline from the save click path can re-enter
             // the current menu/TeachingTip teardown. Defer it until the UI thread returns
@@ -1471,15 +2164,87 @@ namespace winrt::TerminalApp::implementation
         _UpdateWorkspaceTabRow();
         _rearranging = false;
 
-        const auto canDragDrop = CanDragDrop();
-
-        _tabView.CanReorderTabs(canDragDrop);
-        _tabView.CanDragTabs(canDragDrop);
+        _UpdateWorkspaceInteractionState();
         _tabView.TabDragStarting({ get_weak(), &TerminalPage::_TabDragStarted });
         _tabView.TabDragCompleted({ get_weak(), &TerminalPage::_TabDragCompleted });
 
         auto tabRowImpl = winrt::get_self<implementation::TabRowControl>(_tabRow);
         _newTabButton = tabRowImpl->NewTabButton();
+        tabRowImpl->WorkspaceSaveButton().Click([weakThis{ get_weak() }](auto&&, auto&&) {
+            if (auto self{ weakThis.get() })
+            {
+                if (self->_ResolvedWorkspaceSaveTargetId().empty())
+                {
+                    self->_OpenWorkspaceSaver();
+                }
+                else
+                {
+                    self->_SaveCurrentWindowAsWorkspace();
+                }
+            }
+        });
+        tabRowImpl->WorkspaceNameButton().Click([weakThis{ get_weak() }](auto&&, auto&&) {
+            if (auto self{ weakThis.get() })
+            {
+                if (!self->_workspaceNameTapTimer)
+                {
+                    self->_workspaceNameTapTimer = WUX::DispatcherTimer{};
+                    self->_workspaceNameTapTimer.Interval(std::chrono::milliseconds(220));
+                    self->_workspaceNameTapTimer.Tick([weakThis](auto&& sender, auto&&) {
+                        if (const auto timer = sender.try_as<WUX::DispatcherTimer>())
+                        {
+                            timer.Stop();
+                        }
+                        if (auto self{ weakThis.get() })
+                        {
+                            self->_ShowWorkspaceNameMenu();
+                        }
+                    });
+                }
+                self->_workspaceNameTapTimer.Stop();
+                self->_workspaceNameTapTimer.Start();
+            }
+        });
+        tabRowImpl->WorkspaceNameButton().DoubleTapped([weakThis{ get_weak() }](auto&&, auto&&) {
+            if (auto self{ weakThis.get() })
+            {
+                if (self->_workspaceNameTapTimer)
+                {
+                    self->_workspaceNameTapTimer.Stop();
+                }
+                self->_BeginWorkspaceNameEdit();
+            }
+        });
+        tabRowImpl->WorkspaceNameEditor().LostFocus([weakThis{ get_weak() }](auto&&, auto&&) {
+            if (auto self{ weakThis.get() })
+            {
+                self->_CommitWorkspaceNameEdit();
+            }
+        });
+        tabRowImpl->WorkspaceNameEditor().KeyDown([weakThis{ get_weak() }](auto&&, const winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs& e) {
+            if (auto self{ weakThis.get() })
+            {
+                if (e.OriginalKey() == Windows::System::VirtualKey::Enter)
+                {
+                    self->_workspaceNamePressedEnter = true;
+                }
+            }
+        });
+        tabRowImpl->WorkspaceNameEditor().KeyUp([weakThis{ get_weak() }](auto&&, const winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs& e) {
+            if (auto self{ weakThis.get() })
+            {
+                const auto key = e.OriginalKey();
+                if (key == Windows::System::VirtualKey::Enter && self->_workspaceNamePressedEnter)
+                {
+                    self->_CommitWorkspaceNameEdit();
+                }
+                else if (key == Windows::System::VirtualKey::Escape)
+                {
+                    self->_CancelWorkspaceNameEdit();
+                }
+                self->_workspaceNamePressedEnter = false;
+            }
+        });
 
         if (_settings.GlobalSettings().ShowTabsInTitlebar())
         {
@@ -1514,27 +2279,7 @@ namespace winrt::TerminalApp::implementation
         }
         _updateThemeColors();
 
-        // Initialize the state of the CloseButtonOverlayMode property of
-        // our TabView, to match the tab.showCloseButton property in the theme.
-        if (const auto theme = _settings.GlobalSettings().CurrentTheme())
-        {
-            const auto visibility = theme.Tab() ? theme.Tab().ShowCloseButton() : Settings::Model::TabCloseButtonVisibility::Always;
-
-            _tabItemMiddleClickHookEnabled = visibility == Settings::Model::TabCloseButtonVisibility::Never;
-
-            switch (visibility)
-            {
-            case Settings::Model::TabCloseButtonVisibility::Never:
-                _tabView.CloseButtonOverlayMode(MUX::Controls::TabViewCloseButtonOverlayMode::Auto);
-                break;
-            case Settings::Model::TabCloseButtonVisibility::Hover:
-                _tabView.CloseButtonOverlayMode(MUX::Controls::TabViewCloseButtonOverlayMode::OnPointerOver);
-                break;
-            default:
-                _tabView.CloseButtonOverlayMode(MUX::Controls::TabViewCloseButtonOverlayMode::Always);
-                break;
-            }
-        }
+        _updateAllTabCloseButtons();
 
         // Hookup our event handlers to the ShortcutActionDispatch
         _RegisterActionCallbacks();
@@ -2165,9 +2910,6 @@ namespace winrt::TerminalApp::implementation
 
         // add static items
         {
-            auto workspaceFlyout = _CreateWorkspaceFlyout();
-            newTabFlyout.Items().Append(workspaceFlyout);
-
             // Create the settings button.
             auto settingsItem = WUX::Controls::MenuFlyoutItem{};
             settingsItem.Text(RS_(L"SettingsMenuItem"));
@@ -5192,7 +5934,14 @@ namespace winrt::TerminalApp::implementation
         // repopulate the new tab button's flyout with entries for each
         // profile, which might have changed
         _UpdateTabWidthMode();
+        _UpdateWorkspaceTabRow();
         _CreateNewTabFlyout();
+
+        if (_workspaceManagerContent)
+        {
+            _workspaceManagerContent->UpdateSettings(_settings);
+            _RebuildWorkspaceManagerTab();
+        }
 
         // Reload the current value of alwaysOnTop from the settings file. This
         // will let the user hot-reload this setting, but any runtime changes to
@@ -5224,16 +5973,18 @@ namespace winrt::TerminalApp::implementation
 
     void TerminalPage::_updateAllTabCloseButtons()
     {
+        if (!_tabView)
+        {
+            return;
+        }
+
         // Update the state of the CloseButtonOverlayMode property of
         // our TabView, to match the tab.showCloseButton property in the theme.
         //
         // Also update every tab's individual IsClosable to match the same property.
-        const auto theme = _settings.GlobalSettings().CurrentTheme();
-        const auto visibility = (theme && theme.Tab()) ?
-                                    theme.Tab().ShowCloseButton() :
-                                    Settings::Model::TabCloseButtonVisibility::Always;
+        const auto visibility = _CurrentTabCloseButtonVisibility();
 
-        _tabItemMiddleClickHookEnabled = visibility == Settings::Model::TabCloseButtonVisibility::Never;
+        _tabItemMiddleClickHookEnabled = visibility == Settings::Model::TabCloseButtonVisibility::Never && !_CurrentWorkspaceLocked();
 
         for (const auto& tab : _tabs)
         {
@@ -5270,8 +6021,15 @@ namespace winrt::TerminalApp::implementation
             return;
         }
 
+        if (!value.empty())
+        {
+            _lastWorkspaceId = value.c_str();
+        }
+
         _currentWorkspaceId = value;
         _UpdateWorkspaceTabRow();
+        _UpdateWorkspaceInteractionState();
+        _updateAllTabCloseButtons();
         RefreshWorkspaceWindowState();
     }
 
@@ -5289,6 +6047,12 @@ namespace winrt::TerminalApp::implementation
         }
 
         auto state = Microsoft::Terminal::Settings::Model::implementation::WorkspaceStateManager::Load();
+        const auto appState = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
+        if (!_currentWorkspaceId.empty())
+        {
+            appState.RemovePendingWorkspaceLaunch(_currentWorkspaceId);
+            appState.Flush();
+        }
         Microsoft::Terminal::Settings::Model::implementation::WorkspaceStateWindow window;
         window.WindowId = windowId;
         window.WindowName = _WindowProperties.WindowName().c_str();
@@ -6967,6 +7731,11 @@ namespace winrt::TerminalApp::implementation
     void TerminalPage::_onTabDragStarting(const winrt::Microsoft::UI::Xaml::Controls::TabView&,
                                           const winrt::Microsoft::UI::Xaml::Controls::TabViewTabDragStartingEventArgs& e)
     {
+        if (_CurrentWorkspaceLocked())
+        {
+            return;
+        }
+
         // Get the tab impl from this event.
         const auto eventTab = e.Tab();
         const auto tabBase = _GetTabByTabViewItem(eventTab);
@@ -7013,6 +7782,11 @@ namespace winrt::TerminalApp::implementation
     void TerminalPage::_onTabStripDragOver(const winrt::Windows::Foundation::IInspectable& /*sender*/,
                                            const winrt::Windows::UI::Xaml::DragEventArgs& e)
     {
+        if (_CurrentWorkspaceLocked())
+        {
+            return;
+        }
+
         // We must mark that we can accept the drag/drop. The system will never
         // call TabStripDrop on us if we don't indicate that we're willing.
         const auto& props{ e.DataView().Properties() };
@@ -7036,6 +7810,11 @@ namespace winrt::TerminalApp::implementation
     void TerminalPage::_onTabStripDrop(winrt::Windows::Foundation::IInspectable /*sender*/,
                                        winrt::Windows::UI::Xaml::DragEventArgs e)
     {
+        if (_CurrentWorkspaceLocked())
+        {
+            return;
+        }
+
         // Get the PID and make sure it is the same as ours.
         if (const auto& pidObj{ e.DataView().Properties().TryLookup(L"pid") })
         {
@@ -7117,6 +7896,11 @@ namespace winrt::TerminalApp::implementation
     void TerminalPage::_onTabDroppedOutside(winrt::IInspectable /*sender*/,
                                             winrt::MUX::Controls::TabViewTabDroppedOutsideEventArgs /*e*/)
     {
+        if (_CurrentWorkspaceLocked())
+        {
+            return;
+        }
+
         // Get the current pointer point from the CoreWindow
         const auto& pointerPoint{ CoreWindow::GetForCurrentThread().PointerPosition() };
 

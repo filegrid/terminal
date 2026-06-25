@@ -211,9 +211,6 @@
 
         <mux:TeachingTip x:Name="WorkspaceSaver"
                          x:Uid="WorkspaceSaver"
-                         Title="Save Window as Workspace"
-                         Subtitle="Enter a workspace name"
-                         ActionButtonContent="Save"
                          x:Load="False"
                          ActionButtonClick="_WorkspaceSaverActionClick"
                          ActionButtonStyle="{ThemeResource AccentButtonStyle}"

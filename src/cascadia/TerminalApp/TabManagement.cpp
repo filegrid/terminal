@@ -996,6 +996,7 @@ namespace winrt::TerminalApp::implementation
             p.Visibility(Visibility::Collapsed);
         }
         _UpdateTabView();
+        _UpdateWorkspaceTabRow();
     }
 
     void TerminalPage::_OnTabPointerPressed(const IInspectable& sender, const Windows::UI::Xaml::Input::PointerRoutedEventArgs& e)

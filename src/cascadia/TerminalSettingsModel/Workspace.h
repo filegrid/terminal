@@ -22,6 +22,8 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         std::wstring Id;
         std::wstring Name;
         std::wstring Description;
+        std::wstring BackgroundColor;
+        bool Locked{ true };
         std::vector<WorkspaceNode> Nodes;
     };
 
@@ -63,23 +65,11 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         bool Save() const;
         bool SaveToPath(const std::filesystem::path& path) const;
 
-        const std::wstring& LastOpenedWorkspaceId() const noexcept;
-        void LastOpenedWorkspaceId(std::wstring value);
-
-        bool OpenInNewWindow() const noexcept;
-        void OpenInNewWindow(bool value) noexcept;
-
-        void EnqueuePendingWorkspaceLaunch(std::wstring workspaceId);
-        std::wstring ConsumePendingWorkspaceLaunch();
-
         const std::vector<WorkspaceStateWindow>& Windows() const noexcept;
         void UpsertWindow(WorkspaceStateWindow window);
         void RemoveWindow(uint64_t windowId) noexcept;
 
     private:
-        std::wstring _lastOpenedWorkspaceId;
-        bool _openInNewWindow{ true };
-        std::vector<std::wstring> _pendingWorkspaceLaunches;
         std::vector<WorkspaceStateWindow> _windows;
     };
 }

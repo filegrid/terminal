@@ -300,10 +300,14 @@ namespace winrt::TerminalApp::implementation
         int _workspaceSaverLayoutCount{ 0 };
         bool _workspaceSaverPressedEnter{ false };
         winrt::hstring _currentWorkspaceId{};
+        std::wstring _lastWorkspaceId{};
         winrt::Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager _workspaceEditorManager{};
         size_t _workspaceEditorSelectedIndex{ 0 };
+        int32_t _workspaceManagerNavSelection{ 0 };
         bool _workspaceEditorEditMode{ false };
         bool _workspaceDefinitionsDirty{ false };
+        winrt::Windows::UI::Xaml::DispatcherTimer _workspaceNameTapTimer{ nullptr };
+        bool _workspaceNamePressedEnter{ false };
 
         TerminalApp::WindowProperties _WindowProperties{ nullptr };
         PaneResources _paneResources;
@@ -338,13 +342,17 @@ namespace winrt::TerminalApp::implementation
         winrt::Windows::UI::Xaml::Controls::IconElement _CreateNewTabFlyoutIcon(const winrt::hstring& icon);
         winrt::Windows::UI::Xaml::Controls::MenuFlyoutItem _CreateNewTabFlyoutProfile(const Microsoft::Terminal::Settings::Model::Profile profile, int profileIndex, const winrt::hstring& iconPathOverride);
         winrt::Windows::UI::Xaml::Controls::MenuFlyoutItem _CreateNewTabFlyoutAction(const winrt::hstring& actionId, const winrt::hstring& iconPathOverride);
-        winrt::Windows::UI::Xaml::Controls::MenuFlyoutSubItem _CreateWorkspaceFlyout();
+        winrt::Windows::UI::Xaml::Controls::MenuFlyout _CreateWorkspaceFlyout();
         safe_void_coroutine _OpenWorkspace(const winrt::hstring& workspaceId, bool openInNewWindow);
         safe_void_coroutine _OpenWorkspaceManager();
         void _OpenWorkspaceSaver();
         void _SaveCurrentWindowAsWorkspace(const winrt::hstring& workspaceName = {});
+        std::wstring _ResolvedWorkspaceSaveTargetId() const;
+        std::wstring _ResolvedWorkspaceSaveTargetName() const;
         bool _TryCaptureCurrentWorkspace(winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace& workspace) const;
         bool _CurrentWorkspaceNeedsSave() const;
+        bool _CurrentWorkspaceLocked() const;
+        void _SetCurrentWorkspaceLocked(bool locked);
         void _LoadWorkspaceEditorState(bool preserveSelection = true);
         void _RebuildWorkspaceManagerTab();
         void _AddWorkspaceDefinition();
@@ -359,8 +367,15 @@ namespace winrt::TerminalApp::implementation
         std::wstring _WorkspaceDisplayName(const winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace& workspace) const;
         std::wstring _CurrentWorkspaceDisplayName() const;
         std::wstring _CurrentWorkspaceTabRowName() const;
+        std::optional<winrt::Windows::UI::Color> _CurrentWorkspaceColor() const;
         std::optional<uint64_t> _FindOpenWorkspaceWindowId(std::wstring_view workspaceId) const;
+        void _UpdateWorkspaceInteractionState();
+        winrt::Microsoft::Terminal::Settings::Model::TabCloseButtonVisibility _CurrentTabCloseButtonVisibility() const;
         void _UpdateWorkspaceTabRow();
+        void _ShowWorkspaceNameMenu();
+        void _BeginWorkspaceNameEdit();
+        void _CommitWorkspaceNameEdit();
+        void _CancelWorkspaceNameEdit();
 
         void _OpenNewTabDropdown();
         HRESULT _OpenNewTab(const Microsoft::Terminal::Settings::Model::INewContentArgs& newContentArgs);

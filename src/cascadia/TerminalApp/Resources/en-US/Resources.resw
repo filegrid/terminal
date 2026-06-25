@@ -971,13 +971,31 @@
    <value>No workspaces</value>
  </data>
  <data name="WorkspaceOpenInNewWindow" xml:space="preserve">
-   <value>Open workspace in new window</value>
+   <value>Open in new window</value>
  </data>
  <data name="WorkspaceManageMenuItem" xml:space="preserve">
-   <value>Manage workspaces</value>
+   <value>Manage</value>
  </data>
  <data name="WorkspaceSaveMenuItem" xml:space="preserve">
-   <value>Save workspace</value>
+   <value>Save</value>
+ </data>
+ <data name="WorkspaceNewMenuItem" xml:space="preserve">
+   <value>New workspace</value>
+ </data>
+ <data name="WorkspaceLockedStateLocked" xml:space="preserve">
+   <value>Locked</value>
+ </data>
+ <data name="WorkspaceLockedStateUnlocked" xml:space="preserve">
+   <value>Unlocked</value>
+ </data>
+ <data name="WorkspaceLockedMenuItem" xml:space="preserve">
+   <value>Workspace locked</value>
+ </data>
+ <data name="WorkspaceUnsavedName" xml:space="preserve">
+   <value>New workspace</value>
+ </data>
+ <data name="WorkspaceRenameFailed" xml:space="preserve">
+   <value>Failed to rename workspace.</value>
  </data>
  <data name="WorkspaceGeneratedName" xml:space="preserve">
    <value>Workspace {0}</value>
@@ -1003,14 +1021,26 @@
  <data name="WorkspaceManagerDialog_SecondaryButtonText" xml:space="preserve">
    <value>Close</value>
  </data>
+ <data name="WorkspaceSaver.Title" xml:space="preserve">
+   <value>Save workspace</value>
+ </data>
  <data name="WorkspaceSaver_Title" xml:space="preserve">
    <value>Save workspace</value>
+ </data>
+ <data name="WorkspaceSaver.Subtitle" xml:space="preserve">
+   <value>Enter a workspace name</value>
  </data>
  <data name="WorkspaceSaver_Subtitle" xml:space="preserve">
    <value>Enter a workspace name</value>
  </data>
+ <data name="WorkspaceSaver.ActionButtonContent" xml:space="preserve">
+   <value>Save</value>
+ </data>
  <data name="WorkspaceSaver_ActionButtonContent" xml:space="preserve">
    <value>Save</value>
+ </data>
+ <data name="WorkspaceSaver.CloseButtonContent" xml:space="preserve">
+   <value>Cancel</value>
  </data>
  <data name="WorkspaceSaver_CloseButtonContent" xml:space="preserve">
    <value>Cancel</value>
@@ -1046,7 +1076,7 @@
    <value>Delete workspace</value>
  </data>
  <data name="WorkspaceEditor_EditHint" xml:space="preserve">
-   <value>Edit mode is on. Add or remove nodes here, then save to write workspaces.yaml.</value>
+   <value>Changes here are written to workspaces.yaml when you save.</value>
  </data>
  <data name="WorkspaceEditor_BrowseHint" xml:space="preserve">
    <value>Browse mode is on. Enter edit mode to add or remove workspaces and nodes.</value>
@@ -1065,6 +1095,18 @@
  </data>
  <data name="WorkspaceEditor_Description" xml:space="preserve">
    <value>Description</value>
+ </data>
+ <data name="WorkspaceEditor_BackgroundColor" xml:space="preserve">
+   <value>Background color</value>
+ </data>
+ <data name="WorkspaceEditor_BackgroundColorAuto" xml:space="preserve">
+   <value>Auto-assigned when saved</value>
+ </data>
+ <data name="WorkspaceEditor_ChooseColor" xml:space="preserve">
+   <value>Choose color</value>
+ </data>
+ <data name="WorkspaceEditor_ClearColor" xml:space="preserve">
+   <value>Clear color</value>
  </data>
  <data name="WorkspaceEditor_Nodes" xml:space="preserve">
    <value>Nodes</value>
@@ -1101,5 +1143,53 @@
  </data>
  <data name="WorkspaceEditor_SaveFailed" xml:space="preserve">
    <value>Failed to save workspace changes to workspaces.yaml.</value>
+ </data>
+ <data name="WorkspaceEditor_UnsavedWarning" xml:space="preserve">
+   <value>You have unsaved workspace changes.</value>
+ </data>
+ <data name="WorkspaceEditor_ResetButton" xml:space="preserve">
+   <value>Discard changes</value>
+ </data>
+ <data name="WorkspaceEditor_NavOverview" xml:space="preserve">
+   <value>Overview</value>
+ </data>
+ <data name="WorkspaceEditor_NavBehavior" xml:space="preserve">
+   <value>Behavior</value>
+ </data>
+ <data name="WorkspaceEditor_OpenYaml" xml:space="preserve">
+   <value>Open workspace YAML</value>
+ </data>
+ <data name="WorkspaceEditor_OverviewTitle" xml:space="preserve">
+   <value>Workspace overview</value>
+ </data>
+ <data name="WorkspaceEditor_OverviewDescription" xml:space="preserve">
+   <value>Review the current workspace state and jump into a saved workspace from the list on the left.</value>
+ </data>
+ <data name="WorkspaceEditor_BehaviorTitle" xml:space="preserve">
+   <value>Behavior</value>
+ </data>
+ <data name="WorkspaceEditor_BehaviorDescription" xml:space="preserve">
+   <value>Control how workspace launches behave across windows.</value>
+ </data>
+ <data name="WorkspaceEditor_CurrentWorkspaceLabel" xml:space="preserve">
+   <value>Current workspace</value>
+ </data>
+ <data name="WorkspaceEditor_WorkspacesFileLabel" xml:space="preserve">
+   <value>Workspace file</value>
+ </data>
+ <data name="WorkspaceEditor_StateFileLabel" xml:space="preserve">
+   <value>State file</value>
+ </data>
+ <data name="WorkspaceEditor_GeneralSection" xml:space="preserve">
+   <value>General</value>
+ </data>
+ <data name="WorkspaceEditor_GeneralNav" xml:space="preserve">
+   <value>Basic info</value>
+ </data>
+ <data name="WorkspaceEditor_NodesSection" xml:space="preserve">
+   <value>Nodes</value>
+ </data>
+ <data name="WorkspaceEditor_NodesNav" xml:space="preserve">
+   <value>Node list</value>
  </data>
 </root>

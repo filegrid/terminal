@@ -971,13 +971,31 @@
    <value>暂无工作区</value>
  </data>
  <data name="WorkspaceOpenInNewWindow" xml:space="preserve">
-   <value>在新窗口中打开工作区</value>
+   <value>在新窗口中打开</value>
  </data>
  <data name="WorkspaceManageMenuItem" xml:space="preserve">
-   <value>管理工作区</value>
+   <value>管理</value>
  </data>
  <data name="WorkspaceSaveMenuItem" xml:space="preserve">
-   <value>保存工作区</value>
+   <value>保存</value>
+ </data>
+ <data name="WorkspaceNewMenuItem" xml:space="preserve">
+   <value>新工作区</value>
+ </data>
+ <data name="WorkspaceLockedStateLocked" xml:space="preserve">
+   <value>已锁定</value>
+ </data>
+ <data name="WorkspaceLockedStateUnlocked" xml:space="preserve">
+   <value>未锁定</value>
+ </data>
+ <data name="WorkspaceLockedMenuItem" xml:space="preserve">
+   <value>工作区锁定</value>
+ </data>
+ <data name="WorkspaceUnsavedName" xml:space="preserve">
+   <value>新工作区</value>
+ </data>
+ <data name="WorkspaceRenameFailed" xml:space="preserve">
+   <value>重命名工作区失败。</value>
  </data>
  <data name="WorkspaceGeneratedName" xml:space="preserve">
    <value>工作区 {0}</value>
@@ -1003,14 +1021,26 @@
  <data name="WorkspaceManagerDialog_SecondaryButtonText" xml:space="preserve">
    <value>关闭</value>
  </data>
+ <data name="WorkspaceSaver.Title" xml:space="preserve">
+   <value>保存工作区</value>
+ </data>
  <data name="WorkspaceSaver_Title" xml:space="preserve">
    <value>保存工作区</value>
+ </data>
+ <data name="WorkspaceSaver.Subtitle" xml:space="preserve">
+   <value>输入工作区名称</value>
  </data>
  <data name="WorkspaceSaver_Subtitle" xml:space="preserve">
    <value>输入工作区名称</value>
  </data>
+ <data name="WorkspaceSaver.ActionButtonContent" xml:space="preserve">
+   <value>保存</value>
+ </data>
  <data name="WorkspaceSaver_ActionButtonContent" xml:space="preserve">
    <value>保存</value>
+ </data>
+ <data name="WorkspaceSaver.CloseButtonContent" xml:space="preserve">
+   <value>取消</value>
  </data>
  <data name="WorkspaceSaver_CloseButtonContent" xml:space="preserve">
    <value>取消</value>
@@ -1046,7 +1076,7 @@
    <value>删除工作区</value>
  </data>
  <data name="WorkspaceEditor_EditHint" xml:space="preserve">
-   <value>当前为编辑模式。可在此添加或删除节点，保存后会写入 workspaces.yaml。</value>
+   <value>此处的更改会在保存后写入 workspaces.yaml。</value>
  </data>
  <data name="WorkspaceEditor_BrowseHint" xml:space="preserve">
    <value>当前为浏览模式。进入编辑模式后可添加或删除工作区和节点。</value>
@@ -1065,6 +1095,18 @@
  </data>
  <data name="WorkspaceEditor_Description" xml:space="preserve">
    <value>描述</value>
+ </data>
+ <data name="WorkspaceEditor_BackgroundColor" xml:space="preserve">
+   <value>背景颜色</value>
+ </data>
+ <data name="WorkspaceEditor_BackgroundColorAuto" xml:space="preserve">
+   <value>保存时自动分配</value>
+ </data>
+ <data name="WorkspaceEditor_ChooseColor" xml:space="preserve">
+   <value>选择颜色</value>
+ </data>
+ <data name="WorkspaceEditor_ClearColor" xml:space="preserve">
+   <value>清除颜色</value>
  </data>
  <data name="WorkspaceEditor_Nodes" xml:space="preserve">
    <value>节点</value>
@@ -1101,5 +1143,53 @@
  </data>
  <data name="WorkspaceEditor_SaveFailed" xml:space="preserve">
    <value>保存工作区变更到 workspaces.yaml 失败。</value>
+ </data>
+ <data name="WorkspaceEditor_UnsavedWarning" xml:space="preserve">
+   <value>你有未保存的工作区更改。</value>
+ </data>
+ <data name="WorkspaceEditor_ResetButton" xml:space="preserve">
+   <value>放弃更改</value>
+ </data>
+ <data name="WorkspaceEditor_NavOverview" xml:space="preserve">
+   <value>概览</value>
+ </data>
+ <data name="WorkspaceEditor_NavBehavior" xml:space="preserve">
+   <value>行为</value>
+ </data>
+ <data name="WorkspaceEditor_OpenYaml" xml:space="preserve">
+   <value>打开工作区 YAML</value>
+ </data>
+ <data name="WorkspaceEditor_OverviewTitle" xml:space="preserve">
+   <value>工作区概览</value>
+ </data>
+ <data name="WorkspaceEditor_OverviewDescription" xml:space="preserve">
+   <value>查看当前工作区状态，并从左侧列表切换到已保存的工作区。</value>
+ </data>
+ <data name="WorkspaceEditor_BehaviorTitle" xml:space="preserve">
+   <value>行为</value>
+ </data>
+ <data name="WorkspaceEditor_BehaviorDescription" xml:space="preserve">
+   <value>控制工作区在多窗口之间的打开行为。</value>
+ </data>
+ <data name="WorkspaceEditor_CurrentWorkspaceLabel" xml:space="preserve">
+   <value>当前工作区</value>
+ </data>
+ <data name="WorkspaceEditor_WorkspacesFileLabel" xml:space="preserve">
+   <value>工作区文件</value>
+ </data>
+ <data name="WorkspaceEditor_StateFileLabel" xml:space="preserve">
+   <value>状态文件</value>
+ </data>
+ <data name="WorkspaceEditor_GeneralSection" xml:space="preserve">
+   <value>常规</value>
+ </data>
+ <data name="WorkspaceEditor_GeneralNav" xml:space="preserve">
+   <value>基本情况</value>
+ </data>
+ <data name="WorkspaceEditor_NodesSection" xml:space="preserve">
+   <value>节点</value>
+ </data>
+ <data name="WorkspaceEditor_NodesNav" xml:space="preserve">
+   <value>节点列表</value>
  </data>
 </root>

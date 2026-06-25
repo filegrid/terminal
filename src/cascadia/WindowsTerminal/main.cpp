@@ -83,46 +83,6 @@ static void EnsureNativeArchitecture()
     }
 }
 
-static bool IsBuiltInAdministratorAccount() noexcept
-{
-    try
-    {
-        wil::unique_handle processToken{ GetCurrentProcessToken() };
-        const auto userTokenInfo = wil::get_token_information<TOKEN_USER>(processToken.get());
-        if (!userTokenInfo || !IsValidSid(userTokenInfo->User.Sid))
-        {
-            return false;
-        }
-
-        const auto subAuthorityCount = GetSidSubAuthorityCount(userTokenInfo->User.Sid);
-        if (!subAuthorityCount || *subAuthorityCount == 0)
-        {
-            return false;
-        }
-
-        const auto rid = GetSidSubAuthority(userTokenInfo->User.Sid, *subAuthorityCount - 1);
-        return rid && *rid == DOMAIN_USER_RID_ADMIN;
-    }
-    catch (...)
-    {
-        LOG_CAUGHT_EXCEPTION();
-        return false;
-    }
-}
-
-static void EnsureUnpackagedRuntimeSupported()
-{
-    if (!IsPackaged() && IsBuiltInAdministratorAccount())
-    {
-        MessageBoxW(nullptr,
-                    GetStringResource(IDS_ERROR_UNPACKAGED_ADMIN_ACCOUNT).data(),
-                    GetStringResource(IDS_ERROR_DIALOG_TITLE).data(),
-                    MB_OK | MB_ICONERROR);
-
-        ExitProcess(ERROR_NOT_SUPPORTED);
-    }
-}
-
 int __stdcall wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int nCmdShow)
 {
     TraceLoggingRegister(g_hWindowsTerminalProvider);
@@ -146,7 +106,6 @@ int __stdcall wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int nCmdShow)
     // This should only be applicable to developer versions. The package installation process
     // should choose and install the correct one from the bundle.
     EnsureNativeArchitecture();
-    EnsureUnpackagedRuntimeSupported();
     // Make sure to call this so we get WM_POINTER messages.
     EnableMouseInPointer(true);
 

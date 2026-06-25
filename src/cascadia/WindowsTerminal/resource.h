@@ -14,7 +14,6 @@
 #define IDS_ARM64_ARCHITECTURE 113
 #define IDS_ARM_ARCHITECTURE 114
 #define IDS_UNKNOWN_ARCHITECTURE 115
-#define IDS_ERROR_UNPACKAGED_ADMIN_ACCOUNT 116
 
 // Next default values for new objects
 //

@@ -140,6 +140,14 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
             {
                 workspace.Description = value;
             }
+            else if (key == L"backgroundColor")
+            {
+                workspace.BackgroundColor = value;
+            }
+            else if (key == L"locked")
+            {
+                workspace.Locked = _parseBool(value, workspace.Locked);
+            }
         }
 
         void _applyNodeField(WorkspaceNode& node, const std::wstring& key, const std::wstring& value)
@@ -200,6 +208,20 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
             THROW_IF_FAILED(SHGetKnownFolderPath(FOLDERID_Profile, KF_FLAG_DEFAULT, nullptr, &profileFolder));
             return std::filesystem::path{ profileFolder.get() } / L".wt";
         }
+
+        std::filesystem::path _workspaceStatePath()
+        {
+            const auto modulePath = wil::GetModuleFileNameW<std::wstring>(nullptr);
+            if (modulePath.empty())
+            {
+                return _workspaceRoot() / L"workspace-window-state.yaml";
+            }
+
+            std::wstringstream stream;
+            const auto module = std::filesystem::path{ modulePath };
+            stream << L"workspace-window-state-" << module.stem().wstring() << L"-" << std::hex << static_cast<unsigned long long>(std::hash<std::wstring>{}(modulePath)) << L".yaml";
+            return _workspaceRoot() / stream.str();
+        }
     }
 
     std::filesystem::path WorkspaceManager::DefaultPath()
@@ -209,7 +231,7 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
 
     std::filesystem::path WorkspaceStateManager::DefaultPath()
     {
-        return _workspaceRoot() / L"workspace-state.yaml";
+        return _workspaceStatePath();
     }
 
     WorkspaceManager WorkspaceManager::Load()
@@ -347,6 +369,11 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
             {
                 stream << L"    description: " << _quote(workspace.Description) << L"\n";
             }
+            if (!workspace.BackgroundColor.empty())
+            {
+                stream << L"    backgroundColor: " << _quote(workspace.BackgroundColor) << L"\n";
+            }
+            stream << L"    locked: " << (workspace.Locked ? L"true" : L"false") << L"\n";
             stream << L"    nodes:\n";
             for (const auto& node : workspace.Nodes)
             {
@@ -403,7 +430,6 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         enum class ParseSection
         {
             None,
-            PendingLaunches,
             Windows,
         };
 
@@ -439,37 +465,12 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
                     section = ParseSection::None;
                     continue;
                 }
-                if (trimmed == L"pendingWorkspaceLaunches:")
-                {
-                    section = ParseSection::PendingLaunches;
-                    continue;
-                }
                 if (trimmed == L"windows:")
                 {
                     section = ParseSection::Windows;
                     continue;
                 }
-
-                const auto [key, value] = _parseKeyValue(trimmed);
-                if (key == L"lastOpenedWorkspaceId")
-                {
-                    manager.LastOpenedWorkspaceId(value);
-                }
-                else if (key == L"openInNewWindow")
-                {
-                    manager.OpenInNewWindow(_parseBool(value, manager.OpenInNewWindow()));
-                }
                 section = ParseSection::None;
-                continue;
-            }
-
-            if (section == ParseSection::PendingLaunches && safeIndent == 2 && trimmed.starts_with(L"- "))
-            {
-                const auto [key, value] = _parseKeyValue(trimmed);
-                if (key == L"workspaceId")
-                {
-                    manager.EnqueuePendingWorkspaceLaunch(value);
-                }
                 continue;
             }
 
@@ -514,16 +515,6 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
 
         std::wostringstream stream;
         stream << L"version: 1\n";
-        if (!_lastOpenedWorkspaceId.empty())
-        {
-            stream << L"lastOpenedWorkspaceId: " << _quote(_lastOpenedWorkspaceId) << L"\n";
-        }
-        stream << L"openInNewWindow: " << (_openInNewWindow ? L"true" : L"false") << L"\n";
-        stream << L"pendingWorkspaceLaunches:\n";
-        for (const auto& workspaceId : _pendingWorkspaceLaunches)
-        {
-            stream << L"  - workspaceId: " << _quote(workspaceId) << L"\n";
-        }
         stream << L"windows:\n";
         for (const auto& window : _windows)
         {
@@ -626,43 +617,6 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
     void WorkspaceManager::SetWorkspaces(std::vector<Workspace> workspaces)
     {
         _workspaces = std::move(workspaces);
-    }
-
-    const std::wstring& WorkspaceStateManager::LastOpenedWorkspaceId() const noexcept
-    {
-        return _lastOpenedWorkspaceId;
-    }
-
-    void WorkspaceStateManager::LastOpenedWorkspaceId(std::wstring value)
-    {
-        _lastOpenedWorkspaceId = std::move(value);
-    }
-
-    bool WorkspaceStateManager::OpenInNewWindow() const noexcept
-    {
-        return _openInNewWindow;
-    }
-
-    void WorkspaceStateManager::OpenInNewWindow(bool value) noexcept
-    {
-        _openInNewWindow = value;
-    }
-
-    void WorkspaceStateManager::EnqueuePendingWorkspaceLaunch(std::wstring workspaceId)
-    {
-        _pendingWorkspaceLaunches.emplace_back(std::move(workspaceId));
-    }
-
-    std::wstring WorkspaceStateManager::ConsumePendingWorkspaceLaunch()
-    {
-        if (_pendingWorkspaceLaunches.empty())
-        {
-            return {};
-        }
-
-        auto workspaceId = std::move(_pendingWorkspaceLaunches.front());
-        _pendingWorkspaceLaunches.erase(_pendingWorkspaceLaunches.begin());
-        return workspaceId;
     }
 
     const std::vector<WorkspaceStateWindow>& WorkspaceStateManager::Windows() const noexcept
