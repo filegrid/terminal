@@ -8,11 +8,11 @@
   - 新增文档放 `ext\docs` 目录
   - 新增代码放 `ext\src` 目录
   - 所有变更的功能记录到 ext\READ
-- 所有的脚本，备份，需要当前项目的tmp目录下进行 
+- 所有的脚本，备份，需要当前项目的 `microsoft\tmp` 目录下进行 
 - portable 构建使用：
 
   ```powershell
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\build\scripts\Build-PortableTerminalDistribution.ps1
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\microsoft\build\scripts\Build-PortableTerminalDistribution.ps1
   ```
 
 ## 能做

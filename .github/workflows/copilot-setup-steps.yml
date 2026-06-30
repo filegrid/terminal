@@ -36,17 +36,17 @@ jobs:
       - name: Restore NuGet packages
         shell: pwsh
         run: |
-          msbuild .\OpenConsole.slnx /restore /t:ValidateSolutionConfiguration /m /p:Configuration=Debug /p:Platform=x64
-          nuget restore .\dep\nuget\packages.config -Verbosity quiet
+          msbuild .\microsoft\OpenConsole.slnx /restore /t:ValidateSolutionConfiguration /m /p:Configuration=Debug /p:Platform=x64
+          nuget restore .\microsoft\dep\nuget\packages.config -Verbosity quiet
 
       - name: Detect VS vcpkg or bootstrap locally
         shell: pwsh
         run: |
           $VsInstallRoot = & 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe' -requires Microsoft.VisualStudio.Component.Vcpkg -property installationPath
           if ([string]::IsNullOrEmpty($VsInstallRoot)) {
-            Remove-Item -Recurse -Force .\dep\vcpkg -ErrorAction Ignore
-            git clone https://github.com/microsoft/vcpkg .\dep\vcpkg
-            Set-Location .\dep\vcpkg
+            Remove-Item -Recurse -Force .\microsoft\dep\vcpkg -ErrorAction Ignore
+            git clone https://github.com/microsoft/vcpkg .\microsoft\dep\vcpkg
+            Set-Location .\microsoft\dep\vcpkg
             .\bootstrap-vcpkg.bat
             $VcpkgRoot = (Get-Location).Path
             Write-Host "Using vcpkg from local checkout ($VcpkgRoot)"
@@ -59,6 +59,6 @@ jobs:
       - name: Build Debug solution
         shell: cmd
         run: |
-          call .\tools\razzle.cmd dbg
+          call .\microsoft\tools\razzle.cmd dbg
           set _SKIP_NUGET_RESTORE=1
           bcz no_clean dbg

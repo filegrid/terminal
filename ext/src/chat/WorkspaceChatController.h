@@ -1,0 +1,47 @@
+#pragma once
+
+#include "TerminalEventStore.h"
+#include "WorkspaceChatStore.h"
+
+#include <string>
+#include <string_view>
+
+namespace terminal::workspacechat
+{
+    class WorkspaceChatController
+    {
+    public:
+        WorkspaceChatSnapshot LoadWorkspace(std::wstring_view workspaceKey, size_t maxMessages = 200) const;
+        std::wstring LoadDraft(std::wstring_view workspaceKey) const;
+        bool SaveDraft(std::wstring_view workspaceKey, std::wstring_view draft) const;
+
+        ChatMessageEntry SubmitUserMessage(std::wstring_view workspaceKey,
+                                           uint64_t windowId,
+                                           std::wstring_view tabId,
+                                           std::wstring_view paneId,
+                                           std::wstring_view text);
+
+        bool LogTerminalInput(std::wstring_view workspaceKey,
+                              std::wstring_view tabId,
+                              std::wstring_view paneId,
+                              std::wstring_view text,
+                              std::wstring_view workingDirectory = {},
+                              std::wstring_view command = {},
+                              std::wstring correlationId = {});
+
+        bool LogTerminalOutput(std::wstring_view workspaceKey,
+                               std::wstring_view tabId,
+                               std::wstring_view paneId,
+                               std::wstring_view text,
+                               std::wstring_view workingDirectory = {},
+                               std::wstring_view command = {},
+                               std::wstring correlationId = {});
+
+        std::wstring ConsumePendingCorrelationId();
+
+    private:
+        WorkspaceChatStore _chatStore;
+        TerminalEventStore _terminalStore;
+        std::wstring _pendingCorrelationId;
+    };
+}

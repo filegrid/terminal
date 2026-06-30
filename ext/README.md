@@ -1,31 +1,21 @@
-# 特性说明
+# Portable Build Notes
 
-本版本基于原版 Windows Terminal，当前重点特性如下。
+`ext\README.md` 只保留 portable 构建相关说明；功能说明放仓库根目录 `README.md` / `README-cn.md`。
 
-## 1. 系统
+## Build target
 
-### 1.1 便携性
-1. 支持单文件交付和运行。
+1. 只构建 portable 项目。
+2. 最终只认 `bin\` 目录下的 portable 输出。
 
-### 1.2 ssh配置
-1. 支持从ssh的配置加载连接信息
-2. 支持ssh信息和终端已配置的连接的去重
+## Build command
 
-## 2. 工作区
- 支持按项目、环境、职责拆分终端会话。
-### 2.1 节点管理
-1. 支持一个工作区包含多个节点。
-2. 支持为每个节点保存名称、配置文件、启动目录和启动命令。
-### 2.2 窗口
-1. 支持把当前窗口保存成工作区。
-1. 支持一个工作区只能在一个窗口打开
-2. 支持在当前窗口/新窗口打开工作区。
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\microsoft\build\scripts\Build-PortableTerminalDistribution.ps1
+```
 
+## Output expectation
 
-### 2.3 管理界面
-
-1. 支持浏览、编辑、保存和放弃工作区修改。
-2. 支持按工作区和节点维度查看内容。
-3. 支持为每个工作区配置独立背景颜色；未保存工作区首次保存时自动分配未使用过的颜色。
-4. 支持在工作区菜单中切换锁定状态；锁定时禁用管理入口。
-5. 支持在工作区菜单中使用各工作区的背景色渲染对应名称文字。
+1. 便携版构建产物应位于 `bin\` 目录。
+2. 发布产物名需要带 `GeekEdition`，并同时生成两份：`WindowsTerminalPortableGeekEdition_System_<version>_<arch>.exe` 跟随系统语言，`WindowsTerminalPortableGeekEdition_English_<version>_<arch>.exe` 固定英文界面。
+3. `wt.exe`、`OpenConsole.exe`、MSIX 包产物以及普通调试输出都不能作为 portable 正确性的依据。
+4. 需要基于最终 `bin\` 产物做功能性验证。
