@@ -49,6 +49,7 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         bool SaveToPath(const std::filesystem::path& path) const;
 
         const Workspace* FindById(std::wstring_view id) const noexcept;
+        bool ReorderWorkspaceNodes(std::wstring_view workspaceId, const std::vector<std::wstring>& orderedNodeIds);
         std::vector<winrt::Microsoft::Terminal::Settings::Model::ActionAndArgs> BuildStartupActions(const Workspace& workspace, const winrt::Microsoft::Terminal::Settings::Model::CascadiaSettings& settings) const;
 
         std::vector<Workspace>& Workspaces() noexcept;

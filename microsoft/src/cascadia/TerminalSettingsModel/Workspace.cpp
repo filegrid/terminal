@@ -202,7 +202,33 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         {
             if (profile)
             {
-                if (_isWslProfileSource(profile.Source().c_str()) || _isWslCommandline(profile.Commandline().c_str()))
+                const auto source = _toLower(profile.Source().c_str());
+                const auto commandline = _toLower(profile.Commandline().c_str());
+
+                if (_isWslProfileSource(source) || _isWslCommandline(commandline))
+                {
+                    return false;
+                }
+                if (source == L"windows.terminal.ssh")
+                {
+                    return true;
+                }
+
+                if (_isSshCommandline(commandline))
+                {
+                    return true;
+                }
+
+                if (source == L"windows.terminal.powershellcore" ||
+                    commandline.find(L"powershell.exe") != std::wstring::npos ||
+                    commandline.find(L"pwsh.exe") != std::wstring::npos ||
+                    commandline == L"powershell" ||
+                    commandline == L"pwsh" ||
+                    commandline.starts_with(L"powershell ") ||
+                    commandline.starts_with(L"pwsh ") ||
+                    commandline.find(L"cmd.exe") != std::wstring::npos ||
+                    commandline == L"cmd" ||
+                    commandline.starts_with(L"cmd "))
                 {
                     return false;
                 }
@@ -211,20 +237,6 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
             if (_toLower(node.ShellType) == L"ssh")
             {
                 return true;
-            }
-
-            if (profile)
-            {
-                const auto source = _toLower(profile.Source().c_str());
-                if (source == L"windows.terminal.ssh")
-                {
-                    return true;
-                }
-
-                if (_isSshCommandline(profile.Commandline().c_str()))
-                {
-                    return true;
-                }
             }
 
             return false;
@@ -750,6 +762,50 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
             return workspace.Id == id;
         });
         return it == _workspaces.end() ? nullptr : &*it;
+    }
+
+    bool WorkspaceManager::ReorderWorkspaceNodes(const std::wstring_view workspaceId, const std::vector<std::wstring>& orderedNodeIds)
+    {
+        const auto workspaceIt = std::find_if(_workspaces.begin(), _workspaces.end(), [&](const auto& workspace) {
+            return workspace.Id == workspaceId;
+        });
+        if (workspaceIt == _workspaces.end())
+        {
+            return false;
+        }
+
+        auto& nodes = workspaceIt->Nodes;
+        if (orderedNodeIds.size() != nodes.size())
+        {
+            return false;
+        }
+
+        std::vector<WorkspaceNode> reorderedNodes;
+        reorderedNodes.reserve(nodes.size());
+        std::vector<bool> consumed(nodes.size(), false);
+
+        for (const auto& nodeId : orderedNodeIds)
+        {
+            const auto nodeIt = std::find_if(nodes.begin(), nodes.end(), [&](const auto& node) {
+                return node.Id == nodeId;
+            });
+            if (nodeIt == nodes.end())
+            {
+                return false;
+            }
+
+            const auto index = gsl::narrow_cast<size_t>(std::distance(nodes.begin(), nodeIt));
+            if (consumed[index])
+            {
+                return false;
+            }
+
+            reorderedNodes.emplace_back(*nodeIt);
+            consumed[index] = true;
+        }
+
+        nodes = std::move(reorderedNodes);
+        return true;
     }
 
     std::vector<Model::ActionAndArgs> WorkspaceManager::BuildStartupActions(const Workspace& workspace, const Model::CascadiaSettings& settings) const

@@ -246,6 +246,7 @@ namespace winrt::TerminalApp::implementation
         Windows::UI::Xaml::Controls::Grid _terminalContentHost{ nullptr };
         Microsoft::UI::Xaml::Controls::SplitButton _newTabButton{ nullptr };
         winrt::TerminalApp::ColorPickupFlyout _tabColorPicker{ nullptr };
+        Windows::UI::Xaml::Controls::MenuFlyout _workspaceFlyout{ nullptr };
 
         Microsoft::Terminal::Settings::Model::CascadiaSettings _settings{ nullptr };
 
@@ -415,6 +416,7 @@ namespace winrt::TerminalApp::implementation
         winrt::com_ptr<Tab> _GetWorkspaceBackedTabByNodeIndex(size_t nodeIndex) const;
         void _ApplyWorkspaceNodeInputVisibility(size_t nodeIndex, bool showInputPanel);
         void _PersistWorkspaceNodeInputVisibilityFromTab(const winrt::com_ptr<Tab>& tab, bool showInputPanel);
+        bool _PersistCurrentWorkspaceTabOrder();
         bool _CurrentWorkspaceNeedsSave() const;
         bool _CurrentWorkspaceLocked() const;
         void _SetCurrentWorkspaceLocked(bool locked);
@@ -447,6 +449,7 @@ namespace winrt::TerminalApp::implementation
         void _ApplyWorkspaceNodeTitlePolicy(const winrt::com_ptr<Tab>& tab);
         void _ApplyWorkspaceNodeTitlePolicy(size_t nodeIndex);
         void _ApplyWorkspaceChatStateForFocusedTab();
+        void _FocusActiveTabSurface();
         void _ReloadWorkspaceChatState();
         void _PersistWorkspaceChatDraft();
         void _UpdateWorkspaceChatInputHeight();

@@ -765,6 +765,27 @@ namespace winrt::TerminalApp::implementation
     WUX::Controls::MenuFlyout TerminalPage::_CreateWorkspaceFlyout()
     {
         auto workspaceFlyout = WUX::Controls::MenuFlyout{};
+        workspaceFlyout.Opening([weakThis{ get_weak() }](auto&&, auto&&) {
+            if (auto page{ weakThis.get() })
+            {
+                page->_FocusCurrentTab(true);
+            }
+        });
+        workspaceFlyout.Closing([weakThis{ get_weak() }](auto&&, auto&&) {
+            if (auto page{ weakThis.get() })
+            {
+                if (!page->_commandPaletteIs(Visibility::Visible))
+                {
+                    page->_FocusCurrentTab(true);
+                }
+            }
+        });
+        workspaceFlyout.Closed([weakThis{ get_weak() }](auto&&, auto&&) {
+            if (auto page{ weakThis.get() })
+            {
+                page->_workspaceFlyout = nullptr;
+            }
+        });
 
         auto manager = Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::Load();
         auto windowState = Microsoft::Terminal::Settings::Model::implementation::WorkspaceStateManager::Load();
@@ -1298,7 +1319,7 @@ namespace winrt::TerminalApp::implementation
         _tabRow.WorkspaceName(winrt::hstring{ name });
         _tabRow.WorkspaceNameVisibility(name.empty() ? WUX::Visibility::Collapsed : WUX::Visibility::Visible);
         _tabRow.WorkspaceDirtyVisibility(dirty ? WUX::Visibility::Visible : WUX::Visibility::Collapsed);
-        _tabRow.WorkspaceSaveVisibility(dirty ? WUX::Visibility::Visible : WUX::Visibility::Collapsed);
+        _tabRow.WorkspaceSaveVisibility(WUX::Visibility::Collapsed);
         _tabRow.WorkspaceLockGlyph(_CurrentWorkspaceLocked() ? L"\xE72E" : L"\xE785");
         _tabRow.WorkspaceLockVisibility(_currentWorkspaceId.empty() ? WUX::Visibility::Collapsed : WUX::Visibility::Visible);
 
@@ -1526,6 +1547,39 @@ namespace winrt::TerminalApp::implementation
         _ReloadWorkspaceChatState();
     }
 
+    void TerminalPage::_FocusActiveTabSurface()
+    {
+        const auto tab = _GetFocusedTab();
+        if (!tab)
+        {
+            return;
+        }
+
+        const auto tabImpl = _GetTabImpl(tab);
+        if (tabImpl && tabImpl->ShowWorkspaceInputPanel())
+        {
+            Dispatcher().RunAsync(CoreDispatcherPriority::Low, [weakThis{ get_weak() }, weakTab{ winrt::make_weak(tab) }]() {
+                if (auto self{ weakThis.get() })
+                {
+                    if (const auto focusedTab{ weakTab.get() })
+                    {
+                        if (focusedTab == self->_GetFocusedTab())
+                        {
+                            if (const auto focusedTabImpl = self->_GetTabImpl(focusedTab);
+                                focusedTabImpl && focusedTabImpl->ShowWorkspaceInputPanel() && self->_workspaceChatEnabledForActiveTab)
+                            {
+                                self->WorkspaceChatInput().Focus(FocusState::Programmatic);
+                            }
+                        }
+                    }
+                }
+            });
+            return;
+        }
+
+        tab.Focus(FocusState::Programmatic);
+    }
+
     void TerminalPage::_ApplyWorkspaceNodeTitlePolicy(const winrt::com_ptr<Tab>& tab)
     {
         if (!tab)
@@ -1634,6 +1688,8 @@ namespace winrt::TerminalApp::implementation
 
     void TerminalPage::_SendWorkspaceChatMessage()
     {
+        using namespace ::Microsoft::Console::Utils;
+
         const auto rawText = std::wstring{ WorkspaceChatInput().Text().c_str() };
         const auto trimmed = _trimWorkspaceChatText(rawText);
         if (trimmed.empty())
@@ -1661,38 +1717,28 @@ namespace winrt::TerminalApp::implementation
                                                    paneId,
                                                    rawText);
 
+        auto body = FilterStringForPaste(rawText, CarriageReturnNewline | ControlCodes);
+        while (!body.empty() && body.back() == L'\r')
+        {
+            body.pop_back();
+        }
+
         const auto hasEmbeddedNewline =
             rawText.find(L'\n') != std::wstring::npos ||
             rawText.find(L'\r') != std::wstring::npos;
 
-        if (hasEmbeddedNewline)
+        if (hasEmbeddedNewline && control.BracketedPasteEnabled())
         {
-            using namespace ::Microsoft::Console::Utils;
-
-            auto pasteText = rawText;
-            if (pasteText.empty() || (pasteText.back() != L'\r' && pasteText.back() != L'\n'))
-            {
-                pasteText.append(L"\r\n");
-            }
-
-            auto filtered = FilterStringForPaste(pasteText, CarriageReturnNewline | ControlCodes);
-            if (control.BracketedPasteEnabled())
-            {
-                filtered.insert(0, L"\x1b[200~");
-                filtered.append(L"\x1b[201~");
-            }
-
-            filtered.push_back(L'\r');
-            control.SendInput(winrt::hstring{ filtered });
+            auto input = std::move(body);
+            input.insert(0, L"\x1b[200~");
+            input.append(L"\x1b[201~");
+            input.push_back(L'\r');
+            control.SendInput(winrt::hstring{ input });
         }
         else
         {
-            auto input = rawText;
-            if (input.empty() || (input.back() != L'\r' && input.back() != L'\n'))
-            {
-                input.push_back(L'\r');
-            }
-
+            auto input = std::move(body);
+            input.push_back(L'\r');
             control.SendInput(winrt::hstring{ input });
         }
         _workspaceChatDraftUpdateInProgress = true;
@@ -2070,8 +2116,14 @@ namespace winrt::TerminalApp::implementation
 
         auto tabRowImpl = winrt::get_self<implementation::TabRowControl>(_tabRow);
         const auto button = tabRowImpl->WorkspaceNameButton();
-        const auto flyout = _CreateWorkspaceFlyout();
-        flyout.ShowAt(button);
+        if (_workspaceFlyout)
+        {
+            _workspaceFlyout.Hide();
+            _workspaceFlyout = nullptr;
+        }
+
+        _workspaceFlyout = _CreateWorkspaceFlyout();
+        _workspaceFlyout.ShowAt(button);
     }
 
     void TerminalPage::_BeginWorkspaceNameEdit()
@@ -2173,6 +2225,7 @@ namespace winrt::TerminalApp::implementation
                     continue;
                 }
 
+                WorkspaceNode node;
                 if (const auto existingNode = _ResolveCurrentWorkspaceNode(tabImpl))
                 {
                     workspace.Nodes.emplace_back(*existingNode);
@@ -2180,8 +2233,8 @@ namespace winrt::TerminalApp::implementation
                     continue;
                 }
 
-                WorkspaceNode node;
                 node.Id = fmt::format(FMT_COMPILE(L"node-{}"), ++nodeIndex);
+                node.UseNodeNameAsTabTitle = true;
                 node.Name = tabImpl->Title().empty() ? terminalArgs->TabTitle().c_str() : tabImpl->Title().c_str();
                 if (node.Name.empty())
                 {
@@ -2193,7 +2246,6 @@ namespace winrt::TerminalApp::implementation
                 node.OperatingSystem = _ResolveWorkspaceNodeOperatingSystem(tabImpl, *terminalArgs);
                 node.ShellType = _ResolveWorkspaceNodeShellType(tabImpl, *terminalArgs);
                 node.ShowInputPanel = tabImpl->ShowWorkspaceInputPanel();
-                node.UseNodeNameAsTabTitle = true;
                 workspace.Nodes.emplace_back(std::move(node));
             }
         }
@@ -2401,6 +2453,54 @@ namespace winrt::TerminalApp::implementation
         {
             _RebuildWorkspaceManagerTab();
         }
+    }
+
+    bool TerminalPage::_PersistCurrentWorkspaceTabOrder()
+    {
+        if (_currentWorkspaceId.empty())
+        {
+            return false;
+        }
+
+        std::vector<std::wstring> orderedNodeIds;
+        orderedNodeIds.reserve(_tabs.Size());
+
+        for (const auto& tab : _tabs)
+        {
+            if (const auto tabImpl = _GetTabImpl(tab))
+            {
+                if (const auto node = _ResolveCurrentWorkspaceNode(tabImpl); node && !node->Id.empty())
+                {
+                    orderedNodeIds.emplace_back(node->Id);
+                }
+            }
+        }
+
+        if (orderedNodeIds.empty())
+        {
+            return false;
+        }
+
+        auto manager = WorkspaceManager::Load();
+        if (!manager.ReorderWorkspaceNodes(_currentWorkspaceId.c_str(), orderedNodeIds))
+        {
+            return false;
+        }
+
+        if (!manager.Save())
+        {
+            ActionSaveFailed(RS_(L"WorkspaceSaveFailedWorkspacesFile"));
+            return false;
+        }
+
+        _workspaceDefinitionsDirty = false;
+        _LoadWorkspaceEditorState();
+        _UpdateWorkspaceTabRow();
+        if (_workspaceManagerContent)
+        {
+            _RebuildWorkspaceManagerTab();
+        }
+        return true;
     }
 
     bool TerminalPage::_CurrentWorkspaceNeedsSave() const
@@ -5531,6 +5631,7 @@ namespace winrt::TerminalApp::implementation
                     if (*tab == page->_GetFocusedTab())
                     {
                         page->_ApplyWorkspaceChatStateForFocusedTab();
+                        page->_FocusActiveTabSurface();
                     }
                 }
             }
@@ -8177,7 +8278,8 @@ namespace winrt::TerminalApp::implementation
             _pendingWorkspaceNodeStartupAction.reset();
         }
 
-        if (!state.StartupAction.empty() ||
+        if (!state.WorkspaceNodeId.empty() ||
+            !state.StartupAction.empty() ||
             !state.ExplicitCommandline.empty() ||
             !state.StartingDirectory.empty() ||
             !state.OperatingSystem.empty() ||
@@ -8204,11 +8306,6 @@ namespace winrt::TerminalApp::implementation
     std::wstring TerminalPage::_ResolveWorkspaceNodeStartupAction(const winrt::com_ptr<Tab>& tab,
                                                                   const NewTerminalArgs& terminalArgs) const
     {
-        if (const auto node = _ResolveCurrentWorkspaceNode(tab))
-        {
-            return node->StartupAction;
-        }
-
         if (tab)
         {
             if (const auto control = tab->GetActiveTerminalControl())
@@ -8234,6 +8331,11 @@ namespace winrt::TerminalApp::implementation
             }
         }
 
+        if (const auto node = _ResolveCurrentWorkspaceNode(tab))
+        {
+            return node->StartupAction;
+        }
+
         const auto profile = _settings.GetProfileForArgs(terminalArgs);
         const auto commandline = std::wstring{ terminalArgs.Commandline().c_str() };
         if (!commandline.empty())
@@ -8251,11 +8353,6 @@ namespace winrt::TerminalApp::implementation
     std::wstring TerminalPage::_ResolveWorkspaceNodeStartingDirectory(const winrt::com_ptr<Tab>& tab,
                                                                       const NewTerminalArgs& terminalArgs) const
     {
-        if (const auto node = _ResolveCurrentWorkspaceNode(tab))
-        {
-            return node->StartupDirectory;
-        }
-
         if (tab)
         {
             if (const auto control = tab->GetActiveTerminalControl())
@@ -8275,6 +8372,11 @@ namespace winrt::TerminalApp::implementation
             }
         }
 
+        if (const auto node = _ResolveCurrentWorkspaceNode(tab))
+        {
+            return node->StartupDirectory;
+        }
+
         return std::wstring{ terminalArgs.StartingDirectory().c_str() };
     }
 
@@ -8286,11 +8388,6 @@ namespace winrt::TerminalApp::implementation
         if (profileMetadata.ShellType == L"wsl")
         {
             return L"linux";
-        }
-
-        if (const auto node = _ResolveCurrentWorkspaceNode(tab))
-        {
-            return node->OperatingSystem;
         }
 
         if (tab)
@@ -8325,6 +8422,11 @@ namespace winrt::TerminalApp::implementation
             return metadata.OperatingSystem;
         }
 
+        if (const auto node = _ResolveCurrentWorkspaceNode(tab))
+        {
+            return node->OperatingSystem;
+        }
+
         const auto startingDirectory = std::wstring{ terminalArgs.StartingDirectory().c_str() };
         return _inferOperatingSystemFromPath(startingDirectory);
     }
@@ -8337,11 +8439,6 @@ namespace winrt::TerminalApp::implementation
         if (profileMetadata.ShellType == L"wsl")
         {
             return profileMetadata.ShellType;
-        }
-
-        if (const auto node = _ResolveCurrentWorkspaceNode(tab))
-        {
-            return node->ShellType;
         }
 
         if (tab)
@@ -8371,7 +8468,17 @@ namespace winrt::TerminalApp::implementation
         {
             metadata = _inferRuntimeMetadataFromProfile(profile);
         }
-        return metadata.ShellType;
+        if (!metadata.ShellType.empty())
+        {
+            return metadata.ShellType;
+        }
+
+        if (const auto node = _ResolveCurrentWorkspaceNode(tab))
+        {
+            return node->ShellType;
+        }
+
+        return {};
     }
 
     winrt::com_ptr<Tab> TerminalPage::_GetTabImpl(const TerminalApp::Tab& tab)

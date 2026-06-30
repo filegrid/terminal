@@ -24,8 +24,10 @@ namespace SettingsModelUnitTests
         TEST_METHOD(BuildWorkspaceStartupActions);
         TEST_METHOD(BuildWorkspaceStartupActionsForWindowsSshNode);
         TEST_METHOD(BuildWorkspaceStartupActionsForLegacyWslNode);
+        TEST_METHOD(BuildWorkspaceStartupActionsIgnoresStaleSshShellTypeForLocalProfile);
         TEST_METHOD(SaveWorkspaceYamlRoundTrip);
         TEST_METHOD(SaveUnlockedWorkspaceYamlRoundTrip);
+        TEST_METHOD(ReorderWorkspaceNodesPreservesNodeContent);
         TEST_METHOD(ParseWorkspaceWindowStateYaml);
         TEST_METHOD(SaveWorkspaceWindowStateYamlRoundTrip);
         TEST_METHOD(PersistWorkspaceStateInApplicationState);
@@ -251,6 +253,57 @@ namespace SettingsModelUnitTests
         VERIFY_IS_TRUE(std::wstring{ sendInputArgs.Input() } == L"pwd\r");
     }
 
+    void WorkspaceTests::BuildWorkspaceStartupActionsIgnoresStaleSshShellTypeForLocalProfile()
+    {
+        static constexpr std::string_view settingsJson{ R"(
+        {
+            "defaultProfile": "{6239a42c-0000-49a3-80bd-e8fdd045185c}",
+            "profiles": { "list": [
+                {
+                    "name": "PowerShell",
+                    "guid": "{6239a42c-0000-49a3-80bd-e8fdd045185c}",
+                    "historySize": 1,
+                    "source": "Windows.Terminal.PowershellCore",
+                    "commandline": "pwsh.exe"
+                }
+            ] }
+        })" };
+
+        const auto settings = winrt::make_self<winrt::Microsoft::Terminal::Settings::Model::implementation::CascadiaSettings>(settingsJson);
+        const auto profile = settings->AllProfiles().GetAt(0);
+
+        Workspace workspace;
+        workspace.Id = L"ws-local";
+        workspace.Name = L"Local Workspace";
+
+        WorkspaceNode node;
+        node.Id = L"node-1";
+        node.Name = L"t2";
+        node.ProfileGuid = Utils::GuidToString(profile.Guid());
+        node.StartupDirectory = L"E:\\";
+        node.StartupAction = L"copilot --allow-all";
+        node.OperatingSystem = L"windows";
+        node.ShellType = L"ssh";
+        workspace.Nodes.emplace_back(std::move(node));
+
+        WorkspaceManager manager;
+        manager.SetWorkspaces({ workspace });
+
+        const auto actions = manager.BuildStartupActions(manager.Workspaces().front(), *settings);
+        VERIFY_ARE_EQUAL(2u, gsl::narrow_cast<unsigned int>(actions.size()));
+
+        const auto newTabArgs = actions.at(0).Args().try_as<NewTabArgs>();
+        VERIFY_IS_NOT_NULL(newTabArgs);
+        const auto terminalArgs = newTabArgs.ContentArgs().try_as<NewTerminalArgs>();
+        VERIFY_IS_NOT_NULL(terminalArgs);
+        VERIFY_IS_TRUE(std::wstring{ terminalArgs.Profile() } == Utils::GuidToString(profile.Guid()));
+        VERIFY_IS_TRUE(std::wstring{ terminalArgs.StartingDirectory() } == L"E:\\");
+
+        const auto sendInputArgs = actions.at(1).Args().try_as<SendInputArgs>();
+        VERIFY_IS_NOT_NULL(sendInputArgs);
+        VERIFY_IS_TRUE(std::wstring{ sendInputArgs.Input() } == L"copilot --allow-all\r");
+    }
+
     void WorkspaceTests::ParseWorkspaceYamlDefaultsToLocked()
     {
         TempPath temp;
@@ -351,6 +404,72 @@ namespace SettingsModelUnitTests
         const auto loaded = WorkspaceManager::LoadFromPath(temp.path);
         VERIFY_ARE_EQUAL(1u, gsl::narrow_cast<unsigned int>(loaded.Workspaces().size()));
         VERIFY_IS_FALSE(loaded.Workspaces().front().Locked);
+    }
+
+    void WorkspaceTests::ReorderWorkspaceNodesPreservesNodeContent()
+    {
+        Workspace workspace;
+        workspace.Id = L"ws-dev";
+        workspace.Name = L"Dev Workspace";
+
+        WorkspaceNode first;
+        first.Id = L"node-1";
+        first.Name = L"App 1";
+        first.ConnectionRef = L"peer-app-1";
+        first.ProfileGuid = L"{00000000-0000-0000-0000-000000000101}";
+        first.StartupDirectory = L"D:\\work\\app1";
+        first.StartupAction = L".\\bootstrap-1.ps1";
+        first.OperatingSystem = L"windows";
+        first.ShellType = L"powershell";
+        first.ShowInputPanel = true;
+        first.UseNodeNameAsTabTitle = false;
+        workspace.Nodes.emplace_back(first);
+
+        WorkspaceNode second;
+        second.Id = L"node-2";
+        second.Name = L"App 2";
+        second.ConnectionRef = L"peer-app-2";
+        second.ProfileGuid = L"{00000000-0000-0000-0000-000000000202}";
+        second.StartupDirectory = L"/app2";
+        second.StartupAction = L"./bootstrap-2.sh";
+        second.OperatingSystem = L"linux";
+        second.ShellType = L"ssh";
+        second.ShowInputPanel = false;
+        second.UseNodeNameAsTabTitle = true;
+        workspace.Nodes.emplace_back(second);
+
+        WorkspaceManager manager;
+        manager.SetWorkspaces({ workspace });
+
+        VERIFY_IS_TRUE(manager.ReorderWorkspaceNodes(L"ws-dev", { L"node-2", L"node-1" }));
+
+        const auto* reorderedWorkspace = manager.FindById(L"ws-dev");
+        VERIFY_IS_NOT_NULL(reorderedWorkspace);
+        VERIFY_ARE_EQUAL(2u, gsl::narrow_cast<unsigned int>(reorderedWorkspace->Nodes.size()));
+
+        const auto& reorderedFirst = reorderedWorkspace->Nodes.at(0);
+        VERIFY_IS_TRUE(reorderedFirst.Id == L"node-2");
+        VERIFY_IS_TRUE(reorderedFirst.Name == L"App 2");
+        VERIFY_IS_TRUE(reorderedFirst.ConnectionRef == L"peer-app-2");
+        VERIFY_IS_TRUE(reorderedFirst.ProfileGuid == L"{00000000-0000-0000-0000-000000000202}");
+        VERIFY_IS_TRUE(reorderedFirst.StartupDirectory == L"/app2");
+        VERIFY_IS_TRUE(reorderedFirst.StartupAction == L"./bootstrap-2.sh");
+        VERIFY_IS_TRUE(reorderedFirst.OperatingSystem == L"linux");
+        VERIFY_IS_TRUE(reorderedFirst.ShellType == L"ssh");
+        VERIFY_IS_FALSE(reorderedFirst.ShowInputPanel);
+        VERIFY_IS_TRUE(reorderedFirst.UseNodeNameAsTabTitle);
+
+        const auto& reorderedSecond = reorderedWorkspace->Nodes.at(1);
+        VERIFY_IS_TRUE(reorderedSecond.Id == L"node-1");
+        VERIFY_IS_TRUE(reorderedSecond.Name == L"App 1");
+        VERIFY_IS_TRUE(reorderedSecond.ConnectionRef == L"peer-app-1");
+        VERIFY_IS_TRUE(reorderedSecond.ProfileGuid == L"{00000000-0000-0000-0000-000000000101}");
+        VERIFY_IS_TRUE(reorderedSecond.StartupDirectory == L"D:\\work\\app1");
+        VERIFY_IS_TRUE(reorderedSecond.StartupAction == L".\\bootstrap-1.ps1");
+        VERIFY_IS_TRUE(reorderedSecond.OperatingSystem == L"windows");
+        VERIFY_IS_TRUE(reorderedSecond.ShellType == L"powershell");
+        VERIFY_IS_TRUE(reorderedSecond.ShowInputPanel);
+        VERIFY_IS_FALSE(reorderedSecond.UseNodeNameAsTabTitle);
     }
 
     void WorkspaceTests::ParseWorkspaceWindowStateYaml()

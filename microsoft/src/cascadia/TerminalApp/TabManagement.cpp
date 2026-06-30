@@ -1106,15 +1106,7 @@ namespace winrt::TerminalApp::implementation
             const auto p = CommandPaletteElement();
             if (!p || p.Visibility() != Visibility::Visible)
             {
-                auto tabImpl = _GetTabImpl(tab);
-                if (tabImpl && tabImpl->ShowWorkspaceInputPanel())
-                {
-                    WorkspaceChatInput().Focus(FocusState::Programmatic);
-                }
-                else
-                {
-                    tab.Focus(FocusState::Programmatic);
-                }
+                _FocusActiveTabSurface();
                 _UpdateMRUTab(tab);
                 _updateAllTabCloseButtons();
             }
@@ -1233,6 +1225,8 @@ namespace winrt::TerminalApp::implementation
                                                 RS_fmt(L"TerminalPage_TabMovedAnnouncement_Direction", tabTitle, newTabIndex + 1),
                                                 L"TerminalPageMoveTabWithDirection" /* unique name for this notification category */);
             }
+
+            _PersistCurrentWorkspaceTabOrder();
         }
     }
 
@@ -1249,6 +1243,7 @@ namespace winrt::TerminalApp::implementation
     {
         auto& from{ _rearrangeFrom };
         auto& to{ _rearrangeTo };
+        auto reordered = false;
 
         if (from.has_value() && to.has_value() && to != from)
         {
@@ -1259,6 +1254,7 @@ namespace winrt::TerminalApp::implementation
                 tabs.RemoveAt(from.value());
                 tabs.InsertAt(to.value(), tab);
                 _UpdateTabIndices();
+                reordered = true;
             }
             CATCH_LOG();
         }
@@ -1270,6 +1266,11 @@ namespace winrt::TerminalApp::implementation
         {
             // Selecting the dropped tab
             TabRow().TabView().SelectedIndex(to.value());
+        }
+
+        if (reordered)
+        {
+            _PersistCurrentWorkspaceTabOrder();
         }
 
         from = std::nullopt;
