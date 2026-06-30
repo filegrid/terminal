@@ -468,6 +468,10 @@ namespace winrt::TerminalApp::implementation
     // - the title string of the last focused terminal control in our tree.
     winrt::hstring Tab::_GetActiveTitle() const
     {
+        if (_titleLocked && !_lockedTabText.empty())
+        {
+            return _lockedTabText;
+        }
         if (!_runtimeTabText.empty())
         {
             return _runtimeTabText;
@@ -974,6 +978,11 @@ namespace winrt::TerminalApp::implementation
     {
         ASSERT_UI_THREAD();
 
+        if (_titleLocked)
+        {
+            return;
+        }
+
         _runtimeTabText = title;
         UpdateTitle();
     }
@@ -988,6 +997,11 @@ namespace winrt::TerminalApp::implementation
     void Tab::ResetTabText()
     {
         ASSERT_UI_THREAD();
+
+        if (_titleLocked)
+        {
+            return;
+        }
 
         _runtimeTabText = L"";
         UpdateTitle();
@@ -1004,7 +1018,39 @@ namespace winrt::TerminalApp::implementation
     {
         ASSERT_UI_THREAD();
 
+        if (_titleLocked)
+        {
+            return;
+        }
+
         _headerControl.BeginRename();
+    }
+
+    void Tab::SetTitleLock(const bool locked, winrt::hstring title)
+    {
+        ASSERT_UI_THREAD();
+
+        const auto shouldClearRuntimeTabText = _titleLocked && _runtimeTabText == _lockedTabText;
+        _titleLocked = locked;
+
+        if (_titleLocked)
+        {
+            _lockedTabText = title;
+            if (!_lockedTabText.empty())
+            {
+                _runtimeTabText = _lockedTabText;
+            }
+        }
+        else
+        {
+            if (shouldClearRuntimeTabText)
+            {
+                _runtimeTabText = {};
+            }
+            _lockedTabText = {};
+        }
+
+        UpdateTitle();
     }
 
     // Method Description:

@@ -491,6 +491,7 @@ namespace
                lhs.OperatingSystem == rhs.OperatingSystem &&
                lhs.ShellType == rhs.ShellType &&
                lhs.ShowInputPanel == rhs.ShowInputPanel &&
+               lhs.UseNodeNameAsTabTitle == rhs.UseNodeNameAsTabTitle &&
                (lhs.ConnectionRef.empty() || rhs.ConnectionRef.empty() || lhs.ConnectionRef == rhs.ConnectionRef);
     }
 
@@ -957,8 +958,10 @@ namespace winrt::TerminalApp::implementation
         CurrentWorkspaceId(workspaceId);
         appState.Flush();
         _PreparePendingWorkspaceNodeInputVisibility(*workspace);
+        _PreparePendingWorkspaceNodeIds(*workspace);
         auto clearPendingInputVisibility = wil::scope_exit([&]() noexcept {
             _pendingWorkspaceNodeInputVisibility.clear();
+            _pendingWorkspaceNodeIds.clear();
         });
 
         auto suspend = !tabsToReplace.empty();
@@ -1494,12 +1497,67 @@ namespace winrt::TerminalApp::implementation
         return showInputPanel;
     }
 
+    void TerminalPage::_PreparePendingWorkspaceNodeIds(const Workspace& workspace)
+    {
+        _pendingWorkspaceNodeIds.clear();
+        for (const auto& node : workspace.Nodes)
+        {
+            _pendingWorkspaceNodeIds.emplace_back(node.Id);
+        }
+    }
+
+    std::wstring TerminalPage::_ConsumePendingWorkspaceNodeId()
+    {
+        if (_pendingWorkspaceNodeIds.empty())
+        {
+            return {};
+        }
+
+        auto nodeId = std::move(_pendingWorkspaceNodeIds.front());
+        _pendingWorkspaceNodeIds.pop_front();
+        return nodeId;
+    }
+
     void TerminalPage::_ApplyWorkspaceChatStateForFocusedTab()
     {
         const auto tab = _GetFocusedTabImpl();
         _workspaceChatEnabledForActiveTab = tab && tab->ShowWorkspaceInputPanel();
         _SetWorkspaceChatCollapsed(_workspaceChatCollapsed);
         _ReloadWorkspaceChatState();
+    }
+
+    void TerminalPage::_ApplyWorkspaceNodeTitlePolicy(const winrt::com_ptr<Tab>& tab)
+    {
+        if (!tab)
+        {
+            return;
+        }
+
+        if (const auto node = _ResolveCurrentWorkspaceNode(tab))
+        {
+            const auto lockTitle = node->UseNodeNameAsTabTitle && !node->Name.empty();
+            tab->SetTitleLock(lockTitle, winrt::hstring{ node->Name });
+        }
+        else
+        {
+            tab->SetTitleLock(false);
+        }
+    }
+
+    void TerminalPage::_ApplyWorkspaceNodeTitlePolicy(const size_t nodeIndex)
+    {
+        const auto* workspace = _SelectedWorkspaceForEditing();
+        if (!workspace || workspace->Id != _currentWorkspaceId.c_str() || nodeIndex >= workspace->Nodes.size())
+        {
+            return;
+        }
+
+        if (const auto tab = _GetWorkspaceBackedTabByNodeIndex(nodeIndex))
+        {
+            const auto& node = workspace->Nodes.at(nodeIndex);
+            const auto lockTitle = node.UseNodeNameAsTabTitle && !node.Name.empty();
+            tab->SetTitleLock(lockTitle, winrt::hstring{ node.Name });
+        }
     }
 
     void TerminalPage::_ReloadWorkspaceChatState()
@@ -1624,8 +1682,8 @@ namespace winrt::TerminalApp::implementation
                 filtered.append(L"\x1b[201~");
             }
 
+            filtered.push_back(L'\r');
             control.SendInput(winrt::hstring{ filtered });
-            control.SendInput(winrt::hstring{ L"\r" });
         }
         else
         {
@@ -2115,6 +2173,13 @@ namespace winrt::TerminalApp::implementation
                     continue;
                 }
 
+                if (const auto existingNode = _ResolveCurrentWorkspaceNode(tabImpl))
+                {
+                    workspace.Nodes.emplace_back(*existingNode);
+                    ++nodeIndex;
+                    continue;
+                }
+
                 WorkspaceNode node;
                 node.Id = fmt::format(FMT_COMPILE(L"node-{}"), ++nodeIndex);
                 node.Name = tabImpl->Title().empty() ? terminalArgs->TabTitle().c_str() : tabImpl->Title().c_str();
@@ -2128,6 +2193,7 @@ namespace winrt::TerminalApp::implementation
                 node.OperatingSystem = _ResolveWorkspaceNodeOperatingSystem(tabImpl, *terminalArgs);
                 node.ShellType = _ResolveWorkspaceNodeShellType(tabImpl, *terminalArgs);
                 node.ShowInputPanel = tabImpl->ShowWorkspaceInputPanel();
+                node.UseNodeNameAsTabTitle = true;
                 workspace.Nodes.emplace_back(std::move(node));
             }
         }
@@ -2169,6 +2235,54 @@ namespace winrt::TerminalApp::implementation
         if (_currentWorkspaceId.empty())
         {
             return std::nullopt;
+        }
+
+        const auto findNodeById = [&](std::wstring_view nodeId) -> std::optional<WorkspaceNode> {
+            if (nodeId.empty())
+            {
+                return std::nullopt;
+            }
+
+            if (const auto workspace = _SelectedWorkspaceForEditing();
+                workspace && workspace->Id == _currentWorkspaceId.c_str())
+            {
+                const auto it = std::find_if(workspace->Nodes.begin(), workspace->Nodes.end(), [&](const auto& node) {
+                    return node.Id == nodeId;
+                });
+                if (it != workspace->Nodes.end())
+                {
+                    return *it;
+                }
+            }
+
+            auto manager = WorkspaceManager::Load();
+            if (const auto workspace = manager.FindById(_currentWorkspaceId.c_str()))
+            {
+                const auto it = std::find_if(workspace->Nodes.begin(), workspace->Nodes.end(), [&](const auto& node) {
+                    return node.Id == nodeId;
+                });
+                if (it != workspace->Nodes.end())
+                {
+                    return *it;
+                }
+            }
+
+            return std::nullopt;
+        };
+
+        if (tab)
+        {
+            if (const auto control = tab->GetActiveTerminalControl())
+            {
+                if (const auto it = _workspaceNodeRuntimeStates.find(control.ContentId());
+                    it != _workspaceNodeRuntimeStates.end())
+                {
+                    if (const auto node = findNodeById(it->second.WorkspaceNodeId))
+                    {
+                        return node;
+                    }
+                }
+            }
         }
 
         const auto nodeIndex = _GetWorkspaceBackedTabNodeIndex(tab);
@@ -2945,6 +3059,7 @@ namespace winrt::TerminalApp::implementation
                                 {
                                     current->Nodes.at(nodeIndex).Name = sender.as<TextBox>().Text().c_str();
                                     self->_workspaceDefinitionsDirty = true;
+                                    self->_ApplyWorkspaceNodeTitlePolicy(nodeIndex);
                                 }
                             }
                         });
@@ -3098,6 +3213,30 @@ namespace winrt::TerminalApp::implementation
                             });
                         }
                         nodeRoot.Children().Append(showInputPanelToggle);
+
+                        auto useDefinedTitleToggle = CheckBox{};
+                        useDefinedTitleToggle.Content(box_value(RS_(L"WorkspaceEditor_UseNodeNameAsTabTitle")));
+                        useDefinedTitleToggle.IsChecked(node.UseNodeNameAsTabTitle);
+                        useDefinedTitleToggle.Margin(marginBottom(8));
+                        useDefinedTitleToggle.IsEnabled(_workspaceEditorEditMode);
+                        if (_workspaceEditorEditMode)
+                        {
+                            useDefinedTitleToggle.Click([weakThis{ get_weak() }, nodeIndex](auto&& sender, auto&&) {
+                                if (auto self{ weakThis.get() })
+                                {
+                                    if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
+                                    {
+                                        if (const auto toggle = sender.try_as<CheckBox>())
+                                        {
+                                            current->Nodes.at(nodeIndex).UseNodeNameAsTabTitle = toggle.IsChecked().GetBoolean();
+                                            self->_workspaceDefinitionsDirty = true;
+                                            self->_ApplyWorkspaceNodeTitlePolicy(nodeIndex);
+                                        }
+                                    }
+                                }
+                            });
+                        }
+                        nodeRoot.Children().Append(useDefinedTitleToggle);
 
                         root.Children().Append(nodeBorder);
                     }
@@ -3951,6 +4090,7 @@ namespace winrt::TerminalApp::implementation
         const auto strong = get_strong();
         auto clearPendingInputVisibility = wil::scope_exit([&]() noexcept {
             _pendingWorkspaceNodeInputVisibility.clear();
+            _pendingWorkspaceNodeIds.clear();
         });
 
         if (!_startupWorkspaceId.empty())
@@ -3959,6 +4099,7 @@ namespace winrt::TerminalApp::implementation
             if (const auto workspace = manager.FindById(_startupWorkspaceId.c_str()))
             {
                 _PreparePendingWorkspaceNodeInputVisibility(*workspace);
+                _PreparePendingWorkspaceNodeIds(*workspace);
             }
             _startupWorkspaceId.clear();
         }
@@ -7995,6 +8136,7 @@ namespace winrt::TerminalApp::implementation
         }
 
         WorkspaceNodeRuntimeState state;
+        state.WorkspaceNodeId = _ConsumePendingWorkspaceNodeId();
         state.StartingDirectory = newTerminalArgs.StartingDirectory().c_str();
 
         const auto profile = _settings.GetProfileForArgs(newTerminalArgs);

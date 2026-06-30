@@ -69,6 +69,7 @@ namespace winrt::TerminalApp::implementation
         winrt::hstring GetTabText() const;
         void ResetTabText();
         void ActivateTabRenamer();
+        void SetTitleLock(bool locked, winrt::hstring title = {});
 
         std::optional<winrt::Windows::UI::Color> GetTabColor();
         void SetRuntimeTabColor(const winrt::Windows::UI::Color& color);
@@ -209,6 +210,8 @@ namespace winrt::TerminalApp::implementation
         bool _changingActivePane{ false };
 
         winrt::hstring _runtimeTabText{};
+        winrt::hstring _lockedTabText{};
+        bool _titleLocked{ false };
         bool _inRename{ false };
         winrt::Windows::UI::Xaml::Controls::TextBox::LayoutUpdated_revoker _tabRenameBoxLayoutUpdatedRevoker;
 

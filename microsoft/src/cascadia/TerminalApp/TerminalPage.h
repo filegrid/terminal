@@ -350,6 +350,7 @@ namespace winrt::TerminalApp::implementation
 
         struct WorkspaceNodeRuntimeState
         {
+            std::wstring WorkspaceNodeId;
             std::wstring StartupAction;
             std::wstring ExplicitCommandline;
             std::wstring StartingDirectory;
@@ -364,6 +365,7 @@ namespace winrt::TerminalApp::implementation
         std::unordered_map<uint64_t, TerminalCaptureState> _workspaceChatTerminalStates;
         std::unordered_map<uint64_t, WorkspaceNodeRuntimeState> _workspaceNodeRuntimeStates;
         std::deque<bool> _pendingWorkspaceNodeInputVisibility;
+        std::deque<std::wstring> _pendingWorkspaceNodeIds;
         std::vector<PendingTerminalOutputCapture> _workspaceChatPendingOutputCaptures;
         std::optional<std::wstring> _pendingWorkspaceNodeStartupAction;
         bool _skipNextWorkspaceNodeStartupSendInput{ false };
@@ -440,6 +442,10 @@ namespace winrt::TerminalApp::implementation
         void _UpdateWorkspaceChatHeader();
         void _PreparePendingWorkspaceNodeInputVisibility(const winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace& workspace);
         bool _ConsumePendingWorkspaceNodeInputVisibility() noexcept;
+        void _PreparePendingWorkspaceNodeIds(const winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace& workspace);
+        std::wstring _ConsumePendingWorkspaceNodeId();
+        void _ApplyWorkspaceNodeTitlePolicy(const winrt::com_ptr<Tab>& tab);
+        void _ApplyWorkspaceNodeTitlePolicy(size_t nodeIndex);
         void _ApplyWorkspaceChatStateForFocusedTab();
         void _ReloadWorkspaceChatState();
         void _PersistWorkspaceChatDraft();

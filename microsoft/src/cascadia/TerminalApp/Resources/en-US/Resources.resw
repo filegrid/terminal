@@ -1151,6 +1151,9 @@
  <data name="WorkspaceEditor_ShowInputPanel" xml:space="preserve">
    <value>Show input panel</value>
  </data>
+ <data name="WorkspaceEditor_UseNodeNameAsTabTitle" xml:space="preserve">
+   <value>Keep tab title fixed to node name</value>
+ </data>
  <data name="WorkspaceEditor_ExternalChangeError" xml:space="preserve">
    <value>workspaces.yaml changed on disk while the editor has unsaved changes.</value>
  </data>

@@ -1151,6 +1151,9 @@
  <data name="WorkspaceEditor_ShowInputPanel" xml:space="preserve">
    <value>显示输入框</value>
  </data>
+ <data name="WorkspaceEditor_UseNodeNameAsTabTitle" xml:space="preserve">
+   <value>固定使用节点名称作为标签标题</value>
+ </data>
  <data name="WorkspaceEditor_ExternalChangeError" xml:space="preserve">
    <value>编辑器有未保存修改时，磁盘上的 workspaces.yaml 又发生了变化。</value>
  </data>

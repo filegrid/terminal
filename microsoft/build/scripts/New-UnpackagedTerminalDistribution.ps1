@@ -174,6 +174,7 @@ If ($PSCmdlet.ParameterSetName -Eq "AppX") {
 
     if ($SingleFileOutput) {
         $launcherSourcePath = Join-Path $PSScriptRoot "..\..\src\tools\PortableTerminalLauncher\Program.cs"
+        $launcherIconPath = Join-Path $PSScriptRoot "..\..\res\terminal.ico"
         $cscPath = (Get-Command csc.exe -ErrorAction SilentlyContinue).Source
         if ([string]::IsNullOrWhiteSpace($cscPath)) {
             $roslynCsc = "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\Roslyn\csc.exe"
@@ -182,6 +183,9 @@ If ($PSCmdlet.ParameterSetName -Eq "AppX") {
             } else {
                 throw "Could not find csc.exe to build the single-file portable launcher."
             }
+        }
+        if (-not (Test-Path $launcherIconPath -PathType Leaf)) {
+            throw "Could not find the portable launcher icon at `"$launcherIconPath`"."
         }
 
         $cscPlatform = switch ($architecture) {
@@ -216,6 +220,7 @@ using System.Reflection;
             "/target:winexe",
             "/optimize+",
             "/platform:$cscPlatform",
+            "/win32icon:$launcherIconPath",
             "/r:System.IO.Compression.dll",
             "/r:System.IO.Compression.FileSystem.dll",
             "/r:System.Windows.Forms.dll",

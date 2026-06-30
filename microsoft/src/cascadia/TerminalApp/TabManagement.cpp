@@ -221,6 +221,7 @@ namespace winrt::TerminalApp::implementation
             {
                 newTabImpl->ShowWorkspaceInputPanel(_ConsumePendingWorkspaceNodeInputVisibility());
             }
+            _ApplyWorkspaceNodeTitlePolicy(newTabImpl);
             _InitializeTab(newTabImpl, insertPosition);
             return *newTabImpl;
         }
@@ -1105,7 +1106,15 @@ namespace winrt::TerminalApp::implementation
             const auto p = CommandPaletteElement();
             if (!p || p.Visibility() != Visibility::Visible)
             {
-                tab.Focus(FocusState::Programmatic);
+                auto tabImpl = _GetTabImpl(tab);
+                if (tabImpl && tabImpl->ShowWorkspaceInputPanel())
+                {
+                    WorkspaceChatInput().Focus(FocusState::Programmatic);
+                }
+                else
+                {
+                    tab.Focus(FocusState::Programmatic);
+                }
                 _UpdateMRUTab(tab);
                 _updateAllTabCloseButtons();
             }

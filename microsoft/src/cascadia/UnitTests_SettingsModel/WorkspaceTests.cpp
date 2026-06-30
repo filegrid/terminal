@@ -73,6 +73,7 @@ namespace SettingsModelUnitTests
             "        operatingSystem: 'windows'\n"
             "        shellType: 'powershell'\n"
             "        showInputPanel: true\n"
+            "        useNodeNameAsTabTitle: false\n"
         };
 
         {
@@ -94,6 +95,7 @@ namespace SettingsModelUnitTests
         VERIFY_IS_TRUE(workspace.Nodes.front().OperatingSystem == L"windows");
         VERIFY_IS_TRUE(workspace.Nodes.front().ShellType == L"powershell");
         VERIFY_IS_TRUE(workspace.Nodes.front().ShowInputPanel);
+        VERIFY_IS_FALSE(workspace.Nodes.front().UseNodeNameAsTabTitle);
     }
 
     void WorkspaceTests::BuildWorkspaceStartupActions()
@@ -141,6 +143,7 @@ namespace SettingsModelUnitTests
         VERIFY_IS_NOT_NULL(terminalArgs);
         VERIFY_IS_TRUE(std::wstring{ terminalArgs.Profile() } == expectedProfileGuid);
         VERIFY_IS_TRUE(std::wstring{ terminalArgs.StartingDirectory() } == expectedDirectory);
+        VERIFY_IS_TRUE(terminalArgs.SuppressApplicationTitle().Value());
 
         const auto sendInputArgs = actions.at(1).Args().try_as<SendInputArgs>();
         VERIFY_IS_NOT_NULL(sendInputArgs);
@@ -294,6 +297,7 @@ namespace SettingsModelUnitTests
         node.OperatingSystem = L"windows";
         node.ShellType = L"powershell";
         node.ShowInputPanel = true;
+        node.UseNodeNameAsTabTitle = false;
         workspace.Nodes.emplace_back(std::move(node));
 
         WorkspaceManager manager;
@@ -322,6 +326,7 @@ namespace SettingsModelUnitTests
         VERIFY_IS_TRUE(loadedNode.OperatingSystem == L"windows");
         VERIFY_IS_TRUE(loadedNode.ShellType == L"powershell");
         VERIFY_IS_TRUE(loadedNode.ShowInputPanel);
+        VERIFY_IS_FALSE(loadedNode.UseNodeNameAsTabTitle);
     }
 
     void WorkspaceTests::SaveUnlockedWorkspaceYamlRoundTrip()

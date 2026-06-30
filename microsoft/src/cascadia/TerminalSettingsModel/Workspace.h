@@ -18,6 +18,7 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         std::wstring OperatingSystem;
         std::wstring ShellType;
         bool ShowInputPanel{ false };
+        bool UseNodeNameAsTabTitle{ true };
     };
 
     struct Workspace

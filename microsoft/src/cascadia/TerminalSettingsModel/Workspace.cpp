@@ -366,6 +366,10 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
             {
                 node.ShowInputPanel = _parseBool(value, node.ShowInputPanel);
             }
+            else if (key == L"useNodeNameAsTabTitle")
+            {
+                node.UseNodeNameAsTabTitle = _parseBool(value, node.UseNodeNameAsTabTitle);
+            }
         }
 
         void _appendNodeIfPresent(std::optional<WorkspaceNode>& currentNode, std::optional<Workspace>& currentWorkspace)
@@ -588,6 +592,7 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
                     stream << L"        shellType: " << _quote(node.ShellType) << L"\n";
                 }
                 stream << L"        showInputPanel: " << (node.ShowInputPanel ? L"true" : L"false") << L"\n";
+                stream << L"        useNodeNameAsTabTitle: " << (node.UseNodeNameAsTabTitle ? L"true" : L"false") << L"\n";
             }
         }
 
@@ -760,6 +765,7 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
             {
                 terminalArgs.TabTitle(node.Name);
             }
+            terminalArgs.SuppressApplicationTitle(node.UseNodeNameAsTabTitle);
 
             if (!node.ProfileGuid.empty())
             {
