@@ -1010,6 +1010,24 @@
  <data name="WorkspaceSaveFailedGeneric" xml:space="preserve">
    <value>Failed to save workspace.</value>
  </data>
+ <data name="WorkspaceUnsavedExitDialog_Title" xml:space="preserve">
+   <value>Save workspace before exiting?</value>
+ </data>
+ <data name="WorkspaceUnsavedExitDialog_Message" xml:space="preserve">
+   <value>This workspace has unsaved changes. Do you want to save it before closing the window or leaving the workspace?</value>
+ </data>
+ <data name="WorkspaceUnsavedExitDialog_MessageNeedsName" xml:space="preserve">
+   <value>This workspace has unsaved changes. Enter a name and save it before closing the window or leaving the workspace.</value>
+ </data>
+ <data name="WorkspaceUnsavedExitDialog_Save" xml:space="preserve">
+   <value>Save</value>
+ </data>
+ <data name="WorkspaceUnsavedExitDialog_DontSave" xml:space="preserve">
+   <value>Don't save</value>
+ </data>
+ <data name="WorkspaceUnsavedExitDialog_Cancel" xml:space="preserve">
+   <value>Cancel</value>
+ </data>
  <data name="WorkspaceManagerDialog_Title" xml:space="preserve">
    <value>Manage workspaces</value>
  </data>

@@ -455,6 +455,18 @@ namespace winrt::TerminalApp::implementation
         auto actions = t->BuildStartupActions(BuildStartupKind::None);
         _AddPreviouslyClosedPaneOrTab(std::move(actions));
 
+        if (const auto tabImpl = _GetTabImpl(tab))
+        {
+            if (const auto nodeId = _ResolveLiveCurrentWorkspaceNodeId(tabImpl); !_currentWorkspaceId.empty() && !nodeId.empty())
+            {
+                const auto result = _RemoveWorkspaceNodeTab(tab, _currentWorkspaceId.c_str(), nodeId);
+                if (result != WorkspaceNodeRemoveResult::NotFound)
+                {
+                    co_return;
+                }
+            }
+        }
+
         tab.Close();
     }
 

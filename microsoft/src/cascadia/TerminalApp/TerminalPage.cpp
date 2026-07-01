@@ -934,12 +934,11 @@ namespace winrt::TerminalApp::implementation
     safe_void_coroutine TerminalPage::_OpenWorkspace(const winrt::hstring& workspaceId, const bool openInNewWindow)
     {
         const auto strong = get_strong();
-
         const auto appState = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
-        appState.LastOpenedWorkspaceId(workspaceId);
 
         if (const auto existingWindowId = _FindOpenWorkspaceWindowId(workspaceId.c_str()))
         {
+            appState.LastOpenedWorkspaceId(workspaceId);
             appState.Flush();
             SummonWindowRequested.raise(*this, winrt::box_value(*existingWindowId));
             co_return;
@@ -959,6 +958,21 @@ namespace winrt::TerminalApp::implementation
             appState.Flush();
             co_return;
         }
+
+        if (!openInNewWindow &&
+            !_currentWorkspaceId.empty() &&
+            _currentWorkspaceId != workspaceId &&
+            _CurrentWorkspaceNeedsSave())
+        {
+            const auto weak = get_weak();
+            const auto proceed = co_await _ConfirmSaveWorkspaceOnExit();
+            if (!weak.get() || !proceed)
+            {
+                co_return;
+            }
+        }
+
+        appState.LastOpenedWorkspaceId(workspaceId);
 
         std::vector<winrt::TerminalApp::Tab> tabsToReplace;
         tabsToReplace.reserve(_tabs.Size());
@@ -1319,7 +1333,7 @@ namespace winrt::TerminalApp::implementation
         _tabRow.WorkspaceName(winrt::hstring{ name });
         _tabRow.WorkspaceNameVisibility(name.empty() ? WUX::Visibility::Collapsed : WUX::Visibility::Visible);
         _tabRow.WorkspaceDirtyVisibility(dirty ? WUX::Visibility::Visible : WUX::Visibility::Collapsed);
-        _tabRow.WorkspaceSaveVisibility(WUX::Visibility::Collapsed);
+        _tabRow.WorkspaceSaveVisibility(_CurrentWorkspaceNeedsSave() ? WUX::Visibility::Visible : WUX::Visibility::Collapsed);
         _tabRow.WorkspaceLockGlyph(_CurrentWorkspaceLocked() ? L"\xE72E" : L"\xE785");
         _tabRow.WorkspaceLockVisibility(_currentWorkspaceId.empty() ? WUX::Visibility::Collapsed : WUX::Visibility::Visible);
 
@@ -1629,6 +1643,13 @@ namespace winrt::TerminalApp::implementation
         _UpdateWorkspaceChatHeader();
     }
 
+    void TerminalPage::_DispatchWorkspaceChatInput(const TermControl& control, const std::wstring_view text)
+    {
+        std::wstring payload{ text };
+        payload.push_back(L'\r');
+        control.SendInput(winrt::hstring{ payload });
+    }
+
     void TerminalPage::_PersistWorkspaceChatDraft()
     {
         _workspaceChatController.SaveDraft(_CurrentWorkspaceDraftKey(), WorkspaceChatInput().Text().c_str());
@@ -1688,8 +1709,6 @@ namespace winrt::TerminalApp::implementation
 
     void TerminalPage::_SendWorkspaceChatMessage()
     {
-        using namespace ::Microsoft::Console::Utils;
-
         const auto rawText = std::wstring{ WorkspaceChatInput().Text().c_str() };
         const auto trimmed = _trimWorkspaceChatText(rawText);
         if (trimmed.empty())
@@ -1717,30 +1736,7 @@ namespace winrt::TerminalApp::implementation
                                                    paneId,
                                                    rawText);
 
-        auto body = FilterStringForPaste(rawText, CarriageReturnNewline | ControlCodes);
-        while (!body.empty() && body.back() == L'\r')
-        {
-            body.pop_back();
-        }
-
-        const auto hasEmbeddedNewline =
-            rawText.find(L'\n') != std::wstring::npos ||
-            rawText.find(L'\r') != std::wstring::npos;
-
-        if (hasEmbeddedNewline && control.BracketedPasteEnabled())
-        {
-            auto input = std::move(body);
-            input.insert(0, L"\x1b[200~");
-            input.append(L"\x1b[201~");
-            input.push_back(L'\r');
-            control.SendInput(winrt::hstring{ input });
-        }
-        else
-        {
-            auto input = std::move(body);
-            input.push_back(L'\r');
-            control.SendInput(winrt::hstring{ input });
-        }
+        _DispatchWorkspaceChatInput(control, rawText);
         _workspaceChatDraftUpdateInProgress = true;
         WorkspaceChatInput().Text(L"");
         _workspaceChatDraftUpdateInProgress = false;
@@ -2359,6 +2355,30 @@ namespace winrt::TerminalApp::implementation
         return std::nullopt;
     }
 
+    std::wstring TerminalPage::_ResolveLiveCurrentWorkspaceNodeId(const winrt::com_ptr<Tab>& tab) const
+    {
+        if (!tab)
+        {
+            return {};
+        }
+
+        if (const auto control = tab->GetActiveTerminalControl())
+        {
+            if (const auto it = _workspaceNodeRuntimeStates.find(control.ContentId());
+                it != _workspaceNodeRuntimeStates.end())
+            {
+                return it->second.WorkspaceNodeId;
+            }
+        }
+
+        if (const auto node = _ResolveCurrentWorkspaceNode(tab))
+        {
+            return node->Id;
+        }
+
+        return {};
+    }
+
     winrt::com_ptr<Tab> TerminalPage::_GetWorkspaceBackedTabByNodeIndex(const size_t nodeIndex) const
     {
         size_t currentNodeIndex = 0;
@@ -2377,6 +2397,27 @@ namespace winrt::TerminalApp::implementation
                 }
 
                 ++currentNodeIndex;
+            }
+        }
+
+        return nullptr;
+    }
+
+    winrt::com_ptr<Tab> TerminalPage::_GetCurrentWorkspaceTabByNodeId(const std::wstring_view nodeId) const
+    {
+        if (nodeId.empty())
+        {
+            return nullptr;
+        }
+
+        for (const auto& tab : _tabs)
+        {
+            if (const auto tabImpl = _GetTabImpl(tab))
+            {
+                if (_ResolveLiveCurrentWorkspaceNodeId(tabImpl) == nodeId)
+                {
+                    return tabImpl;
+                }
             }
         }
 
@@ -2562,22 +2603,9 @@ namespace winrt::TerminalApp::implementation
 
     void TerminalPage::_DeleteSelectedWorkspaceDefinition()
     {
-        auto& workspaces = _workspaceEditorManager.Workspaces();
-        if (_workspaceEditorSelectedIndex >= workspaces.size())
+        if (const auto workspace = _SelectedWorkspaceForEditing())
         {
-            return;
-        }
-
-        workspaces.erase(workspaces.begin() + gsl::narrow_cast<ptrdiff_t>(_workspaceEditorSelectedIndex));
-        _workspaceDefinitionsDirty = true;
-
-        if (workspaces.empty())
-        {
-            _workspaceEditorSelectedIndex = 0;
-        }
-        else if (_workspaceEditorSelectedIndex >= workspaces.size())
-        {
-            _workspaceEditorSelectedIndex = workspaces.size() - 1;
+            _RemoveWorkspaceDefinitionById(workspace->Id);
         }
     }
 
@@ -2605,33 +2633,247 @@ namespace winrt::TerminalApp::implementation
             return;
         }
 
-        workspace->Nodes.erase(workspace->Nodes.begin() + gsl::narrow_cast<ptrdiff_t>(nodeIndex));
-        _workspaceDefinitionsDirty = true;
-
-        if (_workspaceManagerNavSelection >= 1000)
+        const auto workspaceId = workspace->Id;
+        const auto nodeId = workspace->Nodes.at(nodeIndex).Id;
+        if (workspaceId.empty() || nodeId.empty())
         {
-            const auto workspaceIndex = gsl::narrow_cast<size_t>((_workspaceManagerNavSelection - 1000) / 100);
-            const auto workspaceSubSelection = (_workspaceManagerNavSelection - 1000) % 100;
-            if (workspaceIndex == _workspaceEditorSelectedIndex && workspaceSubSelection >= 10)
+            return;
+        }
+
+        if (workspaceId == _currentWorkspaceId.c_str())
+        {
+            if (const auto tab = _GetCurrentWorkspaceTabByNodeId(nodeId))
+            {
+                _RemoveWorkspaceNodeTab(*tab, workspaceId, nodeId);
+                return;
+            }
+        }
+
+        _RemoveWorkspaceNodeById(workspaceId, nodeId);
+    }
+
+    bool TerminalPage::_RemoveWorkspaceDefinitionById(const std::wstring_view workspaceId)
+    {
+        if (workspaceId.empty())
+        {
+            return false;
+        }
+
+        const auto selectedWorkspaceId = _SelectedWorkspaceId();
+        const auto previousNavSelection = _workspaceManagerNavSelection;
+        auto manager = _workspaceDefinitionsDirty ? _workspaceEditorManager : Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::Load();
+        auto& workspaces = manager.Workspaces();
+        const auto workspaceIt = std::find_if(workspaces.begin(), workspaces.end(), [&](const auto& workspace) {
+            return workspace.Id == workspaceId;
+        });
+        if (workspaceIt == workspaces.end())
+        {
+            return false;
+        }
+
+        const auto removedWorkspaceIndex = gsl::narrow_cast<size_t>(std::distance(workspaces.begin(), workspaceIt));
+        const auto removedCurrentWorkspace = workspaceId == _currentWorkspaceId.c_str();
+        workspaces.erase(workspaceIt);
+
+        if (!manager.Save())
+        {
+            ActionSaveFailed(RS_(L"WorkspaceEditor_SaveFailed"));
+            return false;
+        }
+
+        _workspaceEditorManager = manager;
+        _workspaceDefinitionsDirty = false;
+        _workspaceEditorEditMode = true;
+        _LoadWorkspaceEditorState();
+
+        if (previousNavSelection >= 1000)
+        {
+            if (workspaces.empty())
+            {
+                _workspaceManagerNavSelection = 0;
+            }
+            else if (selectedWorkspaceId == workspaceId)
+            {
+                const auto newWorkspaceIndex = std::min(removedWorkspaceIndex, workspaces.size() - 1);
+                _workspaceManagerNavSelection = 1000 + gsl::narrow_cast<int32_t>(newWorkspaceIndex * 100);
+            }
+            else
+            {
+                const auto previousWorkspaceIndex = gsl::narrow_cast<size_t>((previousNavSelection - 1000) / 100);
+                if (previousWorkspaceIndex > removedWorkspaceIndex)
+                {
+                    _workspaceManagerNavSelection -= 100;
+                }
+            }
+        }
+
+        if (removedCurrentWorkspace)
+        {
+            CurrentWorkspaceId(winrt::hstring{});
+        }
+
+        const auto state = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
+        if (const auto lastWorkspaceId = state.LastOpenedWorkspaceId(); !lastWorkspaceId.empty() &&
+            _workspaceEditorManager.FindById(lastWorkspaceId) == nullptr)
+        {
+            state.LastOpenedWorkspaceId(L"");
+            state.Flush();
+        }
+
+        _CreateNewTabFlyout();
+        _UpdateWorkspaceTabRow();
+
+        if (removedCurrentWorkspace)
+        {
+            CloseWindowRequested.raise(*this, nullptr);
+            return true;
+        }
+
+        if (_workspaceManagerContent)
+        {
+            _RebuildWorkspaceManagerTab();
+        }
+
+        return true;
+    }
+
+    bool TerminalPage::_SaveWorkspaceEditorState()
+    {
+        if (!_workspaceEditorManager.Save())
+        {
+            ActionSaveFailed(RS_(L"WorkspaceEditor_SaveFailed"));
+            return false;
+        }
+
+        const auto currentId = CurrentWorkspaceId();
+        const auto removedCurrentWorkspace = !currentId.empty() &&
+                                            _workspaceEditorManager.FindById(currentId.c_str()) == nullptr;
+
+        if (removedCurrentWorkspace)
+        {
+            CurrentWorkspaceId(winrt::hstring{});
+        }
+
+        const auto state = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
+        if (const auto lastWorkspaceId = state.LastOpenedWorkspaceId(); !lastWorkspaceId.empty() &&
+            _workspaceEditorManager.FindById(lastWorkspaceId) == nullptr)
+        {
+            state.LastOpenedWorkspaceId(L"");
+            state.Flush();
+        }
+
+        _workspaceDefinitionsDirty = false;
+        _workspaceEditorEditMode = true;
+        _LoadWorkspaceEditorState();
+        _CreateNewTabFlyout();
+        _UpdateWorkspaceTabRow();
+
+        if (removedCurrentWorkspace)
+        {
+            CloseWindowRequested.raise(*this, nullptr);
+            return true;
+        }
+
+        if (_workspaceManagerContent)
+        {
+            _RebuildWorkspaceManagerTab();
+        }
+
+        return true;
+    }
+
+    TerminalPage::WorkspaceNodeRemoveResult TerminalPage::_RemoveWorkspaceNodeById(const std::wstring_view workspaceId, const std::wstring_view nodeId)
+    {
+        if (workspaceId.empty() || nodeId.empty())
+        {
+            return WorkspaceNodeRemoveResult::NotFound;
+        }
+
+        const auto selectedWorkspaceId = _SelectedWorkspaceId();
+        const auto previousNavSelection = _workspaceManagerNavSelection;
+        auto manager = _workspaceDefinitionsDirty ? _workspaceEditorManager : Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::Load();
+        auto& workspaces = manager.Workspaces();
+        const auto workspaceIt = std::find_if(workspaces.begin(), workspaces.end(), [&](const auto& workspace) {
+            return workspace.Id == workspaceId;
+        });
+        if (workspaceIt == workspaces.end())
+        {
+            return WorkspaceNodeRemoveResult::NotFound;
+        }
+
+        auto& nodes = workspaceIt->Nodes;
+        const auto nodeIt = std::find_if(nodes.begin(), nodes.end(), [&](const auto& node) {
+            return node.Id == nodeId;
+        });
+        if (nodeIt == nodes.end())
+        {
+            return WorkspaceNodeRemoveResult::NotFound;
+        }
+
+        if (nodes.size() == 1)
+        {
+            return _RemoveWorkspaceDefinitionById(workspaceId) ? WorkspaceNodeRemoveResult::RemovedWorkspace :
+                                                                 WorkspaceNodeRemoveResult::SaveFailed;
+        }
+
+        const auto removedNodeIndex = gsl::narrow_cast<size_t>(std::distance(nodes.begin(), nodeIt));
+        nodes.erase(nodeIt);
+
+        if (!manager.Save())
+        {
+            ActionSaveFailed(RS_(L"WorkspaceEditor_SaveFailed"));
+            return WorkspaceNodeRemoveResult::SaveFailed;
+        }
+
+        _workspaceEditorManager = manager;
+        _workspaceDefinitionsDirty = false;
+        _LoadWorkspaceEditorState();
+
+        if (selectedWorkspaceId == workspaceId && previousNavSelection >= 1000)
+        {
+            const auto selectedWorkspace = _SelectedWorkspaceForEditing();
+            const auto workspaceSubSelection = (previousNavSelection - 1000) % 100;
+            if (selectedWorkspace && workspaceSubSelection >= 10)
             {
                 const auto selectedNodeIndex = gsl::narrow_cast<size_t>(workspaceSubSelection - 10);
-                if (selectedNodeIndex == nodeIndex)
+                if (selectedNodeIndex == removedNodeIndex)
                 {
-                    if (nodeIndex > 0)
+                    if (removedNodeIndex > 0)
                     {
-                        _workspaceManagerNavSelection = 1000 + gsl::narrow_cast<int32_t>(_workspaceEditorSelectedIndex * 100) + 10 + gsl::narrow_cast<int32_t>(nodeIndex - 1);
+                        _workspaceManagerNavSelection = 1000 + gsl::narrow_cast<int32_t>(_workspaceEditorSelectedIndex * 100) + 10 + gsl::narrow_cast<int32_t>(removedNodeIndex - 1);
                     }
                     else
                     {
                         _workspaceManagerNavSelection = 1000 + gsl::narrow_cast<int32_t>(_workspaceEditorSelectedIndex * 100);
                     }
                 }
-                else if (selectedNodeIndex > nodeIndex)
+                else if (selectedNodeIndex > removedNodeIndex)
                 {
-                    _workspaceManagerNavSelection -= 1;
+                    _workspaceManagerNavSelection = previousNavSelection - 1;
                 }
             }
         }
+
+        _CreateNewTabFlyout();
+        _UpdateWorkspaceTabRow();
+        if (_workspaceManagerContent)
+        {
+            _RebuildWorkspaceManagerTab();
+        }
+
+        return WorkspaceNodeRemoveResult::RemovedNode;
+    }
+
+    TerminalPage::WorkspaceNodeRemoveResult TerminalPage::_RemoveWorkspaceNodeTab(const winrt::TerminalApp::Tab& tab,
+                                                                                  const std::wstring_view workspaceId,
+                                                                                  const std::wstring_view nodeId)
+    {
+        const auto result = _RemoveWorkspaceNodeById(workspaceId, nodeId);
+        if (result == WorkspaceNodeRemoveResult::RemovedNode)
+        {
+            _RemoveTab(tab);
+        }
+        return result;
     }
 
     void TerminalPage::_RebuildWorkspaceManagerTab()
@@ -3369,32 +3611,7 @@ namespace winrt::TerminalApp::implementation
         saveButton.Click([weakThis{ get_weak() }](auto&&, auto&&) {
             if (auto self{ weakThis.get() })
             {
-                if (!self->_workspaceEditorManager.Save())
-                {
-                    self->ActionSaveFailed(RS_(L"WorkspaceEditor_SaveFailed"));
-                    return;
-                }
-
-                if (const auto currentId = self->CurrentWorkspaceId(); !currentId.empty() &&
-                    self->_workspaceEditorManager.FindById(currentId.c_str()) == nullptr)
-                {
-                    self->CurrentWorkspaceId(winrt::hstring{});
-                }
-
-                const auto state = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
-                if (const auto lastWorkspaceId = state.LastOpenedWorkspaceId(); !lastWorkspaceId.empty() &&
-                    self->_workspaceEditorManager.FindById(lastWorkspaceId) == nullptr)
-                {
-                    state.LastOpenedWorkspaceId(L"");
-                    state.Flush();
-                }
-
-                self->_workspaceDefinitionsDirty = false;
-                self->_workspaceEditorEditMode = true;
-                self->_LoadWorkspaceEditorState();
-                self->_CreateNewTabFlyout();
-                self->_UpdateWorkspaceTabRow();
-                self->_RebuildWorkspaceManagerTab();
+                self->_SaveWorkspaceEditorState();
             }
         });
         footerButtons.Children().Append(saveButton);
@@ -3432,51 +3649,9 @@ namespace winrt::TerminalApp::implementation
             return;
         }
 
-        if (!_workspaceEditorManager.Save())
+        if (!_SaveWorkspaceEditorState())
         {
             eventArgs.Cancel(true);
-            ActionSaveFailed(RS_(L"WorkspaceEditor_SaveFailed"));
-            return;
-        }
-
-        const auto currentId = CurrentWorkspaceId();
-        const auto removedCurrentWorkspace = !currentId.empty() &&
-                                            _workspaceEditorManager.FindById(currentId.c_str()) == nullptr;
-
-        if (const auto currentId = CurrentWorkspaceId(); !currentId.empty() &&
-            _workspaceEditorManager.FindById(currentId.c_str()) == nullptr)
-        {
-            CurrentWorkspaceId(winrt::hstring{});
-        }
-
-        const auto state = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
-        if (const auto lastWorkspaceId = state.LastOpenedWorkspaceId(); !lastWorkspaceId.empty() &&
-            _workspaceEditorManager.FindById(lastWorkspaceId) == nullptr)
-        {
-            state.LastOpenedWorkspaceId(L"");
-            state.Flush();
-        }
-
-        _workspaceDefinitionsDirty = false;
-        _workspaceEditorEditMode = true;
-        _CreateNewTabFlyout();
-
-        if (removedCurrentWorkspace)
-        {
-            std::vector<winrt::TerminalApp::Tab> tabsToRemove;
-            tabsToRemove.reserve(_tabs.Size());
-            for (const auto& tab : _tabs)
-            {
-                if (tab != _workspaceManagerTab && tab != _settingsTab)
-                {
-                    tabsToRemove.emplace_back(tab);
-                }
-            }
-
-            for (const auto& tab : tabsToRemove)
-            {
-                _RemoveTab(tab);
-            }
         }
     }
 
@@ -3498,22 +3673,7 @@ namespace winrt::TerminalApp::implementation
         tip.ActionButtonContent(box_value(RS_(L"WorkspaceSaver_ActionButtonContent")));
         tip.CloseButtonContent(box_value(RS_(L"WorkspaceSaver_CloseButtonContent")));
 
-        auto suggestedName = _ResolvedWorkspaceSaveTargetName();
-        if (suggestedName.empty())
-        {
-            suggestedName = _WindowProperties.WindowName();
-        }
-        if (suggestedName.empty() && NumberOfTabs() == 1)
-        {
-            suggestedName = _tabs.GetAt(0).Title();
-        }
-        if (suggestedName.empty())
-        {
-            suggestedName = RS_fmt(L"WorkspaceGeneratedName",
-                                   Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::Load().Workspaces().size() + 1);
-        }
-
-        WorkspaceSaverTextBox().Text(suggestedName);
+        WorkspaceSaverTextBox().Text(_SuggestedWorkspaceSaveName());
 
         _workspaceSaverLayoutUpdatedRevoker.revoke();
         _workspaceSaverLayoutUpdatedRevoker = WorkspaceSaverTextBox().LayoutUpdated(winrt::auto_revoke, [weakThis = get_weak()](auto&&, auto&&) {
@@ -3536,6 +3696,25 @@ namespace winrt::TerminalApp::implementation
 
         _workspaceSaverPressedEnter = false;
         WorkspaceSaver().IsOpen(true);
+    }
+
+    std::wstring TerminalPage::_SuggestedWorkspaceSaveName() const
+    {
+        auto suggestedName = _ResolvedWorkspaceSaveTargetName();
+        if (suggestedName.empty())
+        {
+            suggestedName = _WindowProperties.WindowName();
+        }
+        if (suggestedName.empty() && NumberOfTabs() == 1)
+        {
+            suggestedName = _tabs.GetAt(0).Title();
+        }
+        if (suggestedName.empty())
+        {
+            suggestedName = RS_fmt(L"WorkspaceGeneratedName",
+                                   Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::Load().Workspaces().size() + 1);
+        }
+        return suggestedName;
     }
 
     void TerminalPage::_SaveCurrentWindowAsWorkspace(const winrt::hstring& workspaceName)
@@ -5942,6 +6121,25 @@ namespace winrt::TerminalApp::implementation
     //   warn for the current window state, show a warning dialog.
     safe_void_coroutine TerminalPage::CloseWindow()
     {
+        if (_CurrentWorkspaceNeedsSave() &&
+            !_displayingCloseDialog)
+        {
+            _displayingCloseDialog = true;
+            const auto weak = get_weak();
+            const auto proceed = co_await _ConfirmSaveWorkspaceOnExit();
+            auto strong = weak.get();
+            if (!strong)
+            {
+                co_return;
+            }
+
+            _displayingCloseDialog = false;
+            if (!proceed)
+            {
+                co_return;
+            }
+        }
+
         if (_ShouldWarnOnClose() &&
             !_displayingCloseDialog)
         {
@@ -5971,6 +6169,47 @@ namespace winrt::TerminalApp::implementation
         }
 
         CloseWindowRequested.raise(*this, nullptr);
+    }
+
+    winrt::Windows::Foundation::IAsyncOperation<bool> TerminalPage::_ConfirmSaveWorkspaceOnExit()
+    {
+        if (!_CurrentWorkspaceNeedsSave())
+        {
+            co_return true;
+        }
+
+        const auto dialog = FindName(L"UnsavedWorkspaceDialog").as<ContentDialog>();
+        const auto message = FindName(L"UnsavedWorkspaceDialogMessage").as<TextBlock>();
+        const auto textBox = FindName(L"UnsavedWorkspaceDialogTextBox").as<TextBox>();
+        dialog.Title(box_value(RS_(L"WorkspaceUnsavedExitDialog_Title")));
+        dialog.PrimaryButtonText(RS_(L"WorkspaceUnsavedExitDialog_Save"));
+        dialog.SecondaryButtonText(RS_(L"WorkspaceUnsavedExitDialog_DontSave"));
+        dialog.CloseButtonText(RS_(L"WorkspaceUnsavedExitDialog_Cancel"));
+
+        const auto needsName = _ResolvedWorkspaceSaveTargetId().empty();
+        message.Text(needsName ? RS_(L"WorkspaceUnsavedExitDialog_MessageNeedsName") :
+                                 RS_(L"WorkspaceUnsavedExitDialog_Message"));
+        textBox.Visibility(needsName ? WUX::Visibility::Visible : WUX::Visibility::Collapsed);
+        textBox.Text(needsName ? _SuggestedWorkspaceSaveName() : L"");
+
+        const auto result = co_await _ShowDialogHelper(L"UnsavedWorkspaceDialog");
+        if (result == ContentDialogResult::Primary)
+        {
+            auto workspaceName = winrt::hstring{};
+            if (needsName)
+            {
+                workspaceName = textBox.Text();
+                if (workspaceName.empty())
+                {
+                    workspaceName = winrt::hstring{ _SuggestedWorkspaceSaveName() };
+                }
+            }
+
+            _SaveCurrentWindowAsWorkspace(workspaceName);
+            co_return !_CurrentWorkspaceNeedsSave();
+        }
+
+        co_return result == ContentDialogResult::Secondary;
     }
 
     std::vector<IPaneContent> TerminalPage::Panes() const

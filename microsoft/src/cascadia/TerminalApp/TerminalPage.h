@@ -398,6 +398,7 @@ namespace winrt::TerminalApp::implementation
         winrt::Windows::Foundation::IAsyncOperation<winrt::Windows::UI::Xaml::Controls::ContentDialogResult> _ShowCloseReadOnlyDialog();
         winrt::Windows::Foundation::IAsyncOperation<winrt::Windows::UI::Xaml::Controls::ContentDialogResult> _ShowMultiLinePasteWarningDialog();
         winrt::Windows::Foundation::IAsyncOperation<winrt::Windows::UI::Xaml::Controls::ContentDialogResult> _ShowLargePasteWarningDialog();
+        winrt::Windows::Foundation::IAsyncOperation<bool> _ConfirmSaveWorkspaceOnExit();
 
         void _CreateNewTabFlyout();
         std::vector<winrt::Windows::UI::Xaml::Controls::MenuFlyoutItemBase> _CreateNewTabFlyoutItems(winrt::Windows::Foundation::Collections::IVector<Microsoft::Terminal::Settings::Model::NewTabMenuEntry> entries);
@@ -409,6 +410,7 @@ namespace winrt::TerminalApp::implementation
         safe_void_coroutine _OpenWorkspaceManager();
         void _OpenWorkspaceSaver();
         void _SaveCurrentWindowAsWorkspace(const winrt::hstring& workspaceName = {});
+        std::wstring _SuggestedWorkspaceSaveName() const;
         std::wstring _ResolvedWorkspaceSaveTargetId() const;
         std::wstring _ResolvedWorkspaceSaveTargetName() const;
         bool _TryCaptureCurrentWorkspace(winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace& workspace) const;
@@ -427,6 +429,8 @@ namespace winrt::TerminalApp::implementation
         void _AddWorkspaceNode();
         void _DeleteWorkspaceNode(size_t nodeIndex);
         void _SetSelectedWorkspaceIndex(size_t index);
+        bool _RemoveWorkspaceDefinitionById(std::wstring_view workspaceId);
+        bool _SaveWorkspaceEditorState();
         winrt::Windows::UI::Xaml::UIElement _BuildWorkspaceManagerContent();
         winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace* _SelectedWorkspaceForEditing() noexcept;
         const winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace* _SelectedWorkspaceForEditing() const noexcept;
@@ -439,6 +443,13 @@ namespace winrt::TerminalApp::implementation
         void _UpdateWorkspaceInteractionState();
         winrt::Microsoft::Terminal::Settings::Model::TabCloseButtonVisibility _CurrentTabCloseButtonVisibility() const;
         void _UpdateWorkspaceTabRow();
+        enum class WorkspaceNodeRemoveResult
+        {
+            RemovedNode,
+            RemovedWorkspace,
+            NotFound,
+            SaveFailed,
+        };
         void _InitializeWorkspaceChatUi();
         void _UpdateTerminalContentHostClip();
         void _UpdateWorkspaceChatHeader();
@@ -453,6 +464,7 @@ namespace winrt::TerminalApp::implementation
         void _ReloadWorkspaceChatState();
         void _PersistWorkspaceChatDraft();
         void _UpdateWorkspaceChatInputHeight();
+        void _DispatchWorkspaceChatInput(const winrt::Microsoft::Terminal::Control::TermControl& control, std::wstring_view text);
         void _SendWorkspaceChatMessage();
         void _SetWorkspaceChatCollapsed(bool collapsed);
         void _ToggleWorkspaceChatCollapsed();
@@ -561,6 +573,10 @@ namespace winrt::TerminalApp::implementation
         winrt::com_ptr<Tab> _GetFocusedTabImpl() const noexcept;
         std::optional<Microsoft::Terminal::Settings::Model::NewTerminalArgs> _BuildWorkspaceNodeArgs(const winrt::com_ptr<Tab>& tab) const;
         std::optional<Microsoft::Terminal::Settings::Model::implementation::WorkspaceNode> _ResolveCurrentWorkspaceNode(const winrt::com_ptr<Tab>& tab) const;
+        std::wstring _ResolveLiveCurrentWorkspaceNodeId(const winrt::com_ptr<Tab>& tab) const;
+        winrt::com_ptr<Tab> _GetCurrentWorkspaceTabByNodeId(std::wstring_view nodeId) const;
+        WorkspaceNodeRemoveResult _RemoveWorkspaceNodeById(std::wstring_view workspaceId, std::wstring_view nodeId);
+        WorkspaceNodeRemoveResult _RemoveWorkspaceNodeTab(const winrt::TerminalApp::Tab& tab, std::wstring_view workspaceId, std::wstring_view nodeId);
         void _PreparePendingWorkspaceNodeStartupAction(const Microsoft::Terminal::Settings::Model::ActionAndArgs& action,
                                                        const std::vector<Microsoft::Terminal::Settings::Model::ActionAndArgs>& actions,
                                                        size_t index);

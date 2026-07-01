@@ -926,6 +926,19 @@ namespace winrt::Microsoft::Terminal::Control::implementation
 
         RawWriteString(wstr);
     }
+
+    void TermControl::PasteText(const winrt::hstring& text)
+    {
+        PreviewInput(hstring{});
+
+        if (StringSent)
+        {
+            StringSent.raise(*this, winrt::make<StringSentEventArgs>(text));
+        }
+
+        _core.PasteText(text);
+    }
+
     void TermControl::ClearBuffer(Control::ClearBufferType clearType)
     {
         _core.ClearBuffer(clearType);
@@ -3238,12 +3251,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
     //   broadcast as well.
     void TermControl::_pasteTextWithBroadcast(const winrt::hstring& text)
     {
-        // only broadcast if there's an actual listener. Saves the overhead of some object creation.
-        if (StringSent)
-        {
-            StringSent.raise(*this, winrt::make<StringSentEventArgs>(text));
-        }
-        _core.PasteText(text);
+        PasteText(text);
     }
 
     // Method Description:

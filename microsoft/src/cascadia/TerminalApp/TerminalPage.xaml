@@ -231,6 +231,25 @@
                        x:Load="False"
                        DefaultButton="Primary" />
 
+        <ContentDialog x:Name="UnsavedWorkspaceDialog"
+                       Grid.Row="2"
+                       x:Load="False"
+                       DefaultButton="Primary">
+            <StackPanel>
+                <TextBlock x:Name="UnsavedWorkspaceDialogMessage"
+                           TextWrapping="Wrap" />
+                <TextBox x:Name="UnsavedWorkspaceDialogTextBox"
+                         Margin="0,12,0,0"
+                         Visibility="Collapsed"
+                         IsSpellCheckEnabled="False"
+                         MaxLength="1024">
+                    <TextBox.ContextFlyout>
+                        <mtu:TextMenuFlyout />
+                    </TextBox.ContextFlyout>
+                </TextBox>
+            </StackPanel>
+        </ContentDialog>
+
         <ContentDialog x:Name="ControlNoticeDialog"
                        x:Uid="ControlNoticeDialog"
                        Grid.Row="2"

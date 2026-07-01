@@ -126,6 +126,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         winrt::Windows::Foundation::Size GetFontSize() const;
 
         void SendInput(const winrt::hstring& input);
+        void PasteText(const winrt::hstring& text);
         void ClearBuffer(Control::ClearBufferType clearType);
 
         void ToggleShaderEffects();
