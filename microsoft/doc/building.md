@@ -159,26 +159,37 @@ Notably, this method of building the Terminal package can't leverage the FastUpT
 ### Portable distribution (single-file portable launcher)
 
 If you want an unpackaged build that can be extracted to any directory instead of
-installed into `WindowsApps`, use:
+installed into `WindowsApps`, the default portable entrypoint is the real CMake
+build under the repository `build` directory:
+
+```pwsh
+cmake -S . -B .\build
+cmake --build .\build
+```
+
+This path drives the default `ext` incremental route from CMake and then runs
+the portable packaging tool to produce release portable executables under `bin`.
+
+If you need the explicit full rebuild path, use:
+
+```pwsh
+cmake --build .\build --target full
+```
+
+The older PowerShell script-based entrypoint is still available for legacy
+compatibility and targeted troubleshooting:
 
 ```pwsh
 .\build\scripts\Build-PortableTerminalDistribution.ps1
 ```
 
-This script builds `CascadiaPackage`, finds the matching `Microsoft.UI.Xaml`
-dependency package, and then runs
-`build\scripts\New-UnpackagedTerminalDistribution.ps1 -PortableMode -SingleFileOutput`
-to produce release portable executables under `bin`.
-
-The primary acceptance artifacts are:
+The primary acceptance artifact is:
 
 - `bin\WindowsTerminalPortableGeekEdition_System_0.0.1.0_x64.exe`
-- `bin\WindowsTerminalPortableGeekEdition_English_0.0.1.0_x64.exe`
 
-These single-file launchers are the main portable outputs. The `System` artifact
-follows the OS/UI language as usual, while the `English` artifact forces the
-portable app to run in English regardless of system language. You run either
-one directly; there is no install step for the normal portable flow.
+This single-file launcher is the main portable output and follows the OS/UI
+language as usual. You run it directly; there is no install step for the
+normal portable flow.
 
 If you also want sparse identity validation assets for a regular non-SID-500
 desktop session, use:

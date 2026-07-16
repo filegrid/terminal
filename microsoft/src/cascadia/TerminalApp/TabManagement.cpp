@@ -217,7 +217,7 @@ namespace winrt::TerminalApp::implementation
         if (pane)
         {
             auto newTabImpl = winrt::make_self<Tab>(pane);
-            if (!_pendingWorkspaceNodeInputVisibility.empty())
+            if (_HasPendingWorkspaceNodeInputVisibility())
             {
                 newTabImpl->ShowWorkspaceInputPanel(_ConsumePendingWorkspaceNodeInputVisibility());
             }
@@ -457,9 +457,10 @@ namespace winrt::TerminalApp::implementation
 
         if (const auto tabImpl = _GetTabImpl(tab))
         {
-            if (const auto nodeId = _ResolveLiveCurrentWorkspaceNodeId(tabImpl); !_currentWorkspaceId.empty() && !nodeId.empty())
+            const auto currentWorkspaceId = CurrentWorkspaceId();
+            if (const auto nodeId = _ResolveLiveCurrentWorkspaceNodeId(tabImpl); !currentWorkspaceId.empty() && !nodeId.empty())
             {
-                const auto result = _RemoveWorkspaceNodeTab(tab, _currentWorkspaceId.c_str(), nodeId);
+                const auto result = _RemoveWorkspaceNodeTab(tab, currentWorkspaceId.c_str(), nodeId);
                 if (result != WorkspaceNodeRemoveResult::NotFound)
                 {
                     co_return;

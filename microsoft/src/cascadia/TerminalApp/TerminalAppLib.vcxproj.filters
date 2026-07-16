@@ -34,18 +34,6 @@
     <ClCompile Include="LanguageProfileNotifier.cpp" />
     <ClCompile Include="TerminalSettingsCache.cpp" />
     <ClCompile Include="WorkspaceManagerPaneContent.cpp" />
-    <ClCompile Include="..\..\..\..\ext\src\chat\TerminalEventStore.cpp">
-      <Filter>controls</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\..\ext\src\chat\TerminalInputHarness.cpp">
-      <Filter>controls</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\..\ext\src\chat\WorkspaceChatController.cpp">
-      <Filter>controls</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\..\ext\src\chat\WorkspaceChatStore.cpp">
-      <Filter>controls</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h" />
@@ -85,7 +73,19 @@
     <ClInclude Include="..\..\..\..\ext\src\chat\WorkspaceChatController.h">
       <Filter>controls</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\..\ext\src\chat\WorkspaceChatStateHelpers.h">
+      <Filter>controls</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\..\ext\src\chat\WorkspaceChatTextHelpers.h">
+      <Filter>controls</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\..\ext\src\chat\WorkspaceDiagnosticLog.h">
+      <Filter>controls</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\..\ext\src\chat\WorkspaceChatStore.h">
+      <Filter>controls</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\..\ext\src\chat\WorkspaceStoragePaths.h">
       <Filter>controls</Filter>
     </ClInclude>
   </ItemGroup>

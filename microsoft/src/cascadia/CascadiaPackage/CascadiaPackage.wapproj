@@ -21,7 +21,8 @@
   </PropertyGroup>
   <PropertyGroup>
     <ProjectGuid>CA5CAD1A-224A-4171-B13A-F16E576FDD12</ProjectGuid>
-    <EntryPointProjectUniqueName>..\WindowsTerminal\WindowsTerminal.vcxproj</EntryPointProjectUniqueName>
+    <EntryPointProjectUniqueName Condition="'$(OpenConsoleDir)'!=''">$(OpenConsoleDir)src\cascadia\WindowsTerminal\WindowsTerminal.vcxproj</EntryPointProjectUniqueName>
+    <EntryPointProjectUniqueName Condition="'$(EntryPointProjectUniqueName)'==''">..\WindowsTerminal\WindowsTerminal.vcxproj</EntryPointProjectUniqueName>
     <DebuggerType>NativeOnly</DebuggerType>
   </PropertyGroup>
   <PropertyGroup Condition="!Exists('CascadiaPackage_TemporaryKey.pfx')">

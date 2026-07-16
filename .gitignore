@@ -311,3 +311,4 @@ profiles.json
 /packages/
 /packages-ref/
 /WTP/
+build/

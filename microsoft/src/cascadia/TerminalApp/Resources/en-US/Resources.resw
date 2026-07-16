@@ -1124,6 +1124,12 @@
  <data name="WorkspaceEditor_ClearColor" xml:space="preserve">
    <value>Clear color</value>
  </data>
+<data name="WorkspaceEditor_TabColor" xml:space="preserve">
+<value>Tab color</value>
+</data>
+<data name="WorkspaceEditor_ShowTab" xml:space="preserve">
+<value>Show this tab</value>
+</data>
  <data name="WorkspaceEditor_Nodes" xml:space="preserve">
    <value>Nodes</value>
  </data>
@@ -1177,6 +1183,9 @@
  </data>
  <data name="WorkspaceEditor_SaveFailed" xml:space="preserve">
    <value>Failed to save workspace changes to workspaces.yaml.</value>
+ </data>
+ <data name="WorkspaceInvalidDirectoryName" xml:space="preserve">
+   <value>Name "{0}" can't be used as a folder name. Avoid reserved names, trailing dots/spaces, and these characters: &lt; &gt; : " / \ | ? *</value>
  </data>
  <data name="WorkspaceEditor_UnsavedWarning" xml:space="preserve">
    <value>You have unsaved workspace changes.</value>

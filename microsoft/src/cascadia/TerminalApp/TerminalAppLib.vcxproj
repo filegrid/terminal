@@ -190,7 +190,11 @@
     <ClInclude Include="..\..\..\..\ext\src\chat\TerminalInputHarness.h" />
     <ClInclude Include="..\..\..\..\ext\src\chat\TerminalEventStore.h" />
     <ClInclude Include="..\..\..\..\ext\src\chat\WorkspaceChatController.h" />
+    <ClInclude Include="..\..\..\..\ext\src\chat\WorkspaceChatStateHelpers.h" />
+    <ClInclude Include="..\..\..\..\ext\src\chat\WorkspaceChatTextHelpers.h" />
+    <ClInclude Include="..\..\..\..\ext\src\chat\WorkspaceDiagnosticLog.h" />
     <ClInclude Include="..\..\..\..\ext\src\chat\WorkspaceChatStore.h" />
+    <ClInclude Include="..\..\..\..\ext\src\chat\WorkspaceStoragePaths.h" />
   </ItemGroup>
   <!-- ========================= Cpp Files ======================== -->
   <ItemGroup>
@@ -222,6 +226,18 @@
       <DependentUpon>TerminalPage.xaml</DependentUpon>
       <SubType>Code</SubType>
     </ClCompile>
+    <ClCompile Include="..\..\..\..\ext\src\workspace\WorkspaceTerminalPageLegacyGlue.cpp">
+      <DependentUpon>TerminalPage.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </ClCompile>
+    <ClCompile Include="..\..\..\..\ext\src\chat\TerminalInputHarness.cpp" />
+    <ClCompile Include="..\..\..\..\ext\src\chat\TerminalEventStore.cpp" />
+    <ClCompile Include="..\..\..\..\ext\src\chat\WorkspaceChatController.cpp" />
+    <ClCompile Include="..\..\..\..\ext\src\chat\WorkspaceChatStateHelpers.cpp" />
+    <ClCompile Include="..\..\..\..\ext\src\chat\WorkspaceChatTextHelpers.cpp" />
+    <ClCompile Include="..\..\..\..\ext\src\chat\WorkspaceDiagnosticLog.cpp" />
+    <ClCompile Include="..\..\..\..\ext\src\chat\WorkspaceChatStore.cpp" />
+    <ClCompile Include="..\..\..\..\ext\src\chat\WorkspaceStoragePaths.cpp" />
     <ClCompile Include="TabManagement.cpp">
       <DependentUpon>TerminalPage.xaml</DependentUpon>
       <SubType>Code</SubType>
@@ -309,11 +325,6 @@
       <DependentUpon>MarkdownPaneContent.xaml</DependentUpon>
       <SubType>Code</SubType>
     </ClCompile>
-    <ClCompile Include="..\..\..\..\ext\src\chat\TerminalInputHarness.cpp" />
-    <ClCompile Include="..\..\..\..\ext\src\chat\TerminalEventStore.cpp" />
-    <ClCompile Include="..\..\..\..\ext\src\chat\WorkspaceChatController.cpp" />
-    <ClCompile Include="..\..\..\..\ext\src\chat\WorkspaceChatStore.cpp" />
-
   </ItemGroup>
   <!-- ========================= idl Files ======================== -->
   <ItemGroup>
@@ -503,6 +514,7 @@
     <ClCompile>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <AdditionalIncludeDirectories>..;%(AdditionalIncludeDirectories);</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WT_WORKSPACE_HOST_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <!-- Manually disable unreachable code warning, because jconcpp has a ton of that. -->
       <DisableSpecificWarnings>4702;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>

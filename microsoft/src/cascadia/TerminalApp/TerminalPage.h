@@ -13,12 +13,9 @@
 #include "RequestMoveContentArgs.g.h"
 #include "LaunchPositionRequest.g.h"
 #include "Toast.h"
-#include "WorkspaceManagerPaneContent.h"
-
 #include "WindowsPackageManagerFactory.h"
-#include "../TerminalSettingsModel/Workspace.h"
-#include "..\..\..\..\ext\src\chat\TerminalInputHarness.h"
-#include "..\..\..\..\ext\src\chat\WorkspaceChatController.h"
+#include "..\..\..\..\ext\src\workspace\WorkspaceHostInterfaces.h"
+#include "..\..\..\..\ext\src\workspace\TerminalPageWorkspaceIncludes.h"
 
 #define DECLARE_ACTION_HANDLER(action) void _Handle##action(const IInspectable& sender, const Microsoft::Terminal::Settings::Model::ActionEventArgs& args);
 
@@ -36,6 +33,12 @@ namespace Microsoft::Terminal::Core
 namespace winrt::Microsoft::Terminal::Settings
 {
     struct TerminalSettingsCreateResult;
+}
+
+namespace terminal::workspace
+{
+    class IWorkspaceTerminalPageExtension;
+    class TerminalPageBase;
 }
 
 namespace winrt::TerminalApp::implementation
@@ -104,10 +107,13 @@ namespace winrt::TerminalApp::implementation
         winrt::Microsoft::Management::Deployment::PackageFieldMatchOption MatchOption;
     };
 
-    struct TerminalPage : TerminalPageT<TerminalPage>
+    struct TerminalPage : TerminalPageT<TerminalPage>, terminal::workspace::TerminalPageBase
     {
     public:
+        #include "..\..\..\..\ext\src\workspace\TerminalPageWorkspacePublicSurface.h"
+
         TerminalPage(TerminalApp::WindowProperties properties, const TerminalApp::ContentManager& manager);
+        ~TerminalPage();
 
         // This implements shobjidl's IInitializeWithWindow, but due to a XAML Compiler bug we cannot
         // put it in our inheritance graph. https://github.com/microsoft/microsoft-ui-xaml/issues/3331
@@ -152,7 +158,6 @@ namespace winrt::TerminalApp::implementation
         void Maximized(bool newMaximized);
         void RequestSetMaximized(bool newMaximized);
 
-        void SetStartupActions(std::vector<Microsoft::Terminal::Settings::Model::ActionAndArgs> actions, const winrt::hstring& workspaceId = {});
         void SetStartupConnection(winrt::Microsoft::Terminal::TerminalConnection::ITerminalConnection connection);
 
         static std::vector<Microsoft::Terminal::Settings::Model::ActionAndArgs> ConvertExecuteCommandlineToActions(const Microsoft::Terminal::Settings::Model::ExecuteCommandlineArgs& args);
@@ -164,10 +169,6 @@ namespace winrt::TerminalApp::implementation
 
         void ShowKeyboardServiceWarning() const;
         winrt::hstring KeyboardServiceDisabledText();
-        void CurrentWorkspaceId(const winrt::hstring& value);
-        winrt::hstring CurrentWorkspaceId() const noexcept;
-        void RefreshWorkspaceWindowState();
-        void WorkspaceDefinitionsChanged();
         void IdentifyWindow();
         void ActionSaved(winrt::hstring input, winrt::hstring name, winrt::hstring keyChord);
         void ActionSaveFailed(winrt::hstring message);
@@ -246,7 +247,6 @@ namespace winrt::TerminalApp::implementation
         Windows::UI::Xaml::Controls::Grid _terminalContentHost{ nullptr };
         Microsoft::UI::Xaml::Controls::SplitButton _newTabButton{ nullptr };
         winrt::TerminalApp::ColorPickupFlyout _tabColorPicker{ nullptr };
-        Windows::UI::Xaml::Controls::MenuFlyout _workspaceFlyout{ nullptr };
 
         Microsoft::Terminal::Settings::Model::CascadiaSettings _settings{ nullptr };
 
@@ -257,9 +257,6 @@ namespace winrt::TerminalApp::implementation
         void _UpdateTabIndices();
 
         TerminalApp::Tab _settingsTab{ nullptr };
-        TerminalApp::Tab _workspaceManagerTab{ nullptr };
-        winrt::com_ptr<WorkspaceManagerPaneContent> _workspaceManagerContent{ nullptr };
-
         bool _isInFocusMode{ false };
         bool _isFullscreen{ false };
         bool _isMaximized{ false };
@@ -290,7 +287,6 @@ namespace winrt::TerminalApp::implementation
         StartupState _startupState{ StartupState::NotInitialized };
 
         std::vector<Microsoft::Terminal::Settings::Model::ActionAndArgs> _startupActions;
-        winrt::hstring _startupWorkspaceId{};
         winrt::Microsoft::Terminal::TerminalConnection::ITerminalConnection _startupConnection{ nullptr };
 
         std::shared_ptr<Toast> _windowIdToast{ nullptr };
@@ -301,75 +297,10 @@ namespace winrt::TerminalApp::implementation
         winrt::Windows::UI::Xaml::Controls::TextBox::LayoutUpdated_revoker _renamerLayoutUpdatedRevoker;
         int _renamerLayoutCount{ 0 };
         bool _renamerPressedEnter{ false };
-        winrt::Windows::UI::Xaml::Controls::TextBox::LayoutUpdated_revoker _workspaceSaverLayoutUpdatedRevoker;
-        int _workspaceSaverLayoutCount{ 0 };
-        bool _workspaceSaverPressedEnter{ false };
-        winrt::hstring _currentWorkspaceId{};
-        std::wstring _lastWorkspaceId{};
-        winrt::Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager _workspaceEditorManager{};
-        size_t _workspaceEditorSelectedIndex{ 0 };
-        int32_t _workspaceManagerNavSelection{ 0 };
-        bool _workspaceEditorEditMode{ false };
-        bool _workspaceDefinitionsDirty{ false };
-        winrt::Windows::UI::Xaml::DispatcherTimer _workspaceNameTapTimer{ nullptr };
-        bool _workspaceNamePressedEnter{ false };
-        terminal::workspacechat::WorkspaceChatController _workspaceChatController{};
-        bool _workspaceChatEnabledForActiveTab{ false };
-        bool _workspaceChatCollapsed{ false };
-        bool _workspaceChatDraftUpdateInProgress{ false };
-        bool _workspaceChatResizeActive{ false };
-        double _workspaceChatExpandedHeight{ 76.0 };
-        double _workspaceChatResizeStartHeight{ 76.0 };
-        double _workspaceChatResizeStartPointerY{ 0.0 };
-        winrt::Windows::UI::Xaml::DispatcherTimer _workspaceChatOutputCaptureTimer{ nullptr };
-
-        struct TerminalRoutingContext
-        {
-            uint64_t ContentId{};
-            std::wstring TabId;
-            std::wstring PaneId;
-        };
-
-        struct PendingTerminalOutputCapture
-        {
-            winrt::weak_ref<winrt::Microsoft::Terminal::Control::TermControl> Control;
-            std::wstring WorkspaceKey;
-            std::wstring TabId;
-            std::wstring PaneId;
-            std::wstring CorrelationId;
-            uint64_t DueTick{};
-        };
-
-        struct TerminalCaptureState
-        {
-            std::wstring PendingInput;
-            std::wstring LastBufferSnapshot;
-            std::wstring LastReportedWorkingDirectory;
-            bool HasBufferSnapshot{ false };
-            terminal::workspacechat::TerminalInputState InputState;
-        };
-
-        struct WorkspaceNodeRuntimeState
-        {
-            std::wstring WorkspaceNodeId;
-            std::wstring StartupAction;
-            std::wstring ExplicitCommandline;
-            std::wstring StartingDirectory;
-            std::wstring OperatingSystem;
-            std::wstring ShellType;
-            bool IsSshTransport{ false };
-            std::wstring DeferredStartupInput;
-            bool StartupInputPending{ false };
-            bool StartupInputDispatched{ false };
-        };
-
-        std::unordered_map<uint64_t, TerminalCaptureState> _workspaceChatTerminalStates;
-        std::unordered_map<uint64_t, WorkspaceNodeRuntimeState> _workspaceNodeRuntimeStates;
-        std::deque<bool> _pendingWorkspaceNodeInputVisibility;
-        std::deque<std::wstring> _pendingWorkspaceNodeIds;
-        std::vector<PendingTerminalOutputCapture> _workspaceChatPendingOutputCaptures;
-        std::optional<std::wstring> _pendingWorkspaceNodeStartupAction;
-        bool _skipNextWorkspaceNodeStartupSendInput{ false };
+        #include "..\..\..\..\ext\src\workspace\TerminalPageWorkspacePrivateMembersSurface.h"
+        HMODULE _workspaceExtensionModule{ nullptr };
+        terminal::workspace::DestroyWorkspaceTerminalPageExtensionFn _destroyWorkspaceExtension{ nullptr };
+        terminal::workspace::IWorkspaceTerminalPageExtension* _workspaceExtension{ nullptr };
 
         TerminalApp::WindowProperties _WindowProperties{ nullptr };
         PaneResources _paneResources;
@@ -398,96 +329,31 @@ namespace winrt::TerminalApp::implementation
         winrt::Windows::Foundation::IAsyncOperation<winrt::Windows::UI::Xaml::Controls::ContentDialogResult> _ShowCloseReadOnlyDialog();
         winrt::Windows::Foundation::IAsyncOperation<winrt::Windows::UI::Xaml::Controls::ContentDialogResult> _ShowMultiLinePasteWarningDialog();
         winrt::Windows::Foundation::IAsyncOperation<winrt::Windows::UI::Xaml::Controls::ContentDialogResult> _ShowLargePasteWarningDialog();
-        winrt::Windows::Foundation::IAsyncOperation<bool> _ConfirmSaveWorkspaceOnExit();
 
         void _CreateNewTabFlyout();
         std::vector<winrt::Windows::UI::Xaml::Controls::MenuFlyoutItemBase> _CreateNewTabFlyoutItems(winrt::Windows::Foundation::Collections::IVector<Microsoft::Terminal::Settings::Model::NewTabMenuEntry> entries);
         winrt::Windows::UI::Xaml::Controls::IconElement _CreateNewTabFlyoutIcon(const winrt::hstring& icon);
         winrt::Windows::UI::Xaml::Controls::MenuFlyoutItem _CreateNewTabFlyoutProfile(const Microsoft::Terminal::Settings::Model::Profile profile, int profileIndex, const winrt::hstring& iconPathOverride);
         winrt::Windows::UI::Xaml::Controls::MenuFlyoutItem _CreateNewTabFlyoutAction(const winrt::hstring& actionId, const winrt::hstring& iconPathOverride);
-        winrt::Windows::UI::Xaml::Controls::MenuFlyout _CreateWorkspaceFlyout();
-        safe_void_coroutine _OpenWorkspace(const winrt::hstring& workspaceId, bool openInNewWindow);
-        safe_void_coroutine _OpenWorkspaceManager();
-        void _OpenWorkspaceSaver();
-        void _SaveCurrentWindowAsWorkspace(const winrt::hstring& workspaceName = {});
-        std::wstring _SuggestedWorkspaceSaveName() const;
-        std::wstring _ResolvedWorkspaceSaveTargetId() const;
-        std::wstring _ResolvedWorkspaceSaveTargetName() const;
-        bool _TryCaptureCurrentWorkspace(winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace& workspace) const;
-        std::optional<size_t> _GetWorkspaceBackedTabNodeIndex(const winrt::com_ptr<Tab>& tab) const;
-        winrt::com_ptr<Tab> _GetWorkspaceBackedTabByNodeIndex(size_t nodeIndex) const;
-        void _ApplyWorkspaceNodeInputVisibility(size_t nodeIndex, bool showInputPanel);
-        void _PersistWorkspaceNodeInputVisibilityFromTab(const winrt::com_ptr<Tab>& tab, bool showInputPanel);
-        bool _PersistCurrentWorkspaceTabOrder();
-        bool _CurrentWorkspaceNeedsSave() const;
-        bool _CurrentWorkspaceLocked() const;
-        void _SetCurrentWorkspaceLocked(bool locked);
-        void _LoadWorkspaceEditorState(bool preserveSelection = true);
-        void _RebuildWorkspaceManagerTab();
-        void _AddWorkspaceDefinition();
-        void _DeleteSelectedWorkspaceDefinition();
-        void _AddWorkspaceNode();
-        void _DeleteWorkspaceNode(size_t nodeIndex);
-        void _SetSelectedWorkspaceIndex(size_t index);
-        bool _RemoveWorkspaceDefinitionById(std::wstring_view workspaceId);
-        bool _SaveWorkspaceEditorState();
-        winrt::Windows::UI::Xaml::UIElement _BuildWorkspaceManagerContent();
-        winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace* _SelectedWorkspaceForEditing() noexcept;
-        const winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace* _SelectedWorkspaceForEditing() const noexcept;
-        std::wstring _SelectedWorkspaceId() const;
-        std::wstring _WorkspaceDisplayName(const winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace& workspace) const;
-        std::wstring _CurrentWorkspaceDisplayName() const;
-        std::wstring _CurrentWorkspaceTabRowName() const;
-        std::optional<winrt::Windows::UI::Color> _CurrentWorkspaceColor() const;
-        std::optional<uint64_t> _FindOpenWorkspaceWindowId(std::wstring_view workspaceId) const;
-        void _UpdateWorkspaceInteractionState();
-        winrt::Microsoft::Terminal::Settings::Model::TabCloseButtonVisibility _CurrentTabCloseButtonVisibility() const;
-        void _UpdateWorkspaceTabRow();
-        enum class WorkspaceNodeRemoveResult
-        {
-            RemovedNode,
-            RemovedWorkspace,
-            NotFound,
-            SaveFailed,
-        };
-        void _InitializeWorkspaceChatUi();
-        void _UpdateTerminalContentHostClip();
-        void _UpdateWorkspaceChatHeader();
-        void _PreparePendingWorkspaceNodeInputVisibility(const winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace& workspace);
-        bool _ConsumePendingWorkspaceNodeInputVisibility() noexcept;
-        void _PreparePendingWorkspaceNodeIds(const winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace& workspace);
-        std::wstring _ConsumePendingWorkspaceNodeId();
-        void _ApplyWorkspaceNodeTitlePolicy(const winrt::com_ptr<Tab>& tab);
-        void _ApplyWorkspaceNodeTitlePolicy(size_t nodeIndex);
-        void _ApplyWorkspaceChatStateForFocusedTab();
-        void _FocusActiveTabSurface();
-        void _ReloadWorkspaceChatState();
-        void _PersistWorkspaceChatDraft();
-        void _UpdateWorkspaceChatInputHeight();
-        void _DispatchWorkspaceChatInput(const winrt::Microsoft::Terminal::Control::TermControl& control, std::wstring_view text);
-        void _SendWorkspaceChatMessage();
-        void _SetWorkspaceChatCollapsed(bool collapsed);
-        void _ToggleWorkspaceChatCollapsed();
-        std::wstring _CurrentWorkspaceStorageKey() const;
-        std::wstring _CurrentWorkspaceDraftKey() const;
-        std::wstring _TrimmedWorkspaceChatInput();
-        std::optional<TerminalRoutingContext> _ResolveTerminalContext(const winrt::Microsoft::Terminal::Control::TermControl& control) const;
-        void _OnTerminalKeySent(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Microsoft::Terminal::Control::KeySentEventArgs& args);
-        void _OnTerminalCharSent(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Microsoft::Terminal::Control::CharSentEventArgs& args);
-        void _OnTerminalStringSent(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Microsoft::Terminal::Control::StringSentEventArgs& args);
-        void _FlushTerminalInputBuffer(const winrt::Microsoft::Terminal::Control::TermControl& control, std::wstring_view inputOverride = {});
-        void _SyncTerminalCapturedWorkingDirectory(TerminalCaptureState& state, std::wstring_view workingDirectory) const;
-        std::wstring _ResolveTrackedTerminalWorkingDirectory(const winrt::Microsoft::Terminal::Control::TermControl& control) const;
-        void _ScheduleTerminalOutputCapture(const winrt::Microsoft::Terminal::Control::TermControl& control,
-                                            const TerminalRoutingContext& context,
-                                            std::wstring correlationId);
-        void _ProcessPendingTerminalOutputCaptures();
-        void _ShowWorkspaceNameMenu();
-        void _BeginWorkspaceNameEdit();
-        void _CommitWorkspaceNameEdit();
-        void _CancelWorkspaceNameEdit();
+        #include "..\..\..\..\ext\src\workspace\TerminalPageWorkspacePrivateMethodsSurface.h"
 
         void _OpenNewTabDropdown();
+        void _LoadWorkspaceExtension();
+        void _UnloadWorkspaceExtension() noexcept;
+        void InitializeWorkspaceTabRowUi() override;
+        void UpdateTerminalContentHostClip() override;
+        void RefreshWorkspaceUiAfterSettingsReload() override;
+        void ReplayPendingWorkspaceStartupInput(const winrt::Microsoft::Terminal::Control::TermControl& control,
+                                                const winrt::Microsoft::Terminal::Control::ICoreState& coreState) override;
+        void PersistWorkspaceInputPanelVisibilityFromFocusedTab(bool showInputPanel) override;
+        void ApplyWorkspaceChatStateForFocusedTab() override;
+        void FocusActiveTabSurface() override;
+        void PrepareStartupWorkspaceState() override;
+        void ClearPendingWorkspaceStartupState() override;
+        winrt::Windows::Foundation::IAsyncOperation<bool> ConfirmCloseWindowIfNeeded() override;
+        bool ShouldBlockSplitPaneForTab(const winrt::com_ptr<Tab>& tab) const override;
+        void RegisterWorkspaceNodeRuntimeStateIfNeeded(const winrt::Microsoft::Terminal::Control::TermControl& control,
+                                                       const winrt::Microsoft::Terminal::Settings::Model::NewTerminalArgs& newTerminalArgs) override;
         HRESULT _OpenNewTab(const Microsoft::Terminal::Settings::Model::INewContentArgs& newContentArgs);
         TerminalApp::Tab _CreateNewTabFromPane(std::shared_ptr<Pane> pane, uint32_t insertPosition = -1);
 
@@ -529,8 +395,6 @@ namespace winrt::TerminalApp::implementation
         safe_void_coroutine _RemoveTabs(const std::vector<winrt::TerminalApp::Tab> tabs);
 
         void _InitializeTab(winrt::com_ptr<Tab> newTabImpl, uint32_t insertPosition = -1);
-        void _RegisterTerminalEvents(Microsoft::Terminal::Control::TermControl term);
-        void _RegisterTabEvents(Tab& hostingTab);
 
         void _DismissTabContextMenus();
         void _FocusCurrentTab(const bool focusAlways);
@@ -571,25 +435,6 @@ namespace winrt::TerminalApp::implementation
         std::optional<uint32_t> _GetTabIndex(const TerminalApp::Tab& tab) const noexcept;
         TerminalApp::Tab _GetFocusedTab() const noexcept;
         winrt::com_ptr<Tab> _GetFocusedTabImpl() const noexcept;
-        std::optional<Microsoft::Terminal::Settings::Model::NewTerminalArgs> _BuildWorkspaceNodeArgs(const winrt::com_ptr<Tab>& tab) const;
-        std::optional<Microsoft::Terminal::Settings::Model::implementation::WorkspaceNode> _ResolveCurrentWorkspaceNode(const winrt::com_ptr<Tab>& tab) const;
-        std::wstring _ResolveLiveCurrentWorkspaceNodeId(const winrt::com_ptr<Tab>& tab) const;
-        winrt::com_ptr<Tab> _GetCurrentWorkspaceTabByNodeId(std::wstring_view nodeId) const;
-        WorkspaceNodeRemoveResult _RemoveWorkspaceNodeById(std::wstring_view workspaceId, std::wstring_view nodeId);
-        WorkspaceNodeRemoveResult _RemoveWorkspaceNodeTab(const winrt::TerminalApp::Tab& tab, std::wstring_view workspaceId, std::wstring_view nodeId);
-        void _PreparePendingWorkspaceNodeStartupAction(const Microsoft::Terminal::Settings::Model::ActionAndArgs& action,
-                                                       const std::vector<Microsoft::Terminal::Settings::Model::ActionAndArgs>& actions,
-                                                       size_t index);
-        void _RegisterWorkspaceNodeRuntimeState(const winrt::Microsoft::Terminal::Control::TermControl& control,
-                                                const Microsoft::Terminal::Settings::Model::NewTerminalArgs& newTerminalArgs);
-        std::wstring _ResolveWorkspaceNodeStartupAction(const winrt::com_ptr<Tab>& tab,
-                                                        const Microsoft::Terminal::Settings::Model::NewTerminalArgs& terminalArgs) const;
-        std::wstring _ResolveWorkspaceNodeStartingDirectory(const winrt::com_ptr<Tab>& tab,
-                                                            const Microsoft::Terminal::Settings::Model::NewTerminalArgs& terminalArgs) const;
-        std::wstring _ResolveWorkspaceNodeOperatingSystem(const winrt::com_ptr<Tab>& tab,
-                                                          const Microsoft::Terminal::Settings::Model::NewTerminalArgs& terminalArgs) const;
-        std::wstring _ResolveWorkspaceNodeShellType(const winrt::com_ptr<Tab>& tab,
-                                                    const Microsoft::Terminal::Settings::Model::NewTerminalArgs& terminalArgs) const;
         TerminalApp::Tab _GetTabByTabViewItem(const IInspectable& tabViewItem) const noexcept;
 
         void _HandleClosePaneRequested(std::shared_ptr<Pane> pane);
@@ -713,11 +558,6 @@ namespace winrt::TerminalApp::implementation
         void _RequestWindowRename(const winrt::hstring& newName);
         void _WindowRenamerKeyDown(const IInspectable& sender, const winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs& e);
         void _WindowRenamerKeyUp(const IInspectable& sender, const winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs& e);
-        void _WorkspaceManagerPrimaryButtonClick(const IInspectable& sender, const winrt::Windows::UI::Xaml::Controls::ContentDialogButtonClickEventArgs& eventArgs);
-        void _WorkspaceSaverActionClick(const IInspectable& sender, const IInspectable& eventArgs);
-        void _WorkspaceSaverKeyDown(const IInspectable& sender, const winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs& e);
-        void _WorkspaceSaverKeyUp(const IInspectable& sender, const winrt::Windows::UI::Xaml::Input::KeyRoutedEventArgs& e);
-
         void _UpdateTeachingTipTheme(winrt::Windows::UI::Xaml::FrameworkElement element);
 
         winrt::Microsoft::Terminal::Settings::Model::Profile GetClosestProfileForDuplicationOfProfile(const winrt::Microsoft::Terminal::Settings::Model::Profile& profile) const noexcept;
@@ -732,9 +572,7 @@ namespace winrt::TerminalApp::implementation
         void _KeyboardServiceWarningInfoDismissHandler(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::Foundation::IInspectable& args) const;
         static bool _IsMessageDismissed(const winrt::Microsoft::Terminal::Settings::Model::InfoBarMessage& message);
         static void _DismissMessage(const winrt::Microsoft::Terminal::Settings::Model::InfoBarMessage& message);
-
         void _updateThemeColors();
-        void _updateAllTabCloseButtons();
         void _updatePaneResources(const winrt::Windows::UI::Xaml::ElementTheme& requestedTheme);
 
         safe_void_coroutine _ControlCompletionsChangedHandler(const winrt::Windows::Foundation::IInspectable sender, const winrt::Microsoft::Terminal::Control::CompletionsChangedEventArgs args);

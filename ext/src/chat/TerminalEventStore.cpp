@@ -1,10 +1,9 @@
 #include "pch.h"
 #include "TerminalEventStore.h"
+#include "WorkspaceStoragePaths.h"
 
 #include <json/json.h>
-#include <shlobj.h>
 #include <til/unicode.h>
-#include <wil/resource.h>
 
 #include <fstream>
 
@@ -12,61 +11,7 @@ namespace terminal::workspacechat
 {
     namespace
     {
-        constexpr std::wstring_view _workspacesDirectoryName{ L"workspaces" };
         constexpr std::wstring_view _terminalDirectoryName{ L"terminal" };
-
-        std::wstring _sanitizePathComponent(std::wstring_view value)
-        {
-            std::wstring sanitized;
-            sanitized.reserve(value.size());
-            for (const auto ch : value)
-            {
-                switch (ch)
-                {
-                case L'<':
-                case L'>':
-                case L':':
-                case L'"':
-                case L'/':
-                case L'\\':
-                case L'|':
-                case L'?':
-                case L'*':
-                    sanitized.push_back(L'_');
-                    break;
-                default:
-                    sanitized.push_back(ch);
-                    break;
-                }
-            }
-
-            if (sanitized.empty())
-            {
-                sanitized = L"_";
-            }
-            return sanitized;
-        }
-
-        std::filesystem::path _workspaceRoot()
-        {
-            if (const auto userProfile = wil::TryGetEnvironmentVariableW<std::wstring>(L"USERPROFILE"); !userProfile.empty())
-            {
-                return std::filesystem::path{ userProfile } / L".wt";
-            }
-
-            wil::unique_cotaskmem_string profileFolder;
-            if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Profile, KF_FLAG_DEFAULT, nullptr, &profileFolder)) && profileFolder)
-            {
-                return std::filesystem::path{ profileFolder.get() } / L".wt";
-            }
-
-            return {};
-        }
-
-        std::filesystem::path _workspaceDirectory(std::wstring_view workspaceKey)
-        {
-            return _workspaceRoot() / _workspacesDirectoryName / _sanitizePathComponent(workspaceKey);
-        }
 
         std::wstring _localDateStamp()
         {
@@ -84,9 +29,9 @@ namespace terminal::workspacechat
         }
     }
 
-    bool TerminalEventStore::AppendEvent(const TerminalEventEntry& entry) const
+    bool TerminalEventStore::AppendEvent(const TerminalEventEntry& entry, std::wstring_view tabKey) const
     {
-        const auto path = _workspaceDirectory(entry.WorkspaceId) / _terminalDirectoryName / (std::filesystem::path{ _localDateStamp() + L".jsonl" });
+        const auto path = ResolveWorkspaceArtifactDirectory(entry.WorkspaceId, tabKey) / _terminalDirectoryName / (std::filesystem::path{ _localDateStamp() + L".jsonl" });
 
         std::error_code ec;
         if (const auto parent = path.parent_path(); !parent.empty())

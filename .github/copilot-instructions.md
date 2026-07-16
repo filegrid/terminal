@@ -9,11 +9,20 @@
   - 新增代码放 `ext\src` 目录
   - 所有变更的功能记录到 ext\READ
 - 所有的脚本，备份，需要当前项目的 `microsoft\tmp` 目录下进行 
-- portable 构建使用：
+- portable 默认构建使用真正的 CMake 入口：
 
   ```powershell
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\microsoft\build\scripts\Build-PortableTerminalDistribution.ps1
+  cmake -S . -B .\build
+  cmake --build .\build
   ```
+
+  全链路重编使用：
+
+  ```powershell
+  cmake --build .\build --target full
+  ```
+
+- `.\microsoft\build\scripts\Build-PortableTerminalDistribution.ps1` 仅作为 legacy/兼容入口，只有在明确要验证旧链路或排查 CMake 入口问题时才使用。
 
 ## 能做
 

@@ -175,14 +175,14 @@ If ($PSCmdlet.ParameterSetName -Eq "AppX") {
     if ($SingleFileOutput) {
         $launcherSourcePath = Join-Path $PSScriptRoot "..\..\src\tools\PortableTerminalLauncher\Program.cs"
         $launcherIconPath = Join-Path $PSScriptRoot "..\..\res\terminal.ico"
-        $cscPath = (Get-Command csc.exe -ErrorAction SilentlyContinue).Source
+        $roslynCsc = "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\Roslyn\csc.exe"
+        if (Test-Path $roslynCsc -PathType Leaf) {
+            $cscPath = $roslynCsc
+        } else {
+            $cscPath = (Get-Command csc.exe -ErrorAction SilentlyContinue).Source
+        }
         if ([string]::IsNullOrWhiteSpace($cscPath)) {
-            $roslynCsc = "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\Roslyn\csc.exe"
-            if (Test-Path $roslynCsc -PathType Leaf) {
-                $cscPath = $roslynCsc
-            } else {
-                throw "Could not find csc.exe to build the single-file portable launcher."
-            }
+            throw "Could not find csc.exe to build the single-file portable launcher."
         }
         if (-not (Test-Path $launcherIconPath -PathType Leaf)) {
             throw "Could not find the portable launcher icon at `"$launcherIconPath`"."
@@ -214,7 +214,7 @@ using System.Reflection;
             Remove-Item $staleZip -Force
         }
 
-        $launcherPath = $outputExe
+        $launcherPath = Join-Path $publishDir "PortableTerminalLauncher.exe"
         $compileArgs = @(
             "/nologo",
             "/target:winexe",
@@ -237,6 +237,12 @@ using System.Reflection;
         if (-not (Test-Path $launcherPath -PathType Leaf)) {
             throw "Could not find the published portable launcher at `"$launcherPath`"."
         }
+
+        if (Test-Path $outputExe -PathType Leaf) {
+            Remove-Item $outputExe -Force
+        }
+
+        Copy-Item $launcherPath $outputExe
 
         $payloadLength = (Get-Item $outputZip).Length
         $payloadLengthBytes = [BitConverter]::GetBytes([int64]$payloadLength)

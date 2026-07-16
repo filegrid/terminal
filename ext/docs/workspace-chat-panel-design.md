@@ -67,20 +67,19 @@
   workspaces.yaml
   workspaces\
     <workspace-id>\
-      chat\
-        2026-06-25.jsonl
-      terminal\
-        2026-06-25.jsonl
-      timeline\
-        2026-06-25.jsonl
-      drafts\
-        active.json
+      <tab-name>\
+        chat\
+          2026-06-25.jsonl
+        terminal\
+          2026-06-25.jsonl
+        drafts\
+          active.json
 ```
 
 说明：
 
 - `workspaces.yaml` 继续只保存 workspace 定义。
-- `workspaces\<workspace-id>\` 保存该 workspace 的聊天、终端缓存和检索索引。
+- `workspaces\<workspace-id>\<tab-name>\` 保存该 tab 的聊天、终端事件和草稿数据。
 - 日期文件统一使用本地日期命名，便于人工查看和按天清理。
 - 窗口级运行态仍沿用现有 `workspace-window-state-<exe>-<hash>.yaml`，聊天历史和检索数据不要混进去。
 
@@ -118,16 +117,6 @@
 - `output` 事件按块聚合，而不是每次 buffer 微小变化都写文件。
 - `cwd/cmd` 可以基于当前已知工作目录和常见 `cd`/`pushd`/`popd`/`Set-Location` 一类命令做 harness 推演，但不要把它当成绝对真实 shell 状态。
 - 当一次聊天触发了终端动作时，共用同一个 `correlationId`。
-
-### 4. 时间线索引格式
-
-`timeline\YYYY-MM-DD.jsonl` 用来承接右侧检索面板。每条记录表示 5 分钟聚合段：
-
-```json
-{"start":"2026-06-25T18:20:00+08:00","end":"2026-06-25T18:24:59.999+08:00","workspaceId":"ws-dev","segmentId":"seg-0018","keywords":["git","workspace"],"chatMessageIds":["chat-000001"],"terminalEventIds":["term-000014","term-000015"],"text":"18:20-18:25 讨论 workspace 错误输出并执行 git status"}
-```
-
-这样后续检索可以直接命中聚合段，再回跳到原始聊天和终端事件。
 
 ## 与现有架构的结合点
 

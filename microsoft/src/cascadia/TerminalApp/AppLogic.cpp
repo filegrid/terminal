@@ -611,12 +611,13 @@ namespace winrt::TerminalApp::implementation
     {
         const auto workspacePath = Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::DefaultPath();
         _workspaceReader.create(
-            workspacePath.parent_path().c_str(),
-            false,
+            workspacePath.c_str(),
+            true,
             wil::FolderChangeEvents::FileName | wil::FolderChangeEvents::LastWriteTime,
-            [this, workspaceBasename = workspacePath.filename()](wil::FolderChangeEvent, PCWSTR fileModified) {
-               const auto modifiedBasename = std::filesystem::path{ fileModified }.filename();
-               if (modifiedBasename == workspaceBasename)
+            [this](wil::FolderChangeEvent, PCWSTR fileModified) {
+              const auto modifiedBasename = std::filesystem::path{ fileModified }.filename().wstring();
+              if (modifiedBasename != L"state.yaml" &&
+                 modifiedBasename.rfind(L"workspace-window-state", 0) != 0)
                {
                    WorkspaceDefinitionsChanged.raise(*this, nullptr);
                }

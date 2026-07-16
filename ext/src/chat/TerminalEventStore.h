@@ -22,6 +22,6 @@ namespace terminal::workspacechat
     class TerminalEventStore
     {
     public:
-        bool AppendEvent(const TerminalEventEntry& entry) const;
+        bool AppendEvent(const TerminalEventEntry& entry, std::wstring_view tabKey) const;
     };
 }

@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "WorkspaceChatController.h"
+#include "WorkspaceDiagnosticLog.h"
 
 #include <fmt/chrono.h>
 #include <fmt/format.h>
@@ -60,22 +61,23 @@ namespace terminal::workspacechat
         }
     }
 
-    WorkspaceChatSnapshot WorkspaceChatController::LoadWorkspace(std::wstring_view workspaceKey, const size_t maxMessages) const
+    WorkspaceChatSnapshot WorkspaceChatController::LoadWorkspace(std::wstring_view workspaceKey, std::wstring_view tabKey, const size_t maxMessages) const
     {
-        return _chatStore.LoadSnapshot(workspaceKey, maxMessages);
+        return _chatStore.LoadSnapshot(workspaceKey, tabKey, maxMessages);
     }
 
-    std::wstring WorkspaceChatController::LoadDraft(std::wstring_view workspaceKey) const
+    std::wstring WorkspaceChatController::LoadDraft(std::wstring_view workspaceKey, std::wstring_view tabKey) const
     {
-        return _chatStore.LoadDraft(workspaceKey);
+        return _chatStore.LoadDraft(workspaceKey, tabKey);
     }
 
-    bool WorkspaceChatController::SaveDraft(std::wstring_view workspaceKey, std::wstring_view draft) const
+    bool WorkspaceChatController::SaveDraft(std::wstring_view workspaceKey, std::wstring_view tabKey, std::wstring_view draft) const
     {
-        return _chatStore.SaveDraft(workspaceKey, draft);
+        return _chatStore.SaveDraft(workspaceKey, tabKey, draft);
     }
 
     ChatMessageEntry WorkspaceChatController::SubmitUserMessage(std::wstring_view workspaceKey,
+                                                                std::wstring_view tabKey,
                                                                 const uint64_t windowId,
                                                                 std::wstring_view tabId,
                                                                 std::wstring_view paneId,
@@ -92,13 +94,24 @@ namespace terminal::workspacechat
         entry.TabId = std::wstring{ tabId };
         entry.PaneId = std::wstring{ paneId };
 
-        _chatStore.AppendMessage(entry);
+        Json::Value payload{ Json::objectValue };
+        payload["windowId"] = Json::UInt64{ windowId };
+        payload["messageId"] = DiagnosticUtf8(entry.MessageId);
+        payload["correlationId"] = DiagnosticUtf8(entry.CorrelationId);
+        payload["workspaceKey"] = DiagnosticUtf8(workspaceKey);
+        payload["tabId"] = DiagnosticUtf8(tabId);
+        payload["paneId"] = DiagnosticUtf8(paneId);
+        AddDiagnosticTextFields(payload, "submittedText", text);
+        std::ignore = AppendWorkspaceDiagnosticLog(L"chat_controller_submit", payload);
+
+        _chatStore.AppendMessage(entry, tabKey);
         _pendingCorrelationId = entry.CorrelationId;
-        _chatStore.SaveDraft(workspaceKey, L"");
+        _chatStore.SaveDraft(workspaceKey, tabKey, L"");
         return entry;
     }
 
     bool WorkspaceChatController::LogTerminalInput(std::wstring_view workspaceKey,
+                                                   std::wstring_view tabKey,
                                                    std::wstring_view tabId,
                                                    std::wstring_view paneId,
                                                    std::wstring_view text,
@@ -117,10 +130,11 @@ namespace terminal::workspacechat
         entry.WorkingDirectory = std::wstring{ workingDirectory };
         entry.Command = std::wstring{ command };
         entry.CorrelationId = std::move(correlationId);
-        return _terminalStore.AppendEvent(entry);
+        return _terminalStore.AppendEvent(entry, tabKey);
     }
 
     bool WorkspaceChatController::LogTerminalOutput(std::wstring_view workspaceKey,
+                                                    std::wstring_view tabKey,
                                                     std::wstring_view tabId,
                                                     std::wstring_view paneId,
                                                     std::wstring_view text,
@@ -139,7 +153,7 @@ namespace terminal::workspacechat
         entry.WorkingDirectory = std::wstring{ workingDirectory };
         entry.Command = std::wstring{ command };
         entry.CorrelationId = std::move(correlationId);
-        return _terminalStore.AppendEvent(entry);
+        return _terminalStore.AppendEvent(entry, tabKey);
     }
 
     std::wstring WorkspaceChatController::ConsumePendingCorrelationId()

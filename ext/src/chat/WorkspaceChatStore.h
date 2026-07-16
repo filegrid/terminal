@@ -30,15 +30,14 @@ namespace terminal::workspacechat
     class WorkspaceChatStore
     {
     public:
-        WorkspaceChatSnapshot LoadSnapshot(std::wstring_view workspaceKey, size_t maxMessages = 200) const;
-        std::wstring LoadDraft(std::wstring_view workspaceKey) const;
-        bool SaveDraft(std::wstring_view workspaceKey, std::wstring_view draft) const;
-        bool AppendMessage(const ChatMessageEntry& entry) const;
+        WorkspaceChatSnapshot LoadSnapshot(std::wstring_view workspaceKey, std::wstring_view tabKey, size_t maxMessages = 200) const;
+        std::wstring LoadDraft(std::wstring_view workspaceKey, std::wstring_view tabKey) const;
+        bool SaveDraft(std::wstring_view workspaceKey, std::wstring_view tabKey, std::wstring_view draft) const;
+        bool AppendMessage(const ChatMessageEntry& entry, std::wstring_view tabKey) const;
 
     private:
-        static std::filesystem::path _workspaceRoot();
-        static std::filesystem::path _workspaceDirectory(std::wstring_view workspaceKey);
-        static std::filesystem::path _chatDirectory(std::wstring_view workspaceKey);
-        static std::filesystem::path _draftPath(std::wstring_view workspaceKey);
+        static std::filesystem::path _workspaceDirectory(std::wstring_view workspaceKey, std::wstring_view tabKey);
+        static std::filesystem::path _chatDirectory(std::wstring_view workspaceKey, std::wstring_view tabKey);
+        static std::filesystem::path _draftPath(std::wstring_view workspaceKey, std::wstring_view tabKey);
     };
 }

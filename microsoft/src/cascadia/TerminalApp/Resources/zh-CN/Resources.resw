@@ -1124,6 +1124,12 @@
  <data name="WorkspaceEditor_ClearColor" xml:space="preserve">
    <value>清除颜色</value>
  </data>
+<data name="WorkspaceEditor_TabColor" xml:space="preserve">
+<value>标签颜色</value>
+</data>
+<data name="WorkspaceEditor_ShowTab" xml:space="preserve">
+<value>显示此标签页</value>
+</data>
  <data name="WorkspaceEditor_Nodes" xml:space="preserve">
    <value>节点</value>
  </data>
@@ -1177,6 +1183,9 @@
  </data>
  <data name="WorkspaceEditor_SaveFailed" xml:space="preserve">
    <value>保存工作区变更到 workspaces.yaml 失败。</value>
+ </data>
+ <data name="WorkspaceInvalidDirectoryName" xml:space="preserve">
+   <value>名称“{0}”不能作为目录名。请避免使用保留名、首尾空格/点，以及这些字符：&lt; &gt; : " / \ | ? *</value>
  </data>
  <data name="WorkspaceEditor_UnsavedWarning" xml:space="preserve">
    <value>你有未保存的工作区更改。</value>

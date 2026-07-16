@@ -1,10 +1,9 @@
 #include "pch.h"
 #include "WorkspaceChatStore.h"
+#include "WorkspaceStoragePaths.h"
 
 #include <json/json.h>
-#include <shlobj.h>
 #include <til/unicode.h>
-#include <wil/resource.h>
 
 #include <algorithm>
 #include <deque>
@@ -16,42 +15,9 @@ namespace terminal::workspacechat
 {
     namespace
     {
-        constexpr std::wstring_view _workspacesDirectoryName{ L"workspaces" };
         constexpr std::wstring_view _chatDirectoryName{ L"chat" };
         constexpr std::wstring_view _draftsDirectoryName{ L"drafts" };
         constexpr std::wstring_view _draftFileName{ L"active.json" };
-
-        std::wstring _sanitizePathComponent(std::wstring_view value)
-        {
-            std::wstring sanitized;
-            sanitized.reserve(value.size());
-            for (const auto ch : value)
-            {
-                switch (ch)
-                {
-                case L'<':
-                case L'>':
-                case L':':
-                case L'"':
-                case L'/':
-                case L'\\':
-                case L'|':
-                case L'?':
-                case L'*':
-                    sanitized.push_back(L'_');
-                    break;
-                default:
-                    sanitized.push_back(ch);
-                    break;
-                }
-            }
-
-            if (sanitized.empty())
-            {
-                sanitized = L"_";
-            }
-            return sanitized;
-        }
 
         std::wstring _localDateStamp()
         {
@@ -181,43 +147,27 @@ namespace terminal::workspacechat
         }
     }
 
-    std::filesystem::path WorkspaceChatStore::_workspaceRoot()
+    std::filesystem::path WorkspaceChatStore::_workspaceDirectory(std::wstring_view workspaceKey, std::wstring_view tabKey)
     {
-        if (const auto userProfile = wil::TryGetEnvironmentVariableW<std::wstring>(L"USERPROFILE"); !userProfile.empty())
-        {
-            return std::filesystem::path{ userProfile } / L".wt";
-        }
-
-        wil::unique_cotaskmem_string profileFolder;
-        if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Profile, KF_FLAG_DEFAULT, nullptr, &profileFolder)) && profileFolder)
-        {
-            return std::filesystem::path{ profileFolder.get() } / L".wt";
-        }
-
-        return {};
+        return ResolveWorkspaceArtifactDirectory(workspaceKey, tabKey);
     }
 
-    std::filesystem::path WorkspaceChatStore::_workspaceDirectory(std::wstring_view workspaceKey)
+    std::filesystem::path WorkspaceChatStore::_chatDirectory(std::wstring_view workspaceKey, std::wstring_view tabKey)
     {
-        return _workspaceRoot() / _workspacesDirectoryName / _sanitizePathComponent(workspaceKey);
+        return _workspaceDirectory(workspaceKey, tabKey) / _chatDirectoryName;
     }
 
-    std::filesystem::path WorkspaceChatStore::_chatDirectory(std::wstring_view workspaceKey)
+    std::filesystem::path WorkspaceChatStore::_draftPath(std::wstring_view workspaceKey, std::wstring_view tabKey)
     {
-        return _workspaceDirectory(workspaceKey) / _chatDirectoryName;
+        return _workspaceDirectory(workspaceKey, tabKey) / _draftsDirectoryName / _draftFileName;
     }
 
-    std::filesystem::path WorkspaceChatStore::_draftPath(std::wstring_view workspaceKey)
-    {
-        return _workspaceDirectory(workspaceKey) / _draftsDirectoryName / _draftFileName;
-    }
-
-    WorkspaceChatSnapshot WorkspaceChatStore::LoadSnapshot(std::wstring_view workspaceKey, const size_t maxMessages) const
+    WorkspaceChatSnapshot WorkspaceChatStore::LoadSnapshot(std::wstring_view workspaceKey, std::wstring_view tabKey, const size_t maxMessages) const
     {
         WorkspaceChatSnapshot snapshot;
-        snapshot.Draft = LoadDraft(workspaceKey);
+        snapshot.Draft = LoadDraft(workspaceKey, tabKey);
 
-        const auto chatDirectory = _chatDirectory(workspaceKey);
+        const auto chatDirectory = _chatDirectory(workspaceKey, tabKey);
         std::error_code ec;
         if (!std::filesystem::exists(chatDirectory, ec) || ec)
         {
@@ -273,9 +223,9 @@ namespace terminal::workspacechat
         return snapshot;
     }
 
-    std::wstring WorkspaceChatStore::LoadDraft(std::wstring_view workspaceKey) const
+    std::wstring WorkspaceChatStore::LoadDraft(std::wstring_view workspaceKey, std::wstring_view tabKey) const
     {
-        const auto path = _draftPath(workspaceKey);
+        const auto path = _draftPath(workspaceKey, tabKey);
         std::ifstream input{ path, std::ios::binary };
         if (!input)
         {
@@ -297,9 +247,9 @@ namespace terminal::workspacechat
         return _toWide(*json, "text");
     }
 
-    bool WorkspaceChatStore::SaveDraft(std::wstring_view workspaceKey, std::wstring_view draft) const
+    bool WorkspaceChatStore::SaveDraft(std::wstring_view workspaceKey, std::wstring_view tabKey, std::wstring_view draft) const
     {
-        const auto path = _draftPath(workspaceKey);
+        const auto path = _draftPath(workspaceKey, tabKey);
         if (!_ensureParent(path))
         {
             return false;
@@ -323,9 +273,9 @@ namespace terminal::workspacechat
         return output.good();
     }
 
-    bool WorkspaceChatStore::AppendMessage(const ChatMessageEntry& entry) const
+    bool WorkspaceChatStore::AppendMessage(const ChatMessageEntry& entry, std::wstring_view tabKey) const
     {
-        const auto path = _chatDirectory(entry.WorkspaceId) / (std::filesystem::path{ _localDateStamp() + L".jsonl" });
+        const auto path = _chatDirectory(entry.WorkspaceId, tabKey) / (std::filesystem::path{ _localDateStamp() + L".jsonl" });
         return _appendJsonLine(path, _messageToJson(entry));
     }
 }

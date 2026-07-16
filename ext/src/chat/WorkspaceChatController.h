@@ -11,17 +11,19 @@ namespace terminal::workspacechat
     class WorkspaceChatController
     {
     public:
-        WorkspaceChatSnapshot LoadWorkspace(std::wstring_view workspaceKey, size_t maxMessages = 200) const;
-        std::wstring LoadDraft(std::wstring_view workspaceKey) const;
-        bool SaveDraft(std::wstring_view workspaceKey, std::wstring_view draft) const;
+        WorkspaceChatSnapshot LoadWorkspace(std::wstring_view workspaceKey, std::wstring_view tabKey, size_t maxMessages = 200) const;
+        std::wstring LoadDraft(std::wstring_view workspaceKey, std::wstring_view tabKey) const;
+        bool SaveDraft(std::wstring_view workspaceKey, std::wstring_view tabKey, std::wstring_view draft) const;
 
         ChatMessageEntry SubmitUserMessage(std::wstring_view workspaceKey,
+                                           std::wstring_view tabKey,
                                            uint64_t windowId,
                                            std::wstring_view tabId,
                                            std::wstring_view paneId,
                                            std::wstring_view text);
 
         bool LogTerminalInput(std::wstring_view workspaceKey,
+                              std::wstring_view tabKey,
                               std::wstring_view tabId,
                               std::wstring_view paneId,
                               std::wstring_view text,
@@ -30,6 +32,7 @@ namespace terminal::workspacechat
                               std::wstring correlationId = {});
 
         bool LogTerminalOutput(std::wstring_view workspaceKey,
+                               std::wstring_view tabKey,
                                std::wstring_view tabId,
                                std::wstring_view paneId,
                                std::wstring_view text,

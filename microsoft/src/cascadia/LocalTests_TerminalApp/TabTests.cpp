@@ -96,6 +96,9 @@ namespace TerminalAppLocalTests
         TEST_METHOD(TestPreviewSchemeWhilePreviewing);
 
         TEST_METHOD(TestClampSwitchToTab);
+        TEST_METHOD(WorkspaceNodeIdTracksTabAcrossPaneFocus);
+        TEST_METHOD(CurrentWorkspaceCaptureRefreshesExistingNodeRuntimeMetadata);
+        TEST_METHOD(CurrentWorkspaceNeedsSaveTracksRuntimeMetadataChanges);
 
         TEST_CLASS_SETUP(ClassSetup)
         {
@@ -556,6 +559,145 @@ namespace TerminalAppLocalTests
                 Log::Comment(L"This test often crashes on cleanup, even when it succeeds. If it succeeded, then crashes, that's okay.");
             });
             VERIFY_SUCCEEDED(result);
+        });
+    }
+
+    void TabTests::WorkspaceNodeIdTracksTabAcrossPaneFocus()
+    {
+        auto page = _commonSetup();
+
+        TestOnUIThread([&]() {
+            VERIFY_ARE_EQUAL(1u, page->_tabs.Size());
+
+            const auto tab = page->_GetTabImpl(page->_tabs.GetAt(0));
+            VERIFY_IS_NOT_NULL(tab);
+
+            const auto originalControl = tab->GetActiveTerminalControl();
+            VERIFY_IS_TRUE(static_cast<bool>(originalControl));
+
+            TerminalPage::WorkspaceNodeRuntimeState runtimeState;
+            runtimeState.WorkspaceNodeId = L"node-1";
+            page->_workspaceExtension->UpsertWorkspaceNodeRuntimeState(originalControl.ContentId(), runtimeState);
+
+            page->_SplitPane(nullptr, SplitDirection::Right, 0.5f, page->_MakePane(nullptr, page->_GetFocusedTab(), nullptr));
+
+            const auto splitControl = tab->GetActiveTerminalControl();
+            VERIFY_IS_TRUE(static_cast<bool>(splitControl));
+            VERIFY_ARE_NOT_EQUAL(originalControl.ContentId(), splitControl.ContentId());
+
+            VERIFY_ARE_EQUAL(std::wstring{ L"node-1" }, page->_ResolveLiveCurrentWorkspaceNodeId(tab));
+        });
+    }
+
+    void TabTests::CurrentWorkspaceCaptureRefreshesExistingNodeRuntimeMetadata()
+    {
+        auto page = _commonSetup();
+
+        TestOnUIThread([&]() {
+            VERIFY_ARE_EQUAL(1u, page->_tabs.Size());
+
+            const auto tab = page->_GetTabImpl(page->_tabs.GetAt(0));
+            VERIFY_IS_NOT_NULL(tab);
+
+            const auto control = tab->GetActiveTerminalControl();
+            VERIFY_IS_TRUE(static_cast<bool>(control));
+
+            Workspace workspace;
+            workspace.Id = L"ws-dev";
+            workspace.Name = L"Dev";
+
+            WorkspaceNode node;
+            node.Id = L"node-1";
+            node.Name = L"Saved node";
+            node.ProfileGuid = L"{6239a42c-1111-49a3-80bd-e8fdd045185c}";
+            node.StartupDirectory = L"C:\\old";
+            node.StartupAction = L"old-command";
+            node.OperatingSystem = L"windows";
+            node.ShellType = L"cmd";
+            workspace.Nodes.emplace_back(std::move(node));
+
+            page->_workspaceExtension->WorkspaceEditorManager().SetWorkspaces({ workspace });
+            page->_workspaceExtension->WorkspaceEditorSelectedIndex() = 0;
+            page->CurrentWorkspaceId(L"ws-dev");
+
+            TerminalPage::WorkspaceNodeRuntimeState runtimeState;
+            runtimeState.WorkspaceNodeId = L"node-1";
+            page->_workspaceExtension->UpsertWorkspaceNodeRuntimeState(control.ContentId(), runtimeState);
+
+            auto& captureState = page->_workspaceExtension->WorkspaceChatTerminalStates()[control.ContentId()];
+            captureState.InputState.LastWorkingDirectory = L"D:\\github\\tools\\terminal";
+            captureState.InputState.LastCommand = L"git status";
+            captureState.InputState.OperatingSystem = L"windows";
+            captureState.InputState.ShellType = L"powershell";
+
+            tab->ShowWorkspaceInputPanel(true);
+
+            Workspace captured;
+            VERIFY_IS_TRUE(page->_TryCaptureCurrentWorkspace(captured));
+            VERIFY_ARE_EQUAL(1u, gsl::narrow_cast<unsigned int>(captured.Nodes.size()));
+
+            const auto& capturedNode = captured.Nodes.front();
+            VERIFY_IS_TRUE(capturedNode.Id == L"node-1");
+            VERIFY_IS_TRUE(capturedNode.Name == L"Saved node");
+            VERIFY_IS_TRUE(capturedNode.ProfileGuid == L"{6239a42c-1111-49a3-80bd-e8fdd045185c}");
+            VERIFY_IS_TRUE(capturedNode.StartupDirectory == L"D:\\github\\tools\\terminal");
+            VERIFY_IS_TRUE(capturedNode.StartupAction == L"git status");
+            VERIFY_IS_TRUE(capturedNode.OperatingSystem == L"windows");
+            VERIFY_IS_TRUE(capturedNode.ShellType == L"powershell");
+            VERIFY_IS_TRUE(capturedNode.ShowInputPanel);
+        });
+    }
+
+    void TabTests::CurrentWorkspaceNeedsSaveTracksRuntimeMetadataChanges()
+    {
+        auto page = _commonSetup();
+
+        TestOnUIThread([&]() {
+            VERIFY_ARE_EQUAL(1u, page->_tabs.Size());
+
+            const auto tab = page->_GetTabImpl(page->_tabs.GetAt(0));
+            VERIFY_IS_NOT_NULL(tab);
+
+            const auto control = tab->GetActiveTerminalControl();
+            VERIFY_IS_TRUE(static_cast<bool>(control));
+
+            Workspace workspace;
+            workspace.Id = L"ws-dev";
+            workspace.Name = L"Dev";
+
+            WorkspaceNode node;
+            node.Id = L"node-1";
+            node.Name = L"Saved node";
+            node.ProfileGuid = L"{6239a42c-1111-49a3-80bd-e8fdd045185c}";
+            node.StartupDirectory = L"D:\\github\\tools\\terminal";
+            node.StartupAction = L"git status";
+            node.OperatingSystem = L"windows";
+            node.ShellType = L"powershell";
+            workspace.Nodes.emplace_back(std::move(node));
+
+            page->_workspaceExtension->WorkspaceEditorManager().SetWorkspaces({ workspace });
+            page->_workspaceExtension->WorkspaceEditorSelectedIndex() = 0;
+            page->CurrentWorkspaceId(L"ws-dev");
+
+            TerminalPage::WorkspaceNodeRuntimeState runtimeState;
+            runtimeState.WorkspaceNodeId = L"node-1";
+            page->_workspaceExtension->UpsertWorkspaceNodeRuntimeState(control.ContentId(), runtimeState);
+
+            auto& captureState = page->_workspaceExtension->WorkspaceChatTerminalStates()[control.ContentId()];
+            captureState.InputState.LastWorkingDirectory = L"D:\\github\\tools\\terminal";
+            captureState.InputState.LastCommand = L"git status";
+            captureState.InputState.OperatingSystem = L"windows";
+            captureState.InputState.ShellType = L"powershell";
+
+            VERIFY_IS_FALSE(page->_CurrentWorkspaceNeedsSave());
+
+            captureState.InputState.LastWorkingDirectory = L"E:\\tools";
+            captureState.InputState.LastCommand = L"copilot --allow-all";
+            VERIFY_IS_TRUE(page->_CurrentWorkspaceNeedsSave());
+
+            captureState.InputState.LastWorkingDirectory = L"D:\\github\\tools\\terminal";
+            captureState.InputState.LastCommand = L"git status";
+            VERIFY_IS_FALSE(page->_CurrentWorkspaceNeedsSave());
         });
     }
 
