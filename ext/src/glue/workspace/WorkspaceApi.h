@@ -17,6 +17,7 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         std::wstring Name;
         std::wstring ConnectionRef;
         std::wstring ProfileGuid;
+        std::wstring ProfileName;
         std::wstring TabColor;
         bool ShowTab{ true };
         std::wstring StartupDirectory;
@@ -34,6 +35,7 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         std::wstring Description;
         std::wstring BackgroundColor;
         bool Locked{ true };
+        std::vector<std::wstring> TabOrder;
         std::vector<WorkspaceNode> Nodes;
     };
 
@@ -169,6 +171,7 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         std::wstring StartupTabTitle;
         std::wstring GeneratedNodeName;
         std::wstring ProfileGuid;
+        std::wstring ProfileName;
         WorkspaceNodeLaunchResolution LaunchResolution;
         bool ShowInputPanel{ false };
         std::wstring TabColor;
@@ -293,6 +296,8 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
                                                             std::optional<size_t> visibleOrdinal);
     std::vector<std::wstring> VisibleWorkspaceNodeIds(const Workspace& workspace);
     std::vector<bool> VisibleWorkspaceNodeInputVisibility(const Workspace& workspace);
+    WorkspaceStartupState ResolveWorkspaceStartupState(const Workspace& workspace,
+                                                       const winrt::Microsoft::Terminal::Settings::Model::CascadiaSettings& settings);
     int32_t WorkspaceManagerNavSelectionForWorkspace(size_t workspaceIndex) noexcept;
     int32_t WorkspaceManagerNavSelectionForWorkspaceNode(size_t workspaceIndex, size_t nodeIndex) noexcept;
     std::optional<size_t> ResolveWorkspaceIndexFromManagerNavSelection(int32_t navSelection) noexcept;

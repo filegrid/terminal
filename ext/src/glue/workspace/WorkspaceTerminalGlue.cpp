@@ -175,6 +175,7 @@
         auto manager = loadedOpenState.Manager;
         const auto& openPlan = loadedOpenState.OpenPlan;
         auto startupActions = manager.BuildStartupActions(openPlan.TargetWorkspace, _settings);
+        const auto startupState = Microsoft::Terminal::Settings::Model::implementation::ResolveWorkspaceStartupState(openPlan.TargetWorkspace, _settings);
         std::vector<winrt::TerminalApp::Tab> tabsToReplace;
         tabsToReplace.reserve(_tabs.Size());
         for (const auto& tab : _tabs)
@@ -183,7 +184,7 @@
         }
 
         const auto executionPlan = Microsoft::Terminal::Settings::Model::implementation::ResolveWorkspaceOpenExecutionPlan(openPlan,
-                                                                                                                            !startupActions.empty(),
+                                                                                                                            !startupState.PendingNodeIds.empty(),
                                                                                                                             !tabsToReplace.empty());
         if (executionPlan.Disposition == Microsoft::Terminal::Settings::Model::implementation::WorkspaceOpenExecutionDisposition::SummonExistingWindow)
         {
@@ -248,8 +249,8 @@
         });
         if (executionPlan.ReplacePendingNodeQueues)
         {
-            _workspaceExtension->ReplacePendingWorkspaceNodeInputVisibility(openPlan.PendingNodeInputVisibility);
-            _workspaceExtension->ReplacePendingWorkspaceNodeIds(openPlan.PendingNodeIds);
+            _workspaceExtension->ReplacePendingWorkspaceNodeInputVisibility(startupState.PendingNodeInputVisibility);
+            _workspaceExtension->ReplacePendingWorkspaceNodeIds(startupState.PendingNodeIds);
             clearPendingWorkspaceNodeQueues = true;
         }
 

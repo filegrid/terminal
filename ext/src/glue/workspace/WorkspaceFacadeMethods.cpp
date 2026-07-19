@@ -7,6 +7,7 @@
             core.Name = node.Name;
             core.ConnectionRef = node.ConnectionRef;
             core.ProfileGuid = node.ProfileGuid;
+            core.ProfileName = node.ProfileName;
             core.TabColor = node.TabColor;
             core.ShowTab = node.ShowTab;
             core.StartupDirectory = node.StartupDirectory;
@@ -25,6 +26,7 @@
             wrapped.Name = node.Name;
             wrapped.ConnectionRef = node.ConnectionRef;
             wrapped.ProfileGuid = node.ProfileGuid;
+            wrapped.ProfileName = node.ProfileName;
             wrapped.TabColor = node.TabColor;
             wrapped.ShowTab = node.ShowTab;
             wrapped.StartupDirectory = node.StartupDirectory;
@@ -44,6 +46,7 @@
             core.Description = workspace.Description;
             core.BackgroundColor = workspace.BackgroundColor;
             core.Locked = workspace.Locked;
+            core.TabOrder = workspace.TabOrder;
             core.Nodes.reserve(workspace.Nodes.size());
             for (const auto& node : workspace.Nodes)
             {
@@ -60,6 +63,7 @@
             wrapped.Description = workspace.Description;
             wrapped.BackgroundColor = workspace.BackgroundColor;
             wrapped.Locked = workspace.Locked;
+            wrapped.TabOrder = workspace.TabOrder;
             wrapped.Nodes.reserve(workspace.Nodes.size());
             for (const auto& node : workspace.Nodes)
             {
@@ -194,6 +198,7 @@
                 .StartupTabTitle = state.StartupTabTitle,
                 .GeneratedNodeName = state.GeneratedNodeName,
                 .ProfileGuid = state.ProfileGuid,
+                .ProfileName = state.ProfileName,
                 .LaunchResolution = _toCoreNodeLaunchResolution(state.LaunchResolution),
                 .ShowInputPanel = state.ShowInputPanel,
                 .TabColor = state.TabColor,
@@ -811,6 +816,58 @@
         return _resolveDuplicateNodeColor(_resolveBaseNodeColor(node, profile, settings), occurrenceIndex);
     }
 
+    namespace
+    {
+        struct ResolvedWorkspaceStartupNode
+        {
+            size_t NodeIndex{};
+            Model::Profile Profile;
+        };
+
+        std::vector<ResolvedWorkspaceStartupNode> _resolveWorkspaceStartupNodes(const Workspace& workspace,
+                                                                                const Model::CascadiaSettings& settings)
+        {
+            const auto orderedNodeIds = VisibleWorkspaceNodeIds(workspace);
+            std::vector<ResolvedWorkspaceStartupNode> resolvedNodes;
+            resolvedNodes.reserve(orderedNodeIds.size());
+            for (const auto& nodeId : orderedNodeIds)
+            {
+                const auto nodeIndex = FindWorkspaceNodeIndexById(workspace, nodeId);
+                if (!nodeIndex)
+                {
+                    continue;
+                }
+
+                const auto profile = _resolveNodeProfile(workspace.Nodes.at(*nodeIndex), settings);
+                if (!profile)
+                {
+                    continue;
+                }
+
+                resolvedNodes.emplace_back(ResolvedWorkspaceStartupNode{
+                    .NodeIndex = *nodeIndex,
+                    .Profile = profile,
+                });
+            }
+            return resolvedNodes;
+        }
+    }
+
+    WorkspaceStartupState ResolveWorkspaceStartupState(const Workspace& workspace, const Model::CascadiaSettings& settings)
+    {
+        WorkspaceStartupState state;
+        const auto resolvedNodes = _resolveWorkspaceStartupNodes(workspace, settings);
+        state.PendingNodeIds.reserve(resolvedNodes.size());
+        state.PendingNodeInputVisibility.reserve(resolvedNodes.size());
+        for (const auto& resolvedNode : resolvedNodes)
+        {
+            const auto& node = workspace.Nodes.at(resolvedNode.NodeIndex);
+            state.PendingNodeIds.emplace_back(node.Id);
+            state.PendingNodeInputVisibility.emplace_back(node.ShowInputPanel);
+        }
+        return state;
+    }
+
     WorkspaceOpenPlan PrepareWorkspaceForOpen(const std::wstring_view workspaceId,
                                               const bool openInNewWindow,
                                               const std::wstring_view currentWorkspaceId,
@@ -1013,15 +1070,10 @@
     std::vector<Model::ActionAndArgs> WorkspaceManager::BuildStartupActions(const Workspace& workspace, const Model::CascadiaSettings& settings) const
     {
         std::vector<Model::ActionAndArgs> actions;
-
-        for (size_t nodeIndex = 0; nodeIndex < workspace.Nodes.size(); ++nodeIndex)
+        for (const auto& resolvedNode : _resolveWorkspaceStartupNodes(workspace, settings))
         {
+            const auto nodeIndex = resolvedNode.NodeIndex;
             const auto& node = workspace.Nodes.at(nodeIndex);
-            if (!node.ShowTab)
-            {
-                continue;
-            }
-
             Model::NewTerminalArgs terminalArgs;
 
             if (!node.Name.empty())
@@ -1029,12 +1081,7 @@
                 terminalArgs.TabTitle(node.Name);
             }
             terminalArgs.SuppressApplicationTitle(node.UseNodeNameAsTabTitle);
-            const auto profile = _resolveNodeProfile(node, settings);
-
-            if (!profile)
-            {
-                continue;
-            }
+            const auto profile = resolvedNode.Profile;
 
             const auto isSshTransport = _isSshTransportNode(node, profile);
             if (!node.StartupDirectory.empty() && !isSshTransport)

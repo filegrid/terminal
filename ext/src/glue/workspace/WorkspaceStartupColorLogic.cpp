@@ -64,7 +64,21 @@
                 }
             }
 
-            return settings.FindProfile(settings.GlobalSettings().DefaultProfile());
+            if (!node.ProfileName.empty())
+            {
+                const auto expectedName = _toLower(node.ProfileName);
+                const auto profiles = settings.AllProfiles();
+                for (uint32_t i = 0; i < profiles.Size(); ++i)
+                {
+                    const auto profile = profiles.GetAt(i);
+                    if (_toLower(profile.Name().c_str()) == expectedName)
+                    {
+                        return profile;
+                    }
+                }
+            }
+
+            return nullptr;
         }
 
         bool _isWindowsDriveAbsolutePath(std::wstring_view value) noexcept

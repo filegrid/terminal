@@ -343,8 +343,8 @@ namespace winrt::TerminalApp::implementation
         void InitializeWorkspaceTabRowUi() override;
         void UpdateTerminalContentHostClip() override;
         void RefreshWorkspaceUiAfterSettingsReload() override;
-        void ReplayPendingWorkspaceStartupInput(const winrt::Microsoft::Terminal::Control::TermControl& control,
-                                                const winrt::Microsoft::Terminal::Control::ICoreState& coreState) override;
+        void ReplayPendingWorkspaceStartupInput(winrt::Microsoft::Terminal::Control::TermControl control,
+                                                winrt::Microsoft::Terminal::Control::ICoreState coreState) override;
         void PersistWorkspaceInputPanelVisibilityFromFocusedTab(bool showInputPanel) override;
         void ApplyWorkspaceChatStateForFocusedTab() override;
         void FocusActiveTabSurface() override;

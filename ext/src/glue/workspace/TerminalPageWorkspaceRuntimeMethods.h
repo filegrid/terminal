@@ -9,8 +9,8 @@
         WT_WORKSPACE_EXT_API void _PreparePendingWorkspaceNodeStartupAction(const Microsoft::Terminal::Settings::Model::ActionAndArgs& action,
                                                                             const std::vector<Microsoft::Terminal::Settings::Model::ActionAndArgs>& actions,
                                                                             size_t index);
-        WT_WORKSPACE_EXT_API safe_void_coroutine _ReplayPendingWorkspaceStartupInput(const winrt::Microsoft::Terminal::Control::TermControl& control,
-                                                                                     const winrt::Microsoft::Terminal::Control::ICoreState& coreState);
+        WT_WORKSPACE_EXT_API safe_void_coroutine _ReplayPendingWorkspaceStartupInput(winrt::Microsoft::Terminal::Control::TermControl control,
+                                                                                     winrt::Microsoft::Terminal::Control::ICoreState coreState);
         WT_WORKSPACE_EXT_API void _RegisterWorkspaceNodeRuntimeStateIfNeeded(const winrt::Microsoft::Terminal::Control::TermControl& control,
                                                                              const Microsoft::Terminal::Settings::Model::NewTerminalArgs& newTerminalArgs);
         WT_WORKSPACE_EXT_API void _RegisterWorkspaceNodeRuntimeState(const winrt::Microsoft::Terminal::Control::TermControl& control,

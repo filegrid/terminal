@@ -327,7 +327,7 @@ namespace winrt::TerminalApp::implementation
         _RefreshWorkspaceUiAfterSettingsReload();
     }
 
-    void TerminalPage::ReplayPendingWorkspaceStartupInput(const TermControl& control, const ICoreState& coreState)
+    void TerminalPage::ReplayPendingWorkspaceStartupInput(TermControl control, ICoreState coreState)
     {
         _ReplayPendingWorkspaceStartupInput(control, coreState);
     }

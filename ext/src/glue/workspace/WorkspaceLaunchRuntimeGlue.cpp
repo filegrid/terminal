@@ -126,6 +126,13 @@
             else
             {
                 state.StartupAction = std::move(pendingStartupAction);
+                if (!state.StartupAction.empty())
+                {
+                    state.DeferredStartupInputs = { state.StartupAction };
+                    state.StartupInputPending = true;
+                    state.StartupInputDispatched = false;
+                    _workspaceExtension->SetPendingWorkspaceNodeStartupSendInputSkip(true);
+                }
             }
         }
 
@@ -149,7 +156,7 @@
         }
     }
 
-    safe_void_coroutine TerminalPage::_ReplayPendingWorkspaceStartupInput(const TermControl& control, const ICoreState& coreState)
+    safe_void_coroutine TerminalPage::_ReplayPendingWorkspaceStartupInput(TermControl control, ICoreState coreState)
     {
         const auto contentId = control.ContentId();
         if (auto state = _workspaceExtension->FindWorkspaceNodeRuntimeState(contentId);
@@ -192,6 +199,11 @@
 
             co_await winrt::resume_after(WorkspaceStartupInitialReplayDelay);
             co_await wil::resume_foreground(Dispatcher());
+            if (_workspaceExtension->FindWorkspaceNodeRuntimeState(contentId) == nullptr ||
+                coreState.ConnectionState() >= ConnectionState::Closed)
+            {
+                co_return;
+            }
 
             for (size_t index = 0; index < inputs.size(); ++index)
             {
@@ -199,6 +211,11 @@
                 {
                     co_await winrt::resume_after(WorkspaceStartupCommandReplayDelay);
                     co_await wil::resume_foreground(Dispatcher());
+                    if (_workspaceExtension->FindWorkspaceNodeRuntimeState(contentId) == nullptr ||
+                        coreState.ConnectionState() >= ConnectionState::Closed)
+                    {
+                        co_return;
+                    }
                 }
 
                 auto payload = _appendDeferredStartupSubmit(inputs[index]);

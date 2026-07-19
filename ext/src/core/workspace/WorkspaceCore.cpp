@@ -14,6 +14,7 @@
 #include <optional>
 #include <sstream>
 #include <system_error>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace terminal::workspace
@@ -23,6 +24,12 @@ namespace terminal::workspace
         constexpr int32_t _workspaceManagerWorkspaceSelectionBase{ 1000 };
         constexpr int32_t _workspaceManagerWorkspaceSelectionStride{ 100 };
         constexpr int32_t _workspaceManagerNodeSelectionBase{ 10 };
+
+        std::vector<std::wstring> _captureVisibleWorkspaceNodeOrder(const std::vector<WorkspaceNode>& nodes);
+        void _writeMultilineValue(std::wostringstream& stream,
+                                  std::wstring_view indent,
+                                  std::wstring_view key,
+                                  std::wstring_view value);
     }
 
     namespace
@@ -492,6 +499,20 @@ namespace terminal::workspace
             {
                 workspace.Locked = _parseBool(value, workspace.Locked);
             }
+            else if (key == L"tabOrder")
+            {
+                workspace.TabOrder.clear();
+
+                std::wistringstream stream{ value };
+                for (std::wstring line; std::getline(stream, line);)
+                {
+                    const auto trimmed = std::wstring{ _trim(line) };
+                    if (!trimmed.empty())
+                    {
+                        workspace.TabOrder.emplace_back(trimmed);
+                    }
+                }
+            }
         }
 
         void _applyNodeField(WorkspaceNode& node, const std::wstring& key, const std::wstring& value)
@@ -503,6 +524,10 @@ namespace terminal::workspace
             else if (key == L"profileGuid")
             {
                 node.ProfileGuid = value;
+            }
+            else if (key == L"profileName")
+            {
+                node.ProfileName = value;
             }
             else if (key == L"tabColor")
             {
@@ -777,6 +802,28 @@ namespace terminal::workspace
                 stream << L"backgroundColor: " << _quote(workspace.BackgroundColor) << L"\n";
             }
             stream << L"locked: " << (workspace.Locked ? L"true" : L"false") << L"\n";
+            if (!workspace.TabOrder.empty())
+            {
+                std::wstring serializedOrder;
+                for (const auto& nodeId : workspace.TabOrder)
+                {
+                    if (nodeId.empty())
+                    {
+                        continue;
+                    }
+
+                    if (!serializedOrder.empty())
+                    {
+                        serializedOrder.push_back(L'\n');
+                    }
+                    serializedOrder.append(nodeId);
+                }
+
+                if (!serializedOrder.empty())
+                {
+                    _writeMultilineValue(stream, L"", L"tabOrder", serializedOrder);
+                }
+            }
             return stream.str();
         }
 
@@ -831,6 +878,10 @@ namespace terminal::workspace
             if (!node.ProfileGuid.empty())
             {
                 stream << L"profileGuid: " << _quote(node.ProfileGuid) << L"\n";
+            }
+            if (!node.ProfileName.empty())
+            {
+                stream << L"profileName: " << _quote(node.ProfileName) << L"\n";
             }
             if (!node.TabColor.empty())
             {
@@ -1339,19 +1390,64 @@ namespace terminal::workspace
     std::optional<Workspace> PrepareWorkspaceForCapture(const std::optional<Workspace>& currentWorkspaceDefinition,
                                                         std::vector<WorkspaceNode> capturedNodes)
     {
+        const auto capturedTabOrder = _captureVisibleWorkspaceNodeOrder(capturedNodes);
         Workspace workspace;
         if (currentWorkspaceDefinition.has_value())
         {
             workspace = *currentWorkspaceDefinition;
-            if (!ApplyVisibleWorkspaceNodeOrder(workspace, capturedNodes))
+
+            std::vector<WorkspaceNode> mergedNodes;
+            mergedNodes.reserve(workspace.Nodes.size() + capturedNodes.size());
+            std::vector<bool> consumedCapturedNodes(capturedNodes.size(), false);
+
+            for (const auto& existingNode : workspace.Nodes)
             {
-                return std::nullopt;
+                if (!WorkspaceNodeLoadsTab(existingNode))
+                {
+                    mergedNodes.emplace_back(existingNode);
+                    continue;
+                }
+
+                if (!existingNode.Id.empty())
+                {
+                    auto matched = false;
+                    for (size_t capturedIndex = 0; capturedIndex < capturedNodes.size(); ++capturedIndex)
+                    {
+                        const auto& capturedNode = capturedNodes.at(capturedIndex);
+                        if (!consumedCapturedNodes.at(capturedIndex) && capturedNode.Id == existingNode.Id)
+                        {
+                            mergedNodes.emplace_back(capturedNode);
+                            consumedCapturedNodes.at(capturedIndex) = true;
+                            matched = true;
+                            break;
+                        }
+                    }
+
+                    if (matched)
+                    {
+                        continue;
+                    }
+                }
+
+                // Visible nodes missing from the live capture were removed from the workspace.
             }
+
+            for (size_t capturedIndex = 0; capturedIndex < capturedNodes.size(); ++capturedIndex)
+            {
+                if (!consumedCapturedNodes.at(capturedIndex))
+                {
+                    mergedNodes.emplace_back(std::move(capturedNodes.at(capturedIndex)));
+                }
+            }
+
+            workspace.Nodes = std::move(mergedNodes);
         }
         else
         {
             workspace.Nodes = std::move(capturedNodes);
         }
+
+        workspace.TabOrder = capturedTabOrder;
 
         if (workspace.Nodes.empty())
         {
@@ -1386,6 +1482,61 @@ namespace terminal::workspace
     bool WorkspaceNodeLoadsTab(const WorkspaceNode& node) noexcept
     {
         return node.ShowTab;
+    }
+
+    namespace
+    {
+        std::vector<size_t> _orderedVisibleWorkspaceNodeIndices(const Workspace& workspace)
+        {
+            std::vector<size_t> orderedIndices;
+            orderedIndices.reserve(workspace.Nodes.size());
+
+            std::vector<bool> consumed(workspace.Nodes.size(), false);
+            for (const auto& nodeId : workspace.TabOrder)
+            {
+                if (nodeId.empty())
+                {
+                    continue;
+                }
+
+                for (size_t index = 0; index < workspace.Nodes.size(); ++index)
+                {
+                    const auto& node = workspace.Nodes.at(index);
+                    if (consumed[index] || !WorkspaceNodeLoadsTab(node) || node.Id != nodeId)
+                    {
+                        continue;
+                    }
+
+                    orderedIndices.emplace_back(index);
+                    consumed[index] = true;
+                    break;
+                }
+            }
+
+            for (size_t index = 0; index < workspace.Nodes.size(); ++index)
+            {
+                if (!consumed[index] && WorkspaceNodeLoadsTab(workspace.Nodes.at(index)))
+                {
+                    orderedIndices.emplace_back(index);
+                }
+            }
+
+            return orderedIndices;
+        }
+
+        std::vector<std::wstring> _captureVisibleWorkspaceNodeOrder(const std::vector<WorkspaceNode>& nodes)
+        {
+            std::vector<std::wstring> orderedIds;
+            orderedIds.reserve(nodes.size());
+            for (const auto& node : nodes)
+            {
+                if (WorkspaceNodeLoadsTab(node) && !node.Id.empty())
+                {
+                    orderedIds.emplace_back(node.Id);
+                }
+            }
+            return orderedIds;
+        }
     }
 
     std::optional<WorkspaceNode> FindWorkspaceNodeById(const Workspace& workspace, const std::wstring_view nodeId)
@@ -1447,23 +1598,8 @@ namespace terminal::workspace
 
     std::optional<size_t> FindWorkspaceVisibleNodeIndex(const Workspace& workspace, const size_t visibleOrdinal)
     {
-        size_t currentVisibleOrdinal = 0;
-        for (size_t i = 0; i < workspace.Nodes.size(); ++i)
-        {
-            if (!WorkspaceNodeLoadsTab(workspace.Nodes.at(i)))
-            {
-                continue;
-            }
-
-            if (currentVisibleOrdinal == visibleOrdinal)
-            {
-                return i;
-            }
-
-            ++currentVisibleOrdinal;
-        }
-
-        return std::nullopt;
+        const auto orderedIndices = _orderedVisibleWorkspaceNodeIndices(workspace);
+        return visibleOrdinal < orderedIndices.size() ? std::optional<size_t>{ orderedIndices.at(visibleOrdinal) } : std::nullopt;
     }
 
     std::optional<size_t> ResolveWorkspaceBackedNodeIndex(const std::optional<Workspace>& workspaceDefinition,
@@ -1574,12 +1710,9 @@ namespace terminal::workspace
     std::vector<std::wstring> VisibleWorkspaceNodeIds(const Workspace& workspace)
     {
         std::vector<std::wstring> values;
-        for (const auto& node : workspace.Nodes)
+        for (const auto nodeIndex : _orderedVisibleWorkspaceNodeIndices(workspace))
         {
-            if (WorkspaceNodeLoadsTab(node))
-            {
-                values.emplace_back(node.Id);
-            }
+            values.emplace_back(workspace.Nodes.at(nodeIndex).Id);
         }
         return values;
     }
@@ -1587,12 +1720,9 @@ namespace terminal::workspace
     std::vector<bool> VisibleWorkspaceNodeInputVisibility(const Workspace& workspace)
     {
         std::vector<bool> values;
-        for (const auto& node : workspace.Nodes)
+        for (const auto nodeIndex : _orderedVisibleWorkspaceNodeIndices(workspace))
         {
-            if (WorkspaceNodeLoadsTab(node))
-            {
-                values.emplace_back(node.ShowInputPanel);
-            }
+            values.emplace_back(workspace.Nodes.at(nodeIndex).ShowInputPanel);
         }
         return values;
     }
@@ -2061,15 +2191,15 @@ namespace terminal::workspace
         return loweredSource == L"windows.terminal.ssh" || IsWorkspaceSshCommandline(profileCommandline);
     }
 
-    WorkspaceRuntimeLaunchState PrepareWorkspaceRuntimeLaunchState(const std::wstring_view startingDirectory,
+    WorkspaceRuntimeLaunchState PrepareWorkspaceRuntimeLaunchState(const std::wstring_view /*startingDirectory*/,
                                                                    const std::wstring_view profileSource,
                                                                    const std::wstring_view profileCommandline,
                                                                    const std::wstring_view commandline)
     {
         WorkspaceRuntimeLaunchState state;
-        state.StartingDirectory = std::wstring{ startingDirectory };
         state.IsSshTransport = IsWorkspaceSshTransport(profileSource, profileCommandline, commandline);
         state.HasSshTtyOption = HasWorkspaceSshTtyOption(commandline);
+        state.StartingDirectory.clear();
         if (!commandline.empty() && commandline != profileCommandline)
         {
             state.ExplicitCommandline = std::wstring{ commandline };
@@ -2089,7 +2219,7 @@ namespace terminal::workspace
             }
         }
 
-        state.OperatingSystem = metadata.OperatingSystem.empty() ? _inferOperatingSystemFromPath(state.StartingDirectory) : metadata.OperatingSystem;
+        state.OperatingSystem = metadata.OperatingSystem.empty() ? L"linux" : metadata.OperatingSystem;
         state.ShellType = std::move(metadata.ShellType);
         return state;
     }
@@ -2131,11 +2261,6 @@ namespace terminal::workspace
         {
             resolution.StartingDirectory = input.PersistedNode->StartupDirectory;
         }
-        else
-        {
-            resolution.StartingDirectory = input.TerminalStartingDirectory;
-        }
-
         const auto profileMetadata = InferWorkspaceRuntimeMetadataFromProfile(input.ProfileSource);
         if (profileMetadata.ShellType == L"wsl")
         {
@@ -2169,7 +2294,7 @@ namespace terminal::workspace
             }
             else
             {
-                resolution.OperatingSystem = _inferOperatingSystemFromPath(input.TerminalStartingDirectory);
+                resolution.OperatingSystem = L"linux";
             }
         }
 
@@ -2290,7 +2415,8 @@ namespace terminal::workspace
             consumedNodeIds.emplace_back(orderedVisibleNodes.back().Id);
         }
 
-        return ApplyVisibleWorkspaceNodeOrder(workspace, orderedVisibleNodes);
+        workspace.TabOrder.assign(orderedNodeIds.begin(), orderedNodeIds.end());
+        return true;
     }
 
     std::vector<Workspace>& WorkspaceManager::Workspaces() noexcept
@@ -2394,6 +2520,7 @@ namespace terminal::workspace
         const auto rhsTabColor = NormalizeWorkspaceColor(rhs.TabColor).empty() ? rhs.TabColor : NormalizeWorkspaceColor(rhs.TabColor);
         return lhs.Name == rhs.Name &&
                lhs.ProfileGuid == rhs.ProfileGuid &&
+               lhs.ProfileName == rhs.ProfileName &&
                lhsTabColor == rhsTabColor &&
                lhs.ShowTab == rhs.ShowTab &&
                lhs.StartupDirectory == rhs.StartupDirectory &&
@@ -2407,6 +2534,11 @@ namespace terminal::workspace
 
     bool WorkspaceLayoutEquivalent(const Workspace& lhs, const Workspace& rhs)
     {
+        if (lhs.TabOrder != rhs.TabOrder)
+        {
+            return false;
+        }
+
         if (lhs.Nodes.size() != rhs.Nodes.size())
         {
             return false;
@@ -2499,7 +2631,33 @@ namespace terminal::workspace
         std::unordered_set<std::wstring> usedWorkspaceNames;
         for (auto& candidate : plan.Workspaces)
         {
+            const auto previousTabOrder = candidate.TabOrder;
+            std::vector<std::wstring> originalNodeIds;
+            originalNodeIds.reserve(candidate.Nodes.size());
+            for (const auto& node : candidate.Nodes)
+            {
+                originalNodeIds.emplace_back(node.Id);
+            }
+
             NormalizeWorkspacePersistableNames(candidate);
+
+            std::unordered_map<std::wstring, std::wstring> normalizedNodeIds;
+            for (size_t nodeIndex = 0; nodeIndex < candidate.Nodes.size() && nodeIndex < originalNodeIds.size(); ++nodeIndex)
+            {
+                normalizedNodeIds.emplace(originalNodeIds.at(nodeIndex), candidate.Nodes.at(nodeIndex).Id);
+            }
+
+            std::vector<std::wstring> normalizedTabOrder;
+            normalizedTabOrder.reserve(previousTabOrder.size());
+            for (const auto& nodeId : previousTabOrder)
+            {
+                if (const auto it = normalizedNodeIds.find(nodeId); it != normalizedNodeIds.end() && !it->second.empty())
+                {
+                    normalizedTabOrder.emplace_back(it->second);
+                }
+            }
+            candidate.TabOrder = std::move(normalizedTabOrder);
+
             candidate.Name = MakeUniquePersistedName(candidate.Name, usedWorkspaceNames);
             candidate.Id = candidate.Name;
         }
@@ -2652,6 +2810,10 @@ namespace terminal::workspace
         }
 
         node.ProfileGuid = state.ProfileGuid;
+        if (!state.ProfileName.empty() || !state.PersistedNode.has_value())
+        {
+            node.ProfileName = state.ProfileName;
+        }
         node.StartupDirectory = state.LaunchResolution.StartingDirectory;
         node.StartupAction = state.LaunchResolution.StartupAction;
         node.OperatingSystem = state.LaunchResolution.OperatingSystem;

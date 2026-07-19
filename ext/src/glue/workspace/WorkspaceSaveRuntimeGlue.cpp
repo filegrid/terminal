@@ -186,6 +186,7 @@
                 captureState.StartupTabTitle = terminalArgs->TabTitle().c_str();
                 captureState.GeneratedNodeName = RS_fmt(L"WorkspaceEditor_NodeGeneratedName", nodeIndex + 1).c_str();
                 captureState.ProfileGuid = terminalArgs->Profile().empty() ? ::Microsoft::Console::Utils::GuidToString(_settings.GlobalSettings().DefaultProfile()) : terminalArgs->Profile().c_str();
+                captureState.ProfileName = profile ? std::wstring{ (profile.Name().empty() ? profile.Source() : profile.Name()).c_str() } : std::wstring{};
                 captureState.LaunchResolution = resolution;
                 captureState.ShowInputPanel = tabImpl->ShowWorkspaceInputPanel();
                 if (const auto tabColor = tabImpl->GetTabColor())

@@ -179,7 +179,8 @@
 
     void TerminalPage::_PreparePendingWorkspaceNodeIds(const Workspace& workspace)
     {
-        _workspaceExtension->ReplacePendingWorkspaceNodeIds(Microsoft::Terminal::Settings::Model::implementation::VisibleWorkspaceNodeIds(workspace));
+        const auto startupState = Microsoft::Terminal::Settings::Model::implementation::ResolveWorkspaceStartupState(workspace, _settings);
+        _workspaceExtension->ReplacePendingWorkspaceNodeIds(std::move(startupState.PendingNodeIds));
     }
 
     std::wstring TerminalPage::_ConsumePendingWorkspaceNodeId()

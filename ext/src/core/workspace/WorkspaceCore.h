@@ -21,6 +21,7 @@ namespace terminal::workspace
         std::wstring Name;
         std::wstring ConnectionRef;
         std::wstring ProfileGuid;
+        std::wstring ProfileName;
         std::wstring TabColor;
         bool ShowTab{ true };
         std::wstring StartupDirectory;
@@ -38,6 +39,7 @@ namespace terminal::workspace
         std::wstring Description;
         std::wstring BackgroundColor;
         bool Locked{ true };
+        std::vector<std::wstring> TabOrder;
         std::vector<WorkspaceNode> Nodes;
     };
 
@@ -173,6 +175,7 @@ namespace terminal::workspace
         std::wstring StartupTabTitle;
         std::wstring GeneratedNodeName;
         std::wstring ProfileGuid;
+        std::wstring ProfileName;
         WorkspaceNodeLaunchResolution LaunchResolution;
         bool ShowInputPanel{ false };
         std::wstring TabColor;

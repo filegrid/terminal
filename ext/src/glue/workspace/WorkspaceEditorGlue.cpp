@@ -53,6 +53,10 @@
         node.Name = RS_fmt(L"WorkspaceEditor_NodeGeneratedName", workspace->Nodes.size() + 1).c_str();
         node.Id = node.Name;
         node.ProfileGuid = Utils::GuidToString(_settings.GlobalSettings().DefaultProfile());
+        if (const auto profile = _settings.FindProfile(_settings.GlobalSettings().DefaultProfile()))
+        {
+            node.ProfileName = profile.Name().empty() ? profile.Source().c_str() : profile.Name().c_str();
+        }
         workspace->Nodes.emplace_back(std::move(node));
         _workspaceExtension->WorkspaceDefinitionsDirty() = true;
     }

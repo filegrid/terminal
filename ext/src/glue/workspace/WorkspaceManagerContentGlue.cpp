@@ -565,12 +565,12 @@
                                 }
                                 else
                                 {
-                                    item.Content(box_value(node.ProfileGuid));
+                                    item.Content(box_value(node.ProfileName.empty() ? winrt::hstring{ node.ProfileGuid } : winrt::hstring{ node.ProfileName }));
                                 }
                             }
                             else
                             {
-                                item.Content(box_value(node.ProfileGuid));
+                                item.Content(box_value(node.ProfileName.empty() ? winrt::hstring{ node.ProfileGuid } : winrt::hstring{ node.ProfileName }));
                             }
                             item.Tag(box_value(node.ProfileGuid));
                             profilePicker.Items().Append(item);
@@ -590,6 +590,7 @@
                                             if (const auto item = picker.SelectedItem().try_as<ComboBoxItem>())
                                             {
                                                 current->Nodes.at(nodeIndex).ProfileGuid = winrt::unbox_value<winrt::hstring>(item.Tag()).c_str();
+                                                current->Nodes.at(nodeIndex).ProfileName = winrt::unbox_value_or<winrt::hstring>(item.Content(), {}).c_str();
                                                 self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
                                             }
                                         }

@@ -102,7 +102,11 @@
             return;
         }
 
-        const auto startupState = ::terminal::workspace::LoadWorkspaceStartupState(_startupWorkspaceId.c_str());
+        auto startupState = winrt::Microsoft::Terminal::Settings::Model::implementation::WorkspaceStartupState{};
+        if (const auto startupWorkspace = ::terminal::workspace::LoadResolvedWorkspaceDefinition(_startupWorkspaceId.c_str(), std::nullopt))
+        {
+            startupState = winrt::Microsoft::Terminal::Settings::Model::implementation::ResolveWorkspaceStartupState(*startupWorkspace, _settings);
+        }
         _workspaceExtension->ReplacePendingWorkspaceNodeInputVisibility(std::move(startupState.PendingNodeInputVisibility));
         _workspaceExtension->ReplacePendingWorkspaceNodeIds(std::move(startupState.PendingNodeIds));
         _startupWorkspaceId.clear();

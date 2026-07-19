@@ -74,8 +74,8 @@ namespace terminal::workspace
         virtual void InitializeWorkspaceTabRowUi() = 0;
         virtual void UpdateTerminalContentHostClip() = 0;
         virtual void RefreshWorkspaceUiAfterSettingsReload() = 0;
-        virtual void ReplayPendingWorkspaceStartupInput(const winrt::Microsoft::Terminal::Control::TermControl& control,
-                                                        const winrt::Microsoft::Terminal::Control::ICoreState& coreState) = 0;
+        virtual void ReplayPendingWorkspaceStartupInput(winrt::Microsoft::Terminal::Control::TermControl control,
+                                                        winrt::Microsoft::Terminal::Control::ICoreState coreState) = 0;
         virtual void PersistWorkspaceInputPanelVisibilityFromFocusedTab(bool showInputPanel) = 0;
         virtual void ApplyWorkspaceChatStateForFocusedTab() = 0;
         virtual void FocusActiveTabSurface() = 0;

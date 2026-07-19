@@ -1,3 +1,8 @@
+2026-07-19
+- Workspace delayed startup replay now passes `TermControl`/`ICoreState` by value through the host/extension seam and re-checks live runtime state plus connection status after each `co_await`, fixing the portable startup crash where SSH workspace restore could call `SendInput` through a dangling reference after the connect callback returned.
+- Workspace persistence now keeps live tab drag order in workspace-level `tabOrder` metadata instead of rewriting node definitions, saves each node's `profileName` alongside `profileGuid`, and stops inventing fallback startup directories while defaulting unresolved OS inference to `linux`.
+- Workspace restore/startup now validates each visible tab before loading it: nodes with missing profiles are dropped from pending startup state and startup action generation instead of falling back to an unrelated default profile and risking a restore-time crash.
+
 2026-07-14
 - Workspace chat 的本地缓存、草稿持久化、terminal 事件落盘现在编译自 `ext\src\core\chat`；`glue\chat` 只保留宿主耦合控制器和兼容头，core/chat 源在 `TerminalAppLib` / `WorkspaceExtension` 项目里都改为不依赖宿主 PCH。
 - Workspace chat 的 terminal input 解析、文本裁剪/摘要/交互命令判定、workspace/draft/state key 规则现在也编译自 `ext\src\core\chat`；`glue\chat` 对应头已退化为兼容 include。
