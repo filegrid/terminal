@@ -1,0 +1,5 @@
+#include "WorkspaceManagerPaneContent.h"
+#include "../TerminalSettingsModel/Workspace.h"
+#include "..\..\..\..\ext\src\glue\chat\TerminalInputHarness.h"
+#include "..\..\..\..\ext\src\glue\chat\WorkspaceChatController.h"
+#include "..\..\..\..\ext\src\glue\workspace\TerminalPageWorkspaceTypes.h"
