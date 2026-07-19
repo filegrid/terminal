@@ -3,4 +3,4 @@
 
 #pragma once
 
-#include "../../../../ext/src/workspace/WorkspaceApi.h"
+#include "../../../../ext/src/glue/workspace/WorkspaceApi.h"

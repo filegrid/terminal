@@ -4,6 +4,7 @@
 #include "pch.h"
 #include "App.h"
 #include "App.g.cpp"
+#include "..\..\..\..\ext\src\glue\chat\WorkspaceDiagnosticLog.h"
 
 using namespace winrt;
 using namespace winrt::Windows::ApplicationModel::Activation;
@@ -50,6 +51,7 @@ namespace winrt::TerminalApp::implementation
         _appendLaunchDebugLog(L"App::App ctor enter");
 #endif
         Initialize();
+        UnhandledException({ this, &App::_OnUnhandledException });
 
         // Disable XAML's automatic backplating of text when in High Contrast
         // mode: we want full control of and responsibility for the foreground
@@ -111,6 +113,14 @@ namespace winrt::TerminalApp::implementation
     {
         // We used to support a pure UWP version of the Terminal. This method
         // was only ever used to do UWP-specific setup of our App.
+    }
+
+    void App::_OnUnhandledException(const IInspectable& /*sender*/, const xaml::UnhandledExceptionEventArgs& args)
+    {
+        Json::Value payload{ Json::objectValue };
+        terminal::workspacechat::AddDiagnosticTextFields(payload, "message", args.Message().c_str());
+        payload["handled"] = args.Handled();
+        std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"app_unhandled_exception", payload);
     }
 
     void App::PrepareForSettingsUI()

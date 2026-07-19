@@ -14,6 +14,9 @@
     <ProjectGuid>{CA5CAD1A-0b5e-45c3-96a8-bb496bfe4e32}</ProjectGuid>
     <ProjectName>Microsoft.Terminal.Settings.Editor</ProjectName>
     <RootNamespace>Microsoft.Terminal.Settings.Editor</RootNamespace>
+    <TargetName>Microsoft.Terminal.Settings.Editor</TargetName>
+    <XamlProjectName>Microsoft.Terminal.Settings.Editor</XamlProjectName>
+    <PriIndexName>Microsoft.Terminal.Settings.Editor</PriIndexName>
     <!-- cppwinrt.build.pre.props depends on these settings: -->
     <!-- build a dll, not exe (Application) -->
     <ConfigurationType>DynamicLibrary</ConfigurationType>

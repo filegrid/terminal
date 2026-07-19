@@ -14,8 +14,8 @@
 #include "LaunchPositionRequest.g.h"
 #include "Toast.h"
 #include "WindowsPackageManagerFactory.h"
-#include "..\..\..\..\ext\src\workspace\WorkspaceHostInterfaces.h"
-#include "..\..\..\..\ext\src\workspace\TerminalPageWorkspaceIncludes.h"
+#include "..\..\..\..\ext\src\glue\workspace\WorkspaceHostInterfaces.h"
+#include "..\..\..\..\ext\src\glue\workspace\TerminalPageWorkspaceIncludes.h"
 
 #define DECLARE_ACTION_HANDLER(action) void _Handle##action(const IInspectable& sender, const Microsoft::Terminal::Settings::Model::ActionEventArgs& args);
 
@@ -110,7 +110,7 @@ namespace winrt::TerminalApp::implementation
     struct TerminalPage : TerminalPageT<TerminalPage>, terminal::workspace::TerminalPageBase
     {
     public:
-        #include "..\..\..\..\ext\src\workspace\TerminalPageWorkspacePublicSurface.h"
+        #include "..\..\..\..\ext\src\glue\workspace\TerminalPageWorkspacePublicSurface.h"
 
         TerminalPage(TerminalApp::WindowProperties properties, const TerminalApp::ContentManager& manager);
         ~TerminalPage();
@@ -297,7 +297,7 @@ namespace winrt::TerminalApp::implementation
         winrt::Windows::UI::Xaml::Controls::TextBox::LayoutUpdated_revoker _renamerLayoutUpdatedRevoker;
         int _renamerLayoutCount{ 0 };
         bool _renamerPressedEnter{ false };
-        #include "..\..\..\..\ext\src\workspace\TerminalPageWorkspacePrivateMembersSurface.h"
+        #include "..\..\..\..\ext\src\glue\workspace\TerminalPageWorkspacePrivateMembersSurface.h"
         HMODULE _workspaceExtensionModule{ nullptr };
         terminal::workspace::DestroyWorkspaceTerminalPageExtensionFn _destroyWorkspaceExtension{ nullptr };
         terminal::workspace::IWorkspaceTerminalPageExtension* _workspaceExtension{ nullptr };
@@ -335,7 +335,7 @@ namespace winrt::TerminalApp::implementation
         winrt::Windows::UI::Xaml::Controls::IconElement _CreateNewTabFlyoutIcon(const winrt::hstring& icon);
         winrt::Windows::UI::Xaml::Controls::MenuFlyoutItem _CreateNewTabFlyoutProfile(const Microsoft::Terminal::Settings::Model::Profile profile, int profileIndex, const winrt::hstring& iconPathOverride);
         winrt::Windows::UI::Xaml::Controls::MenuFlyoutItem _CreateNewTabFlyoutAction(const winrt::hstring& actionId, const winrt::hstring& iconPathOverride);
-        #include "..\..\..\..\ext\src\workspace\TerminalPageWorkspacePrivateMethodsSurface.h"
+        #include "..\..\..\..\ext\src\glue\workspace\TerminalPageWorkspacePrivateMethodsSurface.h"
 
         void _OpenNewTabDropdown();
         void _LoadWorkspaceExtension();

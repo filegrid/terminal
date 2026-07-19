@@ -15,6 +15,7 @@ namespace winrt::TerminalApp::implementation
         App();
         void OnLaunched(const Windows::ApplicationModel::Activation::LaunchActivatedEventArgs&);
         void Initialize();
+        void _OnUnhandledException(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::UnhandledExceptionEventArgs& args);
 
         TerminalApp::AppLogic Logic();
 

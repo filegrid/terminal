@@ -158,7 +158,7 @@ namespace winrt::TerminalApp::implementation
         TabViewItem().DoubleTapped([weakThis = get_weak()](auto&& /*s*/, auto&& /*e*/) {
             if (auto tab{ weakThis.get() })
             {
-                tab->ActivateTabRenamer();
+                tab->_dispatch.DoAction(*tab, { ShortcutAction::OpenTabRenamer, nullptr });
             }
         });
 
@@ -2746,7 +2746,7 @@ namespace winrt::TerminalApp::implementation
     void Tab::_renameTabClicked(const winrt::Windows::Foundation::IInspectable& /* sender */,
                                 const winrt::Windows::UI::Xaml::RoutedEventArgs& /* args */)
     {
-        ActivateTabRenamer();
+        _dispatch.DoAction(*this, { ShortcutAction::OpenTabRenamer, nullptr });
     }
     void Tab::_duplicateTabClicked(const winrt::Windows::Foundation::IInspectable& /* sender */,
                                    const winrt::Windows::UI::Xaml::RoutedEventArgs& /* args */)

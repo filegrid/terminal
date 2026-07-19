@@ -1,5 +1,0 @@
-#include "WorkspaceManagerPaneContent.h"
-#include "../TerminalSettingsModel/Workspace.h"
-#include "..\..\..\..\ext\src\chat\TerminalInputHarness.h"
-#include "..\..\..\..\ext\src\chat\WorkspaceChatController.h"
-#include "..\..\..\..\ext\src\workspace\TerminalPageWorkspaceTypes.h"

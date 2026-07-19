@@ -5,6 +5,7 @@
 #include "TerminalWindow.h"
 
 #include "AppLogic.h"
+#include "..\..\..\..\ext\src\glue\workspace\WorkspaceHostBridge.h"
 
 #include <til/env.h>
 
@@ -149,9 +150,7 @@ namespace winrt::TerminalApp::implementation
     {
         if (const auto windowId = _WindowProperties ? _WindowProperties->WindowId() : 0; windowId != 0)
         {
-            auto state = Microsoft::Terminal::Settings::Model::implementation::WorkspaceStateManager::Load();
-            state.RemoveWindow(windowId);
-            state.Save();
+            terminal::workspace::RemovePersistedWorkspaceWindowState(windowId);
         }
     }
 

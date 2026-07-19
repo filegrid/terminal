@@ -187,14 +187,14 @@
       <DependentUpon>MarkdownPaneContent.xaml</DependentUpon>
     </ClInclude>
     <ClInclude Include="WindowsPackageManagerFactory.h" />
-    <ClInclude Include="..\..\..\..\ext\src\chat\TerminalInputHarness.h" />
-    <ClInclude Include="..\..\..\..\ext\src\chat\TerminalEventStore.h" />
-    <ClInclude Include="..\..\..\..\ext\src\chat\WorkspaceChatController.h" />
-    <ClInclude Include="..\..\..\..\ext\src\chat\WorkspaceChatStateHelpers.h" />
-    <ClInclude Include="..\..\..\..\ext\src\chat\WorkspaceChatTextHelpers.h" />
-    <ClInclude Include="..\..\..\..\ext\src\chat\WorkspaceDiagnosticLog.h" />
-    <ClInclude Include="..\..\..\..\ext\src\chat\WorkspaceChatStore.h" />
-    <ClInclude Include="..\..\..\..\ext\src\chat\WorkspaceStoragePaths.h" />
+    <ClInclude Include="..\..\..\..\ext\src\glue\chat\TerminalInputHarness.h" />
+    <ClInclude Include="..\..\..\..\ext\src\glue\chat\TerminalEventStore.h" />
+    <ClInclude Include="..\..\..\..\ext\src\glue\chat\WorkspaceChatController.h" />
+    <ClInclude Include="..\..\..\..\ext\src\glue\chat\WorkspaceChatStateHelpers.h" />
+    <ClInclude Include="..\..\..\..\ext\src\glue\chat\WorkspaceChatTextHelpers.h" />
+    <ClInclude Include="..\..\..\..\ext\src\glue\chat\WorkspaceDiagnosticLog.h" />
+    <ClInclude Include="..\..\..\..\ext\src\glue\chat\WorkspaceChatStore.h" />
+    <ClInclude Include="..\..\..\..\ext\src\glue\chat\WorkspaceStoragePaths.h" />
   </ItemGroup>
   <!-- ========================= Cpp Files ======================== -->
   <ItemGroup>
@@ -226,18 +226,32 @@
       <DependentUpon>TerminalPage.xaml</DependentUpon>
       <SubType>Code</SubType>
     </ClCompile>
-    <ClCompile Include="..\..\..\..\ext\src\workspace\WorkspaceTerminalPageLegacyGlue.cpp">
+    <ClCompile Include="..\..\..\..\ext\src\glue\workspace\WorkspaceTerminalPageLegacyGlue.cpp">
       <DependentUpon>TerminalPage.xaml</DependentUpon>
       <SubType>Code</SubType>
     </ClCompile>
-    <ClCompile Include="..\..\..\..\ext\src\chat\TerminalInputHarness.cpp" />
-    <ClCompile Include="..\..\..\..\ext\src\chat\TerminalEventStore.cpp" />
-    <ClCompile Include="..\..\..\..\ext\src\chat\WorkspaceChatController.cpp" />
-    <ClCompile Include="..\..\..\..\ext\src\chat\WorkspaceChatStateHelpers.cpp" />
-    <ClCompile Include="..\..\..\..\ext\src\chat\WorkspaceChatTextHelpers.cpp" />
-    <ClCompile Include="..\..\..\..\ext\src\chat\WorkspaceDiagnosticLog.cpp" />
-    <ClCompile Include="..\..\..\..\ext\src\chat\WorkspaceChatStore.cpp" />
-    <ClCompile Include="..\..\..\..\ext\src\chat\WorkspaceStoragePaths.cpp" />
+    <ClCompile Include="..\..\..\..\ext\src\core\chat\TerminalInputHarness.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\..\..\ext\src\core\chat\TerminalEventStore.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\..\..\ext\src\core\chat\WorkspaceChatController.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\..\..\ext\src\core\chat\WorkspaceChatStateHelpers.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\..\..\ext\src\core\chat\WorkspaceChatTextHelpers.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\..\..\ext\src\glue\chat\WorkspaceDiagnosticLog.cpp" />
+    <ClCompile Include="..\..\..\..\ext\src\core\chat\WorkspaceChatStore.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\..\..\ext\src\core\chat\WorkspaceStoragePaths.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="TabManagement.cpp">
       <DependentUpon>TerminalPage.xaml</DependentUpon>
       <SubType>Code</SubType>

@@ -26,7 +26,7 @@ cmake --build .\build --target full
 
 1. `build` 目录下的 CMake 构建树
 2. 现有 VC/MSBuild 工程的编译
-3. `ext\src\portable\PortablePackageTool` 的便携打包
+3. `ext\src\glue\portable\PortablePackageTool` 的便携打包
 
 不会在 CMake 路径里再回调 `Build-PortableTerminalDistribution.ps1`。
 
@@ -54,3 +54,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\microsoft\build\scripts\Bu
 ## Recent functional changes
 
 1. Workspace SSH 启动回放现在会识别 `ssh -t`。当目标 node 标记为 Windows 时，会先等最终 Windows shell 报出对应工作目录，再回放 `startupDirectory` / `startupAction`，避免输入误打到跳板机那层 SSH。
+
+## ext src layout
+
+`ext\src` 现在按两层目录组织：
+
+1. `ext\src\core`：纯 C++ core / interface 代码，不依赖 Terminal 宿主实现。
+2. `ext\src\glue`：和 Terminal / WinRT / packaging 接口耦合的 glue 代码。

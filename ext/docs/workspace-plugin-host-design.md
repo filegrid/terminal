@@ -16,8 +16,10 @@
 
 1. **workspace/ext 代码不能直接访问 `TerminalPage` 内部细节。**
 2. **workspace/ext 代码只能依赖宿主/基类接口，不能依赖 `TerminalPage` 具体实现类。**
-3. **`TerminalPage.cpp` 里只保留注册、转发、最薄的桥接入口。**
-4. **不再继续扩散 `#include "..\\..\\..\\ext\\src\\...\\*.cpp"` 这种把实现文本并入 `TerminalPage.cpp` 的方式。**
+3. **ext 不出现任何原项目实现内容；它只提供 workspace 的业务逻辑、状态和接口。**
+4. **`WorkspaceModel` / `WorkspaceApi` 只保留稳定数据结构和接口声明，不承载会频繁变化的核心业务实现。**
+5. **`TerminalPage.cpp` 里只保留注册、转发、最薄的桥接入口。**
+6. **不再继续扩散 `#include "..\\..\\..\\ext\\src\\...\\*.cpp"` 这种把实现文本并入 `TerminalPage.cpp` 的方式。**
 
 这里的“内部细节”包括但不限于：
 
@@ -71,10 +73,48 @@
 
 workspace 扩展只负责：
 
-1. 管理 workspace/chat 自己的状态和规则
+1. 管理 workspace/chat 自己的业务状态和规则
 2. 通过宿主接口请求终端能力
-3. 处理自己的 UI 逻辑、持久化逻辑、提交逻辑和路由逻辑
-4. 不假设宿主的私有实现细节
+3. 提供 workspace 的持久化、启动解析、运行态同步、合法性校验等业务逻辑
+4. 不承载原生项目的页面实现、XAML/UI 组件、页面交互或宿主视觉状态
+5. 不假设宿主的私有实现细节
+
+## 2026-07 边界修正
+
+这次排查 `ceshi` 错误加载与崩溃时，已经确认当前结构还有一层关键偏差：
+
+1. `microsoft\src\cascadia\TerminalSettingsModel\Workspace.cpp` 仍然直接 `#include "../../../../ext/src/workspace/WorkspaceModel.cpp"`。
+2. 结果是 `WorkspaceModel` 虽然名字上像“模型/基类”，实际上仍然承载了 workspace 的核心实现。
+3. 原生侧还会直接调用 `WorkspaceManager::Load()`、`WorkspaceStateManager::Load()`、`BuildStartupActions()` 这类业务逻辑，而不是只拿对象/接口。
+4. 这会让 ext 侧业务规则继续通过共享实现或 include glue 穿透回宿主，导致“只改 ext 但宿主仍然吃共享/旧逻辑”的问题反复出现。
+
+因此，后续收敛的明确方向是：
+
+1. **`WorkspaceModel` 退回稳定 API/数据结构层。**
+2. **workspace 的核心 load/save/startup/validation/runtime 逻辑收敛到 ext 提供的业务接口。**
+3. **原生侧只调用这些业务接口，并负责 UI、页面生命周期和用户交互。**
+4. **ext 目录里不再放原项目侧的页面实现、宿主 glue 或兼容性实现内容。**
+5. **任何 root-level `.wt` 兼容/迁移规则，都不能再通过宿主内嵌实现偷偷生效。**
+
+## 2026-07 新分层修正
+
+后续 `ext` 不再追求“整个 ext 都与 Terminal 彻底无关”，而是明确拆成两层：
+
+1. **底层接口/核心层**
+   - 产物是独立 DLL。
+   - 只使用纯 C++。
+   - 不依赖 WinRT、XAML、`TerminalPage`、`TerminalSettingsModel`、`TerminalApp` 这套宿主类型。
+   - 只承载 workspace 的数据结构、持久化、校验、启动输入拼装、运行态规则等业务逻辑。
+2. **胶水层**
+   - 负责把底层核心层接到现有 Terminal/Microsoft 宿主接口上。
+   - 可以依赖 WinRT 和宿主类型，但只做适配、转换、生命周期转发。
+   - 属于 `full` 的一部分，不允许把业务逻辑重新塞回旧的 `main` 分支宿主逻辑里。
+
+这意味着：
+
+1. `WorkspaceModel` / `WorkspaceApi` 上层继续保留对现有宿主的兼容入口，但它们应该逐步退化成 glue facade。
+2. 真正可复用、可独立构建、可独立测试的 workspace 规则应下沉到纯 C++ core DLL。
+3. 宿主侧和 WinRT 侧看到的只是 core 的结果，不再让 core 反向 include `TerminalApp` / `Settings.Model` / generated winrt 头。
 
 ## 总体结构
 
@@ -137,13 +177,22 @@ workspace 扩展只负责：
 - `OnSettingsReloaded()`
 - `OnWindowClosing(...)`
 
+按这次修正后的边界，扩展接口应优先按**业务能力**拆，而不是按 UI 控件拆。例如：
+
+- `IWorkspacePersistenceService`
+- `IWorkspaceLaunchService`
+- `IWorkspaceRuntimeStateService`
+- `IWorkspaceValidationService`
+
+如果第一步不想拆太细，也至少要保证总接口只暴露业务动作，不暴露 XAML/UI 细节。
+
 如果某些接口太大，可以继续细分为：
 
 - `IWorkspaceChatExtension`
 - `IWorkspacePersistenceExtension`
-- `IWorkspaceUiExtension`
+- `IWorkspaceRuntimeExtension`
 
-但第一步更建议先有一个总扩展接口，再在实现里继续拆子模块。
+这里不再建议继续保留 `IWorkspaceUiExtension` 这类把 UI 行为塞进 ext 的方向；UI 行为应该留在宿主，ext 只返回状态/决策结果。
 
 ### 3. 注册入口
 
@@ -193,6 +242,12 @@ workspace 扩展只负责：
 
 但这些入口之后的业务逻辑应该尽快转给 workspace 扩展处理。
 
+进一步说：
+
+1. ext 不应该 new / 持有页面级 UI 组件作为自己的长期职责。
+2. ext 不应该定义 workspace 管理页面、编辑交互、tab row 交互、焦点/显示等宿主 UI 细节。
+3. ext 只应该给出“当前 workspace 是否锁定”“这组 tab/node 是否合法”“应如何生成 startup actions”“应如何持久化/迁移”等业务答案。
+
 ### 原则 4：先抽接口，再迁实现
 
 不能先把代码“硬搬”出去，再让插件继续通过 include 或友元式访问内部细节活着。
@@ -203,6 +258,15 @@ workspace 扩展只负责：
 2. 抽出宿主接口
 3. 用宿主适配器承接原有能力
 4. 再把 ext 实现从 include glue 改成独立编译单元
+
+### 原则 5：先收回 `WorkspaceModel` 的实现职责
+
+在继续拆 UI glue 之前，先把当前这条错误共享实现链收回来：
+
+1. `Workspace.cpp` 不再作为宿主侧核心业务实现入口。
+2. `WorkspaceModel` / `WorkspaceApi` 只保留稳定类型和接口声明。
+3. 宿主原先直接调用的 `WorkspaceManager::Load/Save/BuildStartupActions`、`WorkspaceStateManager::Load/Save` 等逻辑，逐步改为通过 ext 的业务接口调用。
+4. 当这一步完成后，再删掉仍然依赖共享实现的 host-side include glue。
 
 ## 建议文件结构
 
@@ -332,4 +396,3 @@ microsoft\src\cascadia\TerminalApp\
 否则就只是：
 
 > 形式上叫插件，实际上还是 `TerminalPage` 内部实现的外置源码片段。
-

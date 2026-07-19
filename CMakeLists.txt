@@ -178,35 +178,51 @@ set(_workspace_extension_release_root "${_openconsole_root}/bin/${PORTABLE_PLATF
 file(GLOB _workspace_extension_vcpkg_libs "${_workspace_extension_vcpkg_lib_root}/*.lib")
 
 add_library(${_workspace_extension_target} SHARED
-    "${_workspace_root}/ext/src/workspace/WorkspaceTerminalPageExtension.cpp"
-    "${_workspace_root}/ext/src/workspace/dll/WorkspaceModelWrapper.cpp"
-    "${_workspace_root}/ext/src/chat/TerminalInputHarness.cpp"
-    "${_workspace_root}/ext/src/chat/TerminalEventStore.cpp"
-    "${_workspace_root}/ext/src/chat/WorkspaceChatController.cpp"
-    "${_workspace_root}/ext/src/chat/WorkspaceChatStateHelpers.cpp"
-    "${_workspace_root}/ext/src/chat/WorkspaceChatTextHelpers.cpp"
-    "${_workspace_root}/ext/src/chat/WorkspaceDiagnosticLog.cpp"
-    "${_workspace_root}/ext/src/chat/WorkspaceChatStore.cpp"
-    "${_workspace_root}/ext/src/chat/WorkspaceStoragePaths.cpp"
+    "${_workspace_root}/ext/src/glue/workspace/WorkspaceTerminalPageExtension.cpp"
+    "${_workspace_root}/ext/src/glue/workspace/dll/WorkspaceModelWrapper.cpp"
+    "${_workspace_root}/ext/src/core/chat/TerminalInputHarness.cpp"
+    "${_workspace_root}/ext/src/core/chat/TerminalEventStore.cpp"
+    "${_workspace_root}/ext/src/core/chat/WorkspaceChatController.cpp"
+    "${_workspace_root}/ext/src/core/chat/WorkspaceChatStateHelpers.cpp"
+    "${_workspace_root}/ext/src/core/chat/WorkspaceChatTextHelpers.cpp"
+    "${_workspace_root}/ext/src/glue/chat/WorkspaceDiagnosticLog.cpp"
+    "${_workspace_root}/ext/src/core/chat/WorkspaceChatStore.cpp"
+    "${_workspace_root}/ext/src/core/chat/WorkspaceStoragePaths.cpp"
 )
 
 target_compile_features(${_workspace_extension_target} PRIVATE cxx_std_20)
 target_precompile_headers(${_workspace_extension_target} PRIVATE
-    "$<$<COMPILE_LANGUAGE:CXX>:${_workspace_root}/ext/src/workspace/dll/pch.h>"
+    "$<$<COMPILE_LANGUAGE:CXX>:${_workspace_root}/ext/src/glue/workspace/dll/pch.h>"
 )
 
 target_include_directories(${_workspace_extension_target} PRIVATE
     "${_wil_package_dir}/include"
     "${_themehelpers_package_dir}/inc"
-    "${_workspace_root}/ext/src/workspace/dll"
+    "${_workspace_root}/ext/src/glue/workspace/dll"
     "${_workspace_extension_generated_root}"
     "${_workspace_extension_obj_root}"
     "${_openconsole_root}/src/cascadia"
     "${_openconsole_root}/src/cascadia/TerminalApp"
     "${_openconsole_root}/src/cascadia/TerminalApp/Generated Files"
+    "${_openconsole_root}/src/cascadia/WindowsTerminal/Generated Files"
+    "${_openconsole_root}/src/cascadia/WindowsTerminal/Generated Files/winrt"
     "${_openconsole_root}/src/cascadia/TerminalControl"
+    "${_openconsole_root}/src/cascadia/TerminalControl/Generated Files"
+    "${_openconsole_root}/src/cascadia/TerminalControl/Generated Files/winrt"
+    "${_openconsole_root}/src/cascadia/TerminalControl/dll/Generated Files"
+    "${_openconsole_root}/src/cascadia/TerminalControl/dll/Generated Files/winrt"
     "${_openconsole_root}/src/cascadia/TerminalSettingsModel"
+    "${_openconsole_root}/src/cascadia/TerminalSettingsModel/Generated Files"
+    "${_openconsole_root}/src/cascadia/TerminalSettingsModel/Generated Files/winrt"
+    "${_openconsole_root}/src/cascadia/TerminalSettingsModel/dll/Generated Files"
+    "${_openconsole_root}/src/cascadia/TerminalSettingsModel/dll/Generated Files/winrt"
     "${_openconsole_root}/src/cascadia/TerminalSettingsAppAdapterLib"
+    "${_openconsole_root}/src/cascadia/TerminalSettingsAppAdapterLib/Generated Files"
+    "${_openconsole_root}/src/cascadia/TerminalSettingsAppAdapterLib/Generated Files/winrt"
+    "${_openconsole_root}/src/cascadia/UIHelpers/Generated Files"
+    "${_openconsole_root}/src/cascadia/UIHelpers/Generated Files/winrt"
+    "${_openconsole_root}/src/cascadia/UIMarkdown/Generated Files"
+    "${_openconsole_root}/src/cascadia/UIMarkdown/Generated Files/winrt"
     "${_openconsole_root}/src/inc"
     "${_openconsole_root}/dep"
     "${_openconsole_root}/dep/Console"
@@ -381,10 +397,10 @@ set(_msbuild_common_args
     "/p:TargetFrameworkRootPath=${_target_framework_root_path_msbuild}"
 )
 
-set(_portable_tool_project "${_workspace_root}/ext/src/portable/PortablePackageTool/PortablePackageTool.csproj")
+set(_portable_tool_project "${_workspace_root}/ext/src/glue/portable/PortablePackageTool/PortablePackageTool.csproj")
 set(_portable_tool_output_dir "${CMAKE_BINARY_DIR}/portable-package-tool")
 set(_portable_tool_dll "${_portable_tool_output_dir}/PortablePackageTool.dll")
-set(_portable_cmake_dir "${_workspace_root}/ext/src/portable/cmake")
+set(_portable_cmake_dir "${_workspace_root}/ext/src/glue/portable/cmake")
 set(_portable_timed_command_script "${_portable_cmake_dir}/RunTimedCommand.cmake")
 set(_portable_timing_dir "${CMAKE_BINARY_DIR}/portable-timing")
 

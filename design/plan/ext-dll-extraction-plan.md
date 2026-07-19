@@ -6,10 +6,15 @@ Build the workspace/chat extension code as a dedicated DLL so `ext` implementati
 
 ## Target shape
 
-1. `ext` workspace/chat implementation is built by a dedicated DLL project.
+1. `ext` is split into two layers:
+   - a pure C++ workspace core/interface DLL
+   - a Terminal-coupled glue layer
 2. `TerminalAppLib` keeps only declarations, host state, and thin call sites.
-3. `TerminalApp` links against the ext DLL import library and packages the ext DLL alongside the existing app binaries.
+3. `TerminalApp` links against the needed DLL/import libraries and packages them alongside the existing app binaries.
 4. The portable build still produces the accepted `bin` portable artifacts.
+5. Business logic, persistence, validation, startup planning, and runtime rules move into the pure C++ core layer.
+6. UI remains in native host code, and host/WinRT adaptation remains in the glue layer.
+7. `WorkspaceModel` / `WorkspaceApi` become compatibility/glue facades rather than host-side shared core logic entrypoints.
 
 ## Build flows
 
@@ -23,6 +28,13 @@ Build the workspace/chat extension code as a dedicated DLL so `ext` implementati
 ## Current correction
 
 The ext-only path must stay on the public CMake entrypoint, but it must not shell out to PowerShell or hand-written `cl/link` scripts. The compile boundary needs to be expressed as normal CMake source, target, include, option, dependency, and output declarations so CMake owns the generated build graph.
+
+There is also a boundary correction on the workspace architecture itself:
+
+1. The current `microsoft\src\cascadia\TerminalSettingsModel\Workspace.cpp -> ext\src\workspace\WorkspaceModel.cpp` include chain still lets host projects compile workspace core logic directly.
+2. That makes `WorkspaceModel` behave like a shared implementation bucket instead of a stable model/API layer.
+3. The next refactor stage must move workspace load/save/startup/runtime logic behind the pure C++ core DLL interfaces so host projects stop depending on that shared implementation path.
+4. The glue layer may still depend on Terminal/Microsoft types, but it must not own the business rules.
 
 ## Implementation steps
 
@@ -52,6 +64,9 @@ This keeps the current workspace method ownership on the ext side while letting 
 
 1. Update `ext\READ` with the DLL extraction milestone.
 2. Keep the remaining `TerminalPage` page-level UI references documented as intentional host wiring.
+3. Record that ext owns workspace business logic, state, and interfaces only; host owns UI.
+4. Record that ext should not contain original-project implementation content.
+5. Record that `WorkspaceModel` is transitional while host projects still compile `Workspace.cpp`, and that this include-based shared core must be retired.
 
 ### 5. Replace the temporary PowerShell build path
 

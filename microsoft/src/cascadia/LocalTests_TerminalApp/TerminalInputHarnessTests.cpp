@@ -4,7 +4,8 @@
 #include "pch.h"
 #include <WexTestClass.h>
 
-#include "..\..\..\..\ext\src\chat\TerminalInputHarness.h"
+#include "..\..\..\..\ext\src\glue\chat\TerminalInputHarness.h"
+#include "..\..\..\..\ext\src\glue\chat\WorkspaceChatStateHelpers.h"
 
 using namespace WEX::Logging;
 using namespace WEX::TestExecution;
@@ -27,9 +28,13 @@ namespace TerminalAppLocalTests
         TEST_METHOD(UsesReportedWorkingDirectoryAsAnchor);
         TEST_METHOD(UsesLinuxOsHintForAbsolutePosixPaths);
         TEST_METHOD(TracksWindowsPathsInsideSshSession);
+        TEST_METHOD(BuildsTerminalInputCaptureResultFromPendingInput);
+        TEST_METHOD(BuildsTerminalInputCaptureResultFromInputOverride);
     };
 
+    using terminal::workspacechat::BuildTerminalInputCaptureResult;
     using terminal::workspacechat::SplitTerminalInputLines;
+    using terminal::workspacechat::TerminalCaptureState;
     using terminal::workspacechat::TerminalInputState;
     using terminal::workspacechat::TrackTerminalInput;
 
@@ -133,5 +138,47 @@ namespace TerminalAppLocalTests
         VERIFY_ARE_EQUAL(L"C:\\", snapshot.WorkingDirectory.c_str());
         VERIFY_ARE_EQUAL(L"windows", snapshot.OperatingSystem.c_str());
         VERIFY_ARE_EQUAL(L"ssh", snapshot.ShellType.c_str());
+    }
+
+    void TerminalInputHarnessTests::BuildsTerminalInputCaptureResultFromPendingInput()
+    {
+        TerminalCaptureState state;
+        state.PendingInput = L"cd sub\r";
+
+        const auto result = BuildTerminalInputCaptureResult(state,
+                                                            {},
+                                                            L"cd sub",
+                                                            L"C:\\repo",
+                                                            L"prompt> ");
+
+        VERIFY_IS_TRUE(result.StateChanged);
+        VERIFY_ARE_EQUAL(1u, result.Entries.size());
+        VERIFY_ARE_EQUAL(L"cd sub", result.FlushPlan.NormalizedInput.c_str());
+        VERIFY_ARE_EQUAL(L"cd sub", result.Entries[0].Text.c_str());
+        VERIFY_ARE_EQUAL(L"C:\\repo\\sub", result.Entries[0].Snapshot.WorkingDirectory.c_str());
+        VERIFY_ARE_EQUAL(L"prompt> ", state.LastBufferSnapshot.c_str());
+        VERIFY_IS_TRUE(state.HasBufferSnapshot);
+        VERIFY_IS_TRUE(state.PendingInput.empty());
+    }
+
+    void TerminalInputHarnessTests::BuildsTerminalInputCaptureResultFromInputOverride()
+    {
+        TerminalCaptureState state;
+        state.PendingInput = L"stale";
+
+        const auto result = BuildTerminalInputCaptureResult(state,
+                                                            L"git status\r",
+                                                            {},
+                                                            L"C:\\repo",
+                                                            {});
+
+        VERIFY_IS_TRUE(result.StateChanged);
+        VERIFY_ARE_EQUAL(5u, result.PendingInput.PendingInputLength);
+        VERIFY_ARE_EQUAL(L"git status\r", result.PendingInput.InputText.c_str());
+        VERIFY_ARE_EQUAL(1u, result.Entries.size());
+        VERIFY_ARE_EQUAL(L"git status", result.Entries[0].Text.c_str());
+        VERIFY_ARE_EQUAL(L"C:\\repo", result.Entries[0].Snapshot.WorkingDirectory.c_str());
+        VERIFY_ARE_EQUAL(L"git status", result.Entries[0].Snapshot.Command.c_str());
+        VERIFY_IS_TRUE(state.PendingInput.empty());
     }
 }

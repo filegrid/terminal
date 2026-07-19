@@ -624,11 +624,12 @@ namespace TerminalAppLocalTests
             runtimeState.WorkspaceNodeId = L"node-1";
             page->_workspaceExtension->UpsertWorkspaceNodeRuntimeState(control.ContentId(), runtimeState);
 
-            auto& captureState = page->_workspaceExtension->WorkspaceChatTerminalStates()[control.ContentId()];
-            captureState.InputState.LastWorkingDirectory = L"D:\\github\\tools\\terminal";
-            captureState.InputState.LastCommand = L"git status";
-            captureState.InputState.OperatingSystem = L"windows";
-            captureState.InputState.ShellType = L"powershell";
+            auto& captureState = page->_workspaceExtension->GetOrCreateWorkspaceChatTerminalState(page->_WorkspaceChatStateKey(control));
+            terminal::workspacechat::SeedCapturedInputState(captureState,
+                                                            L"D:\\github\\tools\\terminal",
+                                                            L"git status",
+                                                            L"windows",
+                                                            L"powershell");
 
             tab->ShowWorkspaceInputPanel(true);
 
@@ -683,20 +684,27 @@ namespace TerminalAppLocalTests
             runtimeState.WorkspaceNodeId = L"node-1";
             page->_workspaceExtension->UpsertWorkspaceNodeRuntimeState(control.ContentId(), runtimeState);
 
-            auto& captureState = page->_workspaceExtension->WorkspaceChatTerminalStates()[control.ContentId()];
-            captureState.InputState.LastWorkingDirectory = L"D:\\github\\tools\\terminal";
-            captureState.InputState.LastCommand = L"git status";
-            captureState.InputState.OperatingSystem = L"windows";
-            captureState.InputState.ShellType = L"powershell";
+            auto& captureState = page->_workspaceExtension->GetOrCreateWorkspaceChatTerminalState(page->_WorkspaceChatStateKey(control));
+            terminal::workspacechat::SeedCapturedInputState(captureState,
+                                                            L"D:\\github\\tools\\terminal",
+                                                            L"git status",
+                                                            L"windows",
+                                                            L"powershell");
 
             VERIFY_IS_FALSE(page->_CurrentWorkspaceNeedsSave());
 
-            captureState.InputState.LastWorkingDirectory = L"E:\\tools";
-            captureState.InputState.LastCommand = L"copilot --allow-all";
+            terminal::workspacechat::SeedCapturedInputState(captureState,
+                                                            L"E:\\tools",
+                                                            L"copilot --allow-all",
+                                                            L"windows",
+                                                            L"powershell");
             VERIFY_IS_TRUE(page->_CurrentWorkspaceNeedsSave());
 
-            captureState.InputState.LastWorkingDirectory = L"D:\\github\\tools\\terminal";
-            captureState.InputState.LastCommand = L"git status";
+            terminal::workspacechat::SeedCapturedInputState(captureState,
+                                                            L"D:\\github\\tools\\terminal",
+                                                            L"git status",
+                                                            L"windows",
+                                                            L"powershell");
             VERIFY_IS_FALSE(page->_CurrentWorkspaceNeedsSave());
         });
     }

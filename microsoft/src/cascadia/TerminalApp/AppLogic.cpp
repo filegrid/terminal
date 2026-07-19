@@ -5,6 +5,8 @@
 #include "AppLogic.h"
 #include "AppLogic.g.cpp"
 #include "SettingsLoadEventArgs.h"
+#include "..\..\..\..\ext\src\glue\chat\WorkspaceDiagnosticLog.h"
+#include "..\..\..\..\ext\src\glue\workspace\WorkspaceHostBridge.h"
 
 #include <WtExeUtils.h>
 #include <wil/token_helpers.h>
@@ -146,6 +148,9 @@ namespace winrt::TerminalApp::implementation
     catch (...)
     {
         LOG_CAUGHT_EXCEPTION();
+        Json::Value payload{ Json::objectValue };
+        terminal::workspacechat::AppendUnknownExceptionDiagnostic(payload);
+        std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"app_logic_current_exception", payload);
         return nullptr;
     }
 
@@ -215,6 +220,9 @@ namespace winrt::TerminalApp::implementation
         catch (...)
         {
             LOG_CAUGHT_EXCEPTION();
+            Json::Value payload{ Json::objectValue };
+            terminal::workspacechat::AppendUnknownExceptionDiagnostic(payload);
+            std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"app_logic_language_profile_notifier_exception", payload);
 #ifdef _DEBUG
             _appendLaunchDebugLog(std::wstring{ L"AppLogic::ctor languageProfileNotifier-failed hr=" } + std::to_wstring(static_cast<uint32_t>(winrt::to_hresult())));
 #endif
@@ -327,11 +335,18 @@ namespace winrt::TerminalApp::implementation
             hr = e.code();
             _settingsLoadExceptionText = e.message();
             LOG_HR(hr);
+            Json::Value payload{ Json::objectValue };
+            terminal::workspacechat::AppendExceptionDiagnostic(payload, e);
+            std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"app_logic_settings_load_exception", payload);
         }
         catch (...)
         {
             hr = wil::ResultFromCaughtException();
             LOG_HR(hr);
+            Json::Value payload{ Json::objectValue };
+            payload["hresult"] = Json::Int{ hr };
+            terminal::workspacechat::AppendUnknownExceptionDiagnostic(payload);
+            std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"app_logic_settings_load_exception", payload);
         }
         return hr;
     }
@@ -609,7 +624,7 @@ namespace winrt::TerminalApp::implementation
 
     void AppLogic::_RegisterWorkspaceChange()
     {
-        const auto workspacePath = Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::DefaultPath();
+        const auto workspacePath = terminal::workspace::WorkspaceDefinitionsPath();
         _workspaceReader.create(
             workspacePath.c_str(),
             true,
@@ -640,13 +655,7 @@ namespace winrt::TerminalApp::implementation
             return {};
         }
 
-        const auto manager = Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::Load();
-        if (const auto workspace = manager.FindById(lastWorkspaceId.c_str()))
-        {
-            return manager.BuildStartupActions(*workspace, _settings);
-        }
-
-        return {};
+        return terminal::workspace::ConsumeInitialWorkspaceStartupActions(lastWorkspaceId.c_str(), _settings);
     }
 
     // Function Description

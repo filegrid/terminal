@@ -730,6 +730,12 @@ namespace winrt::TerminalApp::implementation
 
         if (const auto activeTab{ _senderOrFocusedTab(sender) })
         {
+            if (_CurrentWorkspaceLocked())
+            {
+                args.Handled(true);
+                return;
+            }
+
             if (title.has_value())
             {
                 activeTab->SetTabText(title.value());
@@ -747,6 +753,12 @@ namespace winrt::TerminalApp::implementation
     {
         if (const auto activeTab{ _senderOrFocusedTab(sender) })
         {
+            if (_CurrentWorkspaceLocked())
+            {
+                args.Handled(true);
+                return;
+            }
+
             activeTab->ActivateTabRenamer();
         }
         args.Handled(true);

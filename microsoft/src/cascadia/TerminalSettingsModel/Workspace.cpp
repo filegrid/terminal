@@ -3,4 +3,4 @@
 
 #include "pch.h"
 
-#include "../../../../ext/src/workspace/WorkspaceModel.cpp"
+#include "../../../../ext/src/glue/workspace/WorkspaceModel.cpp"

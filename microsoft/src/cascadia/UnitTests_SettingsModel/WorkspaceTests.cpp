@@ -25,6 +25,7 @@ namespace SettingsModelUnitTests
         TEST_METHOD(ParseWorkspaceDirectoryYaml);
         TEST_METHOD(ParseWorkspaceDirectoryYamlDefaultsToLocked);
         TEST_METHOD(IgnoreLegacyWorkspaceYamlFile);
+        TEST_METHOD(IgnoreWorkspaceDirectoryWithoutWorkspaceYaml);
         TEST_METHOD(SanitizeWorkspaceDirectoryNames);
         TEST_METHOD(SanitizeInvalidWorkspaceDirectoryNamesOnSave);
         TEST_METHOD(BuildWorkspaceStartupActions);
@@ -33,6 +34,14 @@ namespace SettingsModelUnitTests
         TEST_METHOD(BuildWorkspaceStartupActionsForWindowsPwshAliasNode);
         TEST_METHOD(BuildWorkspaceStartupActionsForLegacyWslNode);
         TEST_METHOD(BuildWorkspaceStartupActionsIgnoresStaleSshShellTypeForLocalProfile);
+        TEST_METHOD(PrepareWorkspaceRuntimeLaunchStateInfersTransportAndMetadata);
+        TEST_METHOD(ResolveWorkspaceNodeLaunchResolutionPrefersObservedValues);
+        TEST_METHOD(ResolveTrackedWorkspaceDirectoryPrefersReportedPathForSsh);
+        TEST_METHOD(IsWorkspaceDirtyUsesBaselineAndPersistedFallback);
+        TEST_METHOD(PrepareWorkspaceEditorForSavePreservesSelectedIndex);
+        TEST_METHOD(PrepareWorkspaceDefinitionRemovalResolvesEditorState);
+        TEST_METHOD(ResolveWorkspaceOpenExecutionPlanMapsRuntimeSteps);
+        TEST_METHOD(WorkspaceLiveTabHelpersCaptureAndResolveSnapshots);
         TEST_METHOD(BuildWorkspaceStartupActionsAssignsDistinctColorsForDuplicateProfiles);
         TEST_METHOD(BuildWorkspaceStartupActionsSkipsHiddenNodes);
         TEST_METHOD(SaveWorkspaceYamlRoundTrip);
@@ -408,6 +417,208 @@ namespace SettingsModelUnitTests
         VERIFY_IS_TRUE(std::wstring{ sendInputArgs.Input() } == L"copilot --allow-all\r");
     }
 
+    void WorkspaceTests::PrepareWorkspaceRuntimeLaunchStateInfersTransportAndMetadata()
+    {
+        const auto state = PrepareWorkspaceRuntimeLaunchState(L"D:\\repo",
+                                                              L"Windows.Terminal.SSH",
+                                                              L"ssh dev@box",
+                                                              L"ssh -tt dev@box");
+
+        VERIFY_IS_TRUE(state.IsSshTransport);
+        VERIFY_IS_TRUE(state.HasSshTtyOption);
+        VERIFY_IS_TRUE(state.ExplicitCommandline == L"ssh -tt dev@box");
+        VERIFY_IS_TRUE(state.StartingDirectory == L"D:\\repo");
+        VERIFY_IS_TRUE(state.ShellType == L"ssh");
+        VERIFY_IS_TRUE(state.OperatingSystem == L"windows");
+    }
+
+    void WorkspaceTests::ResolveWorkspaceNodeLaunchResolutionPrefersObservedValues()
+    {
+        WorkspaceNode persistedNode;
+        persistedNode.StartupAction = L"persisted-start";
+        persistedNode.StartupDirectory = L"C:\\persisted";
+        persistedNode.OperatingSystem = L"windows";
+        persistedNode.ShellType = L"powershell";
+
+        WorkspaceNodeLaunchResolutionInput input;
+        input.PersistedNode = persistedNode;
+        input.ObservedStartupAction = L"captured-start";
+        input.ObservedWorkingDirectory = L"D:\\live";
+        input.ObservedOperatingSystem = L"linux";
+        input.ObservedShellType = L"ssh";
+        input.RuntimeStartupAction = L"runtime-start";
+        input.RuntimeExplicitCommandline = L"runtime-explicit";
+        input.RuntimeStartingDirectory = L"E:\\runtime";
+        input.RuntimeOperatingSystem = L"windows";
+        input.RuntimeShellType = L"cmd";
+        input.ProfileSource = L"";
+        input.ProfileCommandline = L"pwsh.exe";
+        input.TerminalCommandline = L"pwsh.exe";
+        input.TerminalStartingDirectory = L"C:\\args";
+
+        const auto resolution = ResolveWorkspaceNodeLaunchResolution(input);
+        VERIFY_IS_TRUE(resolution.StartupAction == L"captured-start");
+        VERIFY_IS_TRUE(resolution.StartingDirectory == L"D:\\live");
+        VERIFY_IS_TRUE(resolution.OperatingSystem == L"linux");
+        VERIFY_IS_TRUE(resolution.ShellType == L"ssh");
+    }
+
+    void WorkspaceTests::ResolveTrackedWorkspaceDirectoryPrefersReportedPathForSsh()
+    {
+        WorkspaceTrackedDirectoryInput input;
+        input.ReportedWorkingDirectory = L"/home/dev/project";
+        input.ProcessWorkingDirectory = L"C:\\process";
+        input.RuntimeStartingDirectory = L"C:\\start";
+        input.RuntimeOperatingSystem = L"linux";
+        input.RuntimeShellType = L"ssh";
+        input.IsSshTransport = true;
+
+        VERIFY_IS_TRUE(ResolveTrackedWorkspaceDirectory(input) == L"/home/dev/project");
+
+        input.IsSshTransport = false;
+        input.RuntimeOperatingSystem = L"windows";
+        input.RuntimeShellType = L"powershell";
+        VERIFY_IS_TRUE(ResolveTrackedWorkspaceDirectory(input) == L"C:\\process");
+    }
+
+    void WorkspaceTests::IsWorkspaceDirtyUsesBaselineAndPersistedFallback()
+    {
+        Workspace captured;
+        captured.Id = L"ws";
+        captured.Name = L"Workspace";
+        WorkspaceNode node;
+        node.Id = L"node-1";
+        node.Name = L"Node 1";
+        captured.Nodes.push_back(node);
+
+        Workspace baseline = captured;
+        VERIFY_IS_FALSE(IsWorkspaceDirty(captured, L"ws", baseline, std::nullopt));
+
+        baseline.Nodes.front().StartupAction = L"changed";
+        VERIFY_IS_TRUE(IsWorkspaceDirty(captured, L"ws", baseline, std::nullopt));
+
+        Workspace persisted = captured;
+        VERIFY_IS_FALSE(IsWorkspaceDirty(captured, L"ws", std::nullopt, persisted));
+
+        persisted.Nodes.front().StartupDirectory = L"D:\\other";
+        VERIFY_IS_TRUE(IsWorkspaceDirty(captured, L"ws", std::nullopt, persisted));
+        VERIFY_IS_TRUE(IsWorkspaceDirty(captured, L"", std::nullopt, std::nullopt));
+    }
+
+    void WorkspaceTests::PrepareWorkspaceEditorForSavePreservesSelectedIndex()
+    {
+        Workspace persistedWorkspace;
+        persistedWorkspace.Id = L"persisted";
+        persistedWorkspace.Name = L"Persisted";
+        WorkspaceManager persistedManager;
+        persistedManager.SetWorkspaces({ persistedWorkspace });
+
+        Workspace first;
+        first.Id = L"one";
+        first.Name = L"One";
+        Workspace second;
+        second.Id = L"two";
+        second.Name = L"Two";
+        WorkspaceManager editedManager;
+        editedManager.SetWorkspaces({ first, second });
+
+        const auto plan = PrepareWorkspaceEditorForSave(editedManager, persistedManager, L"", L"", 1);
+        VERIFY_ARE_EQUAL(1u, gsl::narrow_cast<unsigned int>(plan.SelectedWorkspaceIndex));
+    }
+
+    void WorkspaceTests::PrepareWorkspaceDefinitionRemovalResolvesEditorState()
+    {
+        Workspace one;
+        one.Id = L"one";
+        one.Name = L"One";
+
+        Workspace two;
+        two.Id = L"two";
+        two.Name = L"Two";
+        WorkspaceNode node;
+        node.Id = L"node-1";
+        node.Name = L"Node 1";
+        two.Nodes.push_back(node);
+
+        WorkspaceManager manager;
+        manager.SetWorkspaces({ one, two });
+
+        const auto plan = PrepareWorkspaceDefinitionRemoval(manager, L"one", L"one", L"two", 0, 1000, L"one");
+        VERIFY_IS_TRUE(plan.has_value());
+        VERIFY_ARE_EQUAL(1u, gsl::narrow_cast<unsigned int>(manager.Workspaces().size()));
+        VERIFY_IS_TRUE(plan->LastOpenedWorkspaceExists == false);
+        VERIFY_ARE_EQUAL(0u, gsl::narrow_cast<unsigned int>(plan->SelectedWorkspaceIndex));
+        VERIFY_ARE_EQUAL(1000, plan->NavSelection);
+    }
+
+    void WorkspaceTests::ResolveWorkspaceOpenExecutionPlanMapsRuntimeSteps()
+    {
+        WorkspaceOpenPlan openPlan;
+        openPlan.Disposition = WorkspaceOpenDisposition::ReplaceCurrentWindow;
+        openPlan.ConfirmSaveCurrentWorkspace = true;
+
+        const auto executionPlan = ResolveWorkspaceOpenExecutionPlan(openPlan, true, true);
+        VERIFY_IS_TRUE(executionPlan.Disposition == WorkspaceOpenExecutionDisposition::ReplaceCurrentWindow);
+        VERIFY_IS_TRUE(executionPlan.ConfirmSaveCurrentWorkspace);
+        VERIFY_IS_TRUE(executionPlan.SetLastOpenedWorkspaceId);
+        VERIFY_IS_TRUE(executionPlan.SetSaveBaseline);
+        VERIFY_IS_TRUE(executionPlan.SetCurrentWorkspaceBeforeActions);
+        VERIFY_IS_TRUE(executionPlan.ReplacePendingNodeQueues);
+        VERIFY_IS_TRUE(executionPlan.FocusActiveContentAfterActions);
+        VERIFY_IS_TRUE(executionPlan.RemoveCapturedTabsAfterActions);
+        VERIFY_IS_TRUE(executionPlan.SetCurrentWorkspaceAfterActions);
+    }
+
+    void WorkspaceTests::WorkspaceLiveTabHelpersCaptureAndResolveSnapshots()
+    {
+        Workspace workspace;
+        workspace.Id = L"ws";
+        workspace.Name = L"Workspace";
+
+        WorkspaceNode first;
+        first.Id = L"node-1";
+        first.Name = L"Node 1";
+        workspace.Nodes.push_back(first);
+
+        WorkspaceNode second;
+        second.Id = L"node-2";
+        second.Name = L"Node 2";
+        workspace.Nodes.push_back(second);
+
+        WorkspaceLiveTabCaptureState captureState;
+        captureState.LiveTabTitle = L"Live";
+        captureState.GeneratedNodeName = L"Generated";
+        captureState.ProfileGuid = L"{00000000-0000-0000-0000-000000000001}";
+        captureState.LaunchResolution.StartupAction = L"echo hi";
+        captureState.LaunchResolution.StartingDirectory = L"D:\\repo";
+        captureState.LaunchResolution.OperatingSystem = L"windows";
+        captureState.LaunchResolution.ShellType = L"powershell";
+        captureState.ShowInputPanel = true;
+        captureState.TabColor = L"#123456";
+
+        const auto capturedNode = BuildWorkspaceCapturedNode(captureState);
+        VERIFY_IS_TRUE(capturedNode.Name == L"Live");
+        VERIFY_IS_TRUE(capturedNode.Id == L"Live");
+        VERIFY_IS_TRUE(capturedNode.StartupDirectory == L"D:\\repo");
+        VERIFY_IS_TRUE(capturedNode.TabColor == L"#123456");
+
+        std::vector<WorkspaceLiveTabSnapshot> tabs;
+        tabs.push_back(WorkspaceLiveTabSnapshot{ .LoadsWorkspaceNode = true, .RuntimeNodeId = L"node-2" });
+        tabs.push_back(WorkspaceLiveTabSnapshot{ .LoadsWorkspaceNode = true, .RuntimeNodeId = L"" });
+
+        const auto firstNodeIndex = ResolveWorkspaceBackedTabIndex(workspace, tabs, 0);
+        VERIFY_IS_TRUE(firstNodeIndex.has_value());
+        VERIFY_ARE_EQUAL(1u, gsl::narrow_cast<unsigned int>(firstNodeIndex.value()));
+
+        const auto secondNode = ResolveWorkspaceBackedTabNode(workspace, tabs, 1);
+        VERIFY_IS_TRUE(secondNode.has_value());
+        VERIFY_IS_TRUE(secondNode->Id == L"node-2");
+
+        const auto tabIndex = FindWorkspaceBackedTabSnapshotIndex(workspace, tabs, 1);
+        VERIFY_IS_TRUE(tabIndex.has_value());
+        VERIFY_ARE_EQUAL(0u, gsl::narrow_cast<unsigned int>(tabIndex.value()));
+    }
+
     void WorkspaceTests::BuildWorkspaceStartupActionsAssignsDistinctColorsForDuplicateProfiles()
     {
         static constexpr std::string_view settingsJson{ R"(
@@ -561,6 +772,21 @@ namespace SettingsModelUnitTests
         {
             std::ofstream output{ temp.path / L"workspaces.yaml", std::ios::binary | std::ios::trunc };
             output.write(yaml.data(), gsl::narrow_cast<std::streamsize>(yaml.size()));
+        }
+
+        const auto manager = WorkspaceManager::LoadFromPath(temp.path);
+        VERIFY_IS_TRUE(manager.Workspaces().empty());
+    }
+
+    void WorkspaceTests::IgnoreWorkspaceDirectoryWithoutWorkspaceYaml()
+    {
+        TempPath temp;
+        std::filesystem::create_directories(temp.path / L"ceshi" / L"GitHub Copilot" / L"terminal");
+
+        {
+            std::ofstream output{ temp.path / L"ceshi" / L"GitHub Copilot" / L"terminal" / L"2026-07-16.jsonl", std::ios::binary | std::ios::trunc };
+            static constexpr std::string_view diagnostics{ "{\"event\":\"workspace_chat\"}\n" };
+            output.write(diagnostics.data(), gsl::narrow_cast<std::streamsize>(diagnostics.size()));
         }
 
         const auto manager = WorkspaceManager::LoadFromPath(temp.path);
