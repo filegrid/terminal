@@ -135,13 +135,7 @@
         for (auto persistedWorkspace : *persistedWorkspaces)
         {
             auto workspace = std::move(persistedWorkspace.Definition);
-            struct OrderedNode
-            {
-                size_t Order{};
-                WorkspaceNode Definition;
-            };
-
-            std::vector<OrderedNode> orderedNodes;
+            std::vector<WorkspaceNode> loadedNodes;
             for (const auto& nodeEntry : std::filesystem::directory_iterator(persistedWorkspace.Directory, ec))
             {
                 if (ec)
@@ -160,25 +154,25 @@
                     continue;
                 }
 
-                const auto nodeMetadata = _loadWorkspaceNodeMetadataFile(nodeFile);
+                auto nodeMetadata = _loadWorkspaceNodeMetadataFile(nodeFile);
                 if (!nodeMetadata.has_value())
                 {
                     continue;
                 }
 
-                auto node = std::move(nodeMetadata->first);
+                auto node = std::move(*nodeMetadata);
                 node.Name = nodeEntry.path().filename().wstring();
                 node.Id = node.Name;
-                orderedNodes.emplace_back(OrderedNode{ nodeMetadata->second, std::move(node) });
+                loadedNodes.emplace_back(std::move(node));
             }
 
-            std::stable_sort(orderedNodes.begin(), orderedNodes.end(), [](const auto& lhs, const auto& rhs) {
-                return lhs.Order < rhs.Order;
+            std::stable_sort(loadedNodes.begin(), loadedNodes.end(), [](const auto& lhs, const auto& rhs) {
+                return _toLower(lhs.Name) < _toLower(rhs.Name);
             });
-            workspace.Nodes.reserve(orderedNodes.size());
-            for (auto& node : orderedNodes)
+            workspace.Nodes.reserve(loadedNodes.size());
+            for (auto& node : loadedNodes)
             {
-                workspace.Nodes.emplace_back(std::move(node.Definition));
+                workspace.Nodes.emplace_back(std::move(node));
             }
             workspaces.emplace_back(std::move(workspace));
         }
@@ -221,7 +215,7 @@
             }
 
             if (!_writeUtf8TextFile(workspaceDir / std::filesystem::path{ terminal::workspacepaths::WorkspaceMetadataFileName },
-                                    _serializeWorkspaceMetadata(workspace, workspaceIndex)))
+                                    _serializeWorkspaceMetadata(workspace)))
             {
                 return false;
             }
@@ -241,7 +235,7 @@
                 }
 
                 if (!_writeUtf8TextFile(nodeDir / std::filesystem::path{ terminal::workspacepaths::WorkspaceNodeMetadataFileName },
-                                        _serializeWorkspaceNodeMetadata(node, nodeIndex)))
+                                        _serializeWorkspaceNodeMetadata(node)))
                 {
                     return false;
                 }
@@ -302,6 +296,12 @@
 
         std::filesystem::remove(path / std::filesystem::path{ terminal::workspacepaths::LegacyWorkspaceFileName }, ec);
         if (ec)
+        {
+            return false;
+        }
+
+        if (!_writeUtf8TextFile(path / std::filesystem::path{ terminal::workspacepaths::WorkspaceOrderFileName },
+                                _serializeWorkspaceOrder(_workspaces)))
         {
             return false;
         }

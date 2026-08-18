@@ -641,21 +641,11 @@ namespace winrt::TerminalApp::implementation
 
     std::vector<ActionAndArgs> AppLogic::ConsumeInitialWorkspaceStartupActions()
     {
-        if (_initialWorkspaceConsumed)
-        {
-            return {};
-        }
-
         _initialWorkspaceConsumed = true;
-
-        const auto state = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
-        const auto lastWorkspaceId = state.LastOpenedWorkspaceId();
-        if (lastWorkspaceId.empty())
-        {
-            return {};
-        }
-
-        return terminal::workspace::ConsumeInitialWorkspaceStartupActions(lastWorkspaceId.c_str(), _settings);
+        // A normal Terminal launch must stay indistinguishable from upstream
+        // Windows Terminal. Workspaces are only opened by their explicit menu
+        // action, never restored from application state.
+        return {};
     }
 
     // Function Description

@@ -1,0 +1,13 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+namespace TerminalApp
+{
+    [default_interface] runtimeclass WorkspaceIconPickerDialog : Windows.UI.Xaml.Controls.ContentDialog
+    {
+        WorkspaceIconPickerDialog();
+
+        String DialogTitle;
+        Windows.UI.Xaml.UIElement DialogBody;
+    }
+}

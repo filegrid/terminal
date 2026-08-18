@@ -9,7 +9,7 @@ internal sealed class Program
 {
     private const string FooterMagic = "WTPORT01";
     private const string DefaultMakePriPath = @"C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\MakePri.exe";
-    private const string CacheFormatVersion = "portable-cache-v1";
+    private const string CacheFormatVersion = "portable-cache-v2";
 
     private static int Main(string[] args)
     {
@@ -310,20 +310,123 @@ internal sealed class Program
 
         private void OverlayWorkspaceExtensionRuntime(string outputZip, string terminalDirectoryName)
         {
-            if (string.IsNullOrWhiteSpace(_options.WorkspaceExtensionOutputDirectory))
+            using var archive = ZipFile.Open(outputZip, ZipArchiveMode.Update);
+
+            if (!string.IsNullOrWhiteSpace(_options.WorkspaceExtensionOutputDirectory))
             {
+                var outputDirectory = _options.WorkspaceExtensionOutputDirectory;
+                if (!Directory.Exists(outputDirectory))
+                {
+                    throw new InvalidOperationException($"Workspace extension output directory {outputDirectory} does not exist.");
+                }
+
+                UpdateZipEntryIfPresent(archive, outputDirectory, terminalDirectoryName, "WorkspaceExtension.dll");
+                UpdateZipEntryIfPresent(archive, outputDirectory, terminalDirectoryName, "WorkspaceExtension.pri");
+                OverlayTerminalUiRuntime(archive, terminalDirectoryName);
+                OverlayWorkspaceSpriteResources(archive, terminalDirectoryName, outputDirectory);
+                OverlayMergedIconAtlases(archive, terminalDirectoryName, outputDirectory);
                 return;
             }
 
-            var outputDirectory = _options.WorkspaceExtensionOutputDirectory;
-            if (!Directory.Exists(outputDirectory))
+            OverlayTerminalUiRuntime(archive, terminalDirectoryName);
+            OverlayWorkspaceSpriteResources(archive, terminalDirectoryName, string.Empty);
+            OverlayMergedIconAtlases(archive, terminalDirectoryName, string.Empty);
+        }
+
+        private void OverlayTerminalUiRuntime(ZipArchive archive, string terminalDirectoryName)
+        {
+            foreach (var candidateDirectory in GetTerminalUiRuntimeDirectories())
             {
-                throw new InvalidOperationException($"Workspace extension output directory {outputDirectory} does not exist.");
+                if (!Directory.Exists(candidateDirectory))
+                {
+                    continue;
+                }
+
+                var sourcePath = Path.Combine(candidateDirectory, "Microsoft.Terminal.UI.dll");
+                if (!File.Exists(sourcePath))
+                {
+                    continue;
+                }
+
+                UpdateZipEntryIfPresent(archive, candidateDirectory, terminalDirectoryName, "Microsoft.Terminal.UI.dll");
+                return;
+            }
+        }
+
+        private void OverlayWorkspaceSpriteResources(ZipArchive archive, string terminalDirectoryName, string outputDirectory)
+        {
+            var candidateDirectories = new[]
+            {
+                Path.Combine(outputDirectory, "res"),
+                Path.Combine(_options.SourceRoot, "bin", "res")
+            };
+
+            foreach (var candidateDirectory in candidateDirectories.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (!Directory.Exists(candidateDirectory))
+                {
+                    continue;
+                }
+
+                var svgRoot = Path.Combine(candidateDirectory, "workspace-icons");
+                if (Directory.Exists(svgRoot))
+                {
+                    foreach (var file in Directory.EnumerateFiles(svgRoot, "*.svg", SearchOption.AllDirectories))
+                    {
+                        var relativePath = Path.GetRelativePath(candidateDirectory, file).Replace('\\', '/');
+                        var entryName = $"{terminalDirectoryName}/res/{relativePath}".Replace('\\', '/');
+                        archive.GetEntry(entryName)?.Delete();
+                        archive.CreateEntryFromFile(file, entryName, CompressionLevel.Optimal);
+                    }
+                }
+
+                foreach (var file in Directory.EnumerateFiles(candidateDirectory, "workspace-icons-*.png", SearchOption.TopDirectoryOnly))
+                {
+                    var entryName = $"{terminalDirectoryName}/res/{Path.GetFileName(file)}".Replace('\\', '/');
+                    archive.GetEntry(entryName)?.Delete();
+                    archive.CreateEntryFromFile(file, entryName, CompressionLevel.Optimal);
+                }
+
+                return;
+            }
+        }
+
+        private void OverlayMergedIconAtlases(ZipArchive archive, string terminalDirectoryName, string outputDirectory)
+        {
+            foreach (var candidateDirectory in GetMergedIconAtlasDirectories(outputDirectory))
+            {
+                if (!Directory.Exists(candidateDirectory))
+                {
+                    continue;
+                }
+
+                foreach (var file in Directory.EnumerateFiles(candidateDirectory, "merged.png", SearchOption.AllDirectories))
+                {
+                    var relativePath = Path.GetRelativePath(candidateDirectory, file).Replace('\\', '/');
+                    var entryName = $"{terminalDirectoryName}/res/{relativePath}".Replace('\\', '/');
+                    archive.GetEntry(entryName)?.Delete();
+                    archive.CreateEntryFromFile(file, entryName, CompressionLevel.Optimal);
+                }
+
+                return;
+            }
+        }
+
+        private IEnumerable<string> GetTerminalUiRuntimeDirectories()
+        {
+            yield return Path.Combine(_options.SourceRoot, "microsoft", "bin", _options.Platform, _options.Configuration, "Microsoft.Terminal.UI");
+            yield return Path.Combine(_options.SourceRoot, "bin");
+        }
+
+        private IEnumerable<string> GetMergedIconAtlasDirectories(string outputDirectory)
+        {
+            if (!string.IsNullOrWhiteSpace(outputDirectory))
+            {
+                yield return Path.Combine(outputDirectory, "res");
             }
 
-            using var archive = ZipFile.Open(outputZip, ZipArchiveMode.Update);
-            UpdateZipEntryIfPresent(archive, outputDirectory, terminalDirectoryName, "WorkspaceExtension.dll");
-            UpdateZipEntryIfPresent(archive, outputDirectory, terminalDirectoryName, "WorkspaceExtension.pri");
+            yield return Path.Combine(_options.SourceRoot, "ext", "res");
+            yield return Path.Combine(_options.SourceRoot, "bin", "res");
         }
 
         private void CreateDistributionZip(string terminalRoot, string terminalDirectoryName, string outputZip)

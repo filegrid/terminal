@@ -12,6 +12,7 @@
 namespace terminal::workspacepaths
 {
     inline constexpr std::wstring_view LegacyWorkspaceFileName{ L"workspaces.yaml" };
+    inline constexpr std::wstring_view WorkspaceOrderFileName{ L"workspaces.yaml" };
     inline constexpr std::wstring_view WorkspaceMetadataFileName{ L"workspace.yaml" };
     inline constexpr std::wstring_view WorkspaceNodeMetadataFileName{ L"tab.yaml" };
     inline constexpr std::wstring_view WorkspaceStateFileName{ L"state.yaml" };

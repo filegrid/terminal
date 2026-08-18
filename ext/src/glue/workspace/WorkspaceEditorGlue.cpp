@@ -20,13 +20,21 @@
         return &workspaces.at(_workspaceExtension->WorkspaceEditorSelectedIndex());
     }
 
-    void TerminalPage::_AddWorkspaceDefinition()
+    void TerminalPage::_AddWorkspaceDefinition(const std::optional<size_t> templateIndex)
     {
         auto& workspaces = _workspaceExtension->WorkspaceEditorManager().Workspaces();
 
         Microsoft::Terminal::Settings::Model::implementation::Workspace workspace;
+        if (templateIndex.has_value() && *templateIndex < workspaces.size())
+        {
+            workspace = workspaces.at(*templateIndex);
+        }
         workspace.Name = RS_fmt(L"WorkspaceGeneratedName", workspaces.size() + 1).c_str();
         workspace.Id = workspace.Name;
+        if (workspace.BackgroundColor.empty())
+        {
+            workspace.BackgroundColor = Microsoft::Terminal::Settings::Model::implementation::PickUnusedWorkspaceColor(workspaces);
+        }
         workspaces.emplace_back(std::move(workspace));
 
         _workspaceExtension->WorkspaceDefinitionsDirty() = true;
@@ -49,15 +57,21 @@
             return;
         }
 
-        Microsoft::Terminal::Settings::Model::implementation::WorkspaceNode node;
+        Microsoft::Terminal::Settings::Model::implementation::WorkspaceNode node = workspace->NewNodeDefaults;
         node.Name = RS_fmt(L"WorkspaceEditor_NodeGeneratedName", workspace->Nodes.size() + 1).c_str();
         node.Id = node.Name;
-        node.ProfileGuid = Utils::GuidToString(_settings.GlobalSettings().DefaultProfile());
-        if (const auto profile = _settings.FindProfile(_settings.GlobalSettings().DefaultProfile()))
+        if (node.ProfileGuid.empty())
         {
-            node.ProfileName = profile.Name().empty() ? profile.Source().c_str() : profile.Name().c_str();
+            node.ProfileGuid = Utils::GuidToString(_settings.GlobalSettings().DefaultProfile());
+            if (const auto profile = _settings.FindProfile(_settings.GlobalSettings().DefaultProfile()))
+            {
+                node.ProfileName = profile.Name().empty() ? profile.Source().c_str() : profile.Name().c_str();
+            }
         }
         workspace->Nodes.emplace_back(std::move(node));
+        // Colors are configuration, not runtime inference. Assign one as soon
+        // as the node is created so the saved definition is immediately usable.
+        EnsureWorkspaceNodeTabColors(*workspace, _settings);
         _workspaceExtension->WorkspaceDefinitionsDirty() = true;
     }
 
@@ -98,14 +112,13 @@
         const auto selectedWorkspaceId = _SelectedWorkspaceId();
         const auto previousNavSelection = _workspaceExtension->WorkspaceManagerNavSelection();
         auto manager = _workspaceExtension->WorkspaceDefinitionsDirty() ? _workspaceExtension->WorkspaceEditorManager() : Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::Load();
-        const auto appState = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
         const auto removalPlan = Microsoft::Terminal::Settings::Model::implementation::PrepareWorkspaceDefinitionRemoval(manager,
                                                                                                                          workspaceId,
                                                                                                                          selectedWorkspaceId,
                                                                                                                          _currentWorkspaceId.c_str(),
                                                                                                                          _workspaceExtension->WorkspaceEditorSelectedIndex(),
                                                                                                                          previousNavSelection,
-                                                                                                                         appState.LastOpenedWorkspaceId().c_str());
+                                                       L"");
         if (!removalPlan.has_value())
         {
             return false;
@@ -128,11 +141,6 @@
             CurrentWorkspaceId(winrt::hstring{});
         }
 
-        if (!removalPlan->LastOpenedWorkspaceExists)
-        {
-            appState.LastOpenedWorkspaceId(L"");
-            appState.Flush();
-        }
 
         _CreateNewTabFlyout();
         _UpdateWorkspaceTabRow();
@@ -157,10 +165,9 @@
         {
             EnsureWorkspaceNodeTabColors(workspace, _settings);
         }
-        const auto state = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
         const auto persistedSave = ::terminal::workspace::PersistWorkspaceEditorState(_workspaceExtension->WorkspaceEditorManager(),
                                                                                       _currentWorkspaceId.c_str(),
-                                                                                      state.LastOpenedWorkspaceId().c_str(),
+                                                                  L"",
                                                                                       _workspaceExtension->WorkspaceEditorSelectedIndex());
         if (!persistedSave.has_value())
         {
@@ -181,11 +188,6 @@
             }
         }
 
-        if (!persistedSave->SavePlan.LastOpenedWorkspaceExists)
-        {
-            state.LastOpenedWorkspaceId(L"");
-            state.Flush();
-        }
 
         _workspaceExtension->WorkspaceDefinitionsDirty() = false;
         _workspaceExtension->WorkspaceEditorEditMode() = true;
@@ -211,7 +213,6 @@
         const auto selectedWorkspaceId = _SelectedWorkspaceId();
         const auto previousNavSelection = _workspaceExtension->WorkspaceManagerNavSelection();
         auto manager = _workspaceExtension->WorkspaceDefinitionsDirty() ? _workspaceExtension->WorkspaceEditorManager() : Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::Load();
-        const auto appState = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
         const auto removalPlan = Microsoft::Terminal::Settings::Model::implementation::PrepareWorkspaceNodeRemoval(manager,
                                                                                                                     workspaceId,
                                                                                                                     nodeId,
@@ -219,7 +220,7 @@
                                                                                                                     _currentWorkspaceId.c_str(),
                                                                                                                     _workspaceExtension->WorkspaceEditorSelectedIndex(),
                                                                                                                     previousNavSelection,
-                                                                                                                    appState.LastOpenedWorkspaceId().c_str());
+                                                  L"");
         if (removalPlan.Disposition == Microsoft::Terminal::Settings::Model::implementation::WorkspaceNodeMutationDisposition::NotFound)
         {
             return WorkspaceNodeRemoveResult::NotFound;
@@ -237,11 +238,6 @@
         _workspaceExtension->WorkspaceEditorSelectedIndex() = removalPlan.SelectedWorkspaceIndex;
         _workspaceExtension->WorkspaceManagerNavSelection() = removalPlan.NavSelection;
 
-        if (!removalPlan.LastOpenedWorkspaceExists)
-        {
-            appState.LastOpenedWorkspaceId(L"");
-            appState.Flush();
-        }
 
         if (removalPlan.Disposition == Microsoft::Terminal::Settings::Model::implementation::WorkspaceNodeMutationDisposition::RemovedWorkspace)
         {

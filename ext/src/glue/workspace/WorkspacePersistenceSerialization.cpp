@@ -14,6 +14,8 @@
             }
         }
 
+        void _applyNodeField(WorkspaceNode& node, const std::wstring& key, const std::wstring& value);
+
         void _applyWorkspaceField(Workspace& workspace, const std::wstring& key, const std::wstring& value)
         {
             if (key == L"description")
@@ -27,6 +29,10 @@
             else if (key == L"locked")
             {
                 workspace.Locked = _parseBool(value, workspace.Locked);
+            }
+            else if (key.rfind(L"default.", 0) == 0)
+            {
+                _applyNodeField(workspace.NewNodeDefaults, key.substr(8), value);
             }
         }
 
@@ -202,36 +208,32 @@
 
         std::optional<std::pair<Workspace, size_t>> _loadWorkspaceMetadataFile(const std::filesystem::path& path)
         {
-            return _loadFlatYamlObject<Workspace>(path, [](Workspace& workspace, const std::wstring& key, const std::wstring& value, size_t& order) {
-                if (key == L"order")
-                {
-                    order = value.empty() ? 0u : gsl::narrow_cast<size_t>(_wtoi64(value.c_str()));
-                }
-                else if (key != L"version")
+            return _loadFlatYamlObject<Workspace>(path, [](Workspace& workspace, const std::wstring& key, const std::wstring& value, size_t&) {
+                if (key != L"version")
                 {
                     _applyWorkspaceField(workspace, key, value);
                 }
             });
         }
 
-        std::optional<std::pair<WorkspaceNode, size_t>> _loadWorkspaceNodeMetadataFile(const std::filesystem::path& path)
+        std::optional<WorkspaceNode> _loadWorkspaceNodeMetadataFile(const std::filesystem::path& path)
         {
-            return _loadFlatYamlObject<WorkspaceNode>(path, [](WorkspaceNode& node, const std::wstring& key, const std::wstring& value, size_t& order) {
-                if (key == L"order")
+            if (const auto metadata = _loadFlatYamlObject<WorkspaceNode>(path, [](WorkspaceNode& node, const std::wstring& key, const std::wstring& value, size_t&) {
+                    if (key != L"version")
+                    {
+                        _applyNodeField(node, key, value);
+                    }
+                }))
                 {
-                    order = value.empty() ? 0u : gsl::narrow_cast<size_t>(_wtoi64(value.c_str()));
+                    return std::move(metadata->first);
                 }
-                else if (key != L"version")
-                {
-                    _applyNodeField(node, key, value);
-                }
-            });
+
+            return std::nullopt;
         }
 
         struct PersistedWorkspaceDirectory
         {
             std::filesystem::path Directory;
-            size_t Order{};
             Workspace Definition;
         };
 
@@ -269,13 +271,12 @@
 
                 workspaces.emplace_back(PersistedWorkspaceDirectory{
                     workspaceEntry.path(),
-                    metadata->second,
                     std::move(workspace),
                 });
             }
 
             std::stable_sort(workspaces.begin(), workspaces.end(), [](const auto& lhs, const auto& rhs) {
-                return lhs.Order < rhs.Order;
+                return _toLower(lhs.Definition.Name) < _toLower(rhs.Definition.Name);
             });
             return workspaces;
         }
@@ -379,11 +380,10 @@
             appendWindow();
         }
 
-        std::wstring _serializeWorkspaceMetadata(const Workspace& workspace, const size_t order)
+        std::wstring _serializeWorkspaceMetadata(const Workspace& workspace)
         {
             std::wostringstream stream;
             stream << L"version: 1\n";
-            stream << L"order: " << order << L"\n";
             if (!workspace.Description.empty())
             {
                 stream << L"description: " << _quote(workspace.Description) << L"\n";
@@ -393,14 +393,59 @@
                 stream << L"backgroundColor: " << _quote(workspace.BackgroundColor) << L"\n";
             }
             stream << L"locked: " << (workspace.Locked ? L"true" : L"false") << L"\n";
+            const auto& defaults = workspace.NewNodeDefaults;
+            if (!defaults.ProfileGuid.empty())
+            {
+                stream << L"default.profileGuid: " << _quote(defaults.ProfileGuid) << L"\n";
+            }
+            if (!defaults.StartupDirectory.empty())
+            {
+                stream << L"default.startupDirectory: " << _quote(defaults.StartupDirectory) << L"\n";
+            }
+            if (!defaults.StartupAction.empty())
+            {
+                stream << L"default.startupAction: " << _quote(defaults.StartupAction) << L"\n";
+            }
+            stream << L"default.showTab: " << (defaults.ShowTab ? L"true" : L"false") << L"\n";
+            stream << L"default.showInputPanel: " << (defaults.ShowInputPanel ? L"true" : L"false") << L"\n";
+            stream << L"default.useNodeNameAsTabTitle: " << (defaults.UseNodeNameAsTabTitle ? L"true" : L"false") << L"\n";
             return stream.str();
         }
 
-        std::wstring _serializeWorkspaceNodeMetadata(const WorkspaceNode& node, const size_t order)
+        std::wstring _serializeWorkspaceOrder(const std::vector<Workspace>& workspaces)
         {
             std::wostringstream stream;
             stream << L"version: 1\n";
-            stream << L"order: " << order << L"\n";
+            if (!workspaces.empty())
+            {
+                std::wstring serializedOrder;
+                for (const auto& workspace : workspaces)
+                {
+                    const auto& workspaceName = workspace.Name.empty() ? workspace.Id : workspace.Name;
+                    if (workspaceName.empty())
+                    {
+                        continue;
+                    }
+
+                    if (!serializedOrder.empty())
+                    {
+                        serializedOrder.push_back(L'\n');
+                    }
+                    serializedOrder.append(workspaceName);
+                }
+
+                if (!serializedOrder.empty())
+                {
+                    _writeMultilineValue(stream, L"", L"workspaces", serializedOrder);
+                }
+            }
+            return stream.str();
+        }
+
+        std::wstring _serializeWorkspaceNodeMetadata(const WorkspaceNode& node)
+        {
+            std::wostringstream stream;
+            stream << L"version: 1\n";
             if (!node.ConnectionRef.empty())
             {
                 stream << L"connectionRef: " << _quote(node.ConnectionRef) << L"\n";

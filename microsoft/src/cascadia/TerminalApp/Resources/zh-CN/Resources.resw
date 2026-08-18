@@ -972,7 +972,7 @@
    <value>在新窗口中打开</value>
  </data>
  <data name="WorkspaceManageMenuItem" xml:space="preserve">
-   <value>管理</value>
+   <value>工作区管理</value>
  </data>
  <data name="WorkspaceSaveMenuItem" xml:space="preserve">
    <value>保存</value>

@@ -21,7 +21,7 @@
         WT_WORKSPACE_EXT_API void _SetCurrentWorkspaceLocked(bool locked);
         WT_WORKSPACE_EXT_API void _LoadWorkspaceEditorState(bool preserveSelection = true);
         WT_WORKSPACE_EXT_API void _RebuildWorkspaceManagerTab();
-        WT_WORKSPACE_EXT_API void _AddWorkspaceDefinition();
+        WT_WORKSPACE_EXT_API void _AddWorkspaceDefinition(std::optional<size_t> templateIndex = std::nullopt);
         WT_WORKSPACE_EXT_API void _DeleteSelectedWorkspaceDefinition();
         WT_WORKSPACE_EXT_API void _AddWorkspaceNode();
         WT_WORKSPACE_EXT_API void _DeleteWorkspaceNode(size_t nodeIndex);
@@ -66,6 +66,7 @@
         WT_WORKSPACE_EXT_API std::wstring _ConsumePendingWorkspaceNodeId();
         WT_WORKSPACE_EXT_API void _ApplyWorkspaceNodeTitlePolicy(const winrt::com_ptr<Tab>& tab);
         WT_WORKSPACE_EXT_API void _ApplyWorkspaceNodeTitlePolicy(size_t nodeIndex);
+        WT_WORKSPACE_EXT_API void _ApplyWorkspaceNodeIcon(size_t nodeIndex);
         WT_WORKSPACE_EXT_API void _ApplyWorkspaceChatStateForFocusedTab();
         WT_WORKSPACE_EXT_API void _FocusActiveTabSurface();
         WT_WORKSPACE_EXT_API void _ReloadWorkspaceChatState();

@@ -184,12 +184,8 @@ namespace terminal::workspace
 
     inline bool IsWorkspaceLocked(const std::wstring_view workspaceId)
     {
-        if (workspaceId.empty())
-        {
-            return false;
-        }
-
-        return LoadCurrentWorkspaceState(workspaceId, L"", L"").Locked;
+        // Any window that belongs to a workspace is permanently locked.
+        return !workspaceId.empty();
     }
 
     inline bool PersistWorkspaceLockedState(const std::wstring_view workspaceId, const bool locked)
@@ -199,9 +195,13 @@ namespace terminal::workspace
             return false;
         }
 
+        // Legacy callers may still invoke this while the UI is being removed.
+        // Never persist an unlocked workspace.
+        (void)locked;
+
         return details::PersistManagerChange(details::LoadPersistedWorkspaceManager(),
                                              [&](auto& manager) {
-                                                 return winrt::Microsoft::Terminal::Settings::Model::implementation::SetWorkspaceLocked(manager, workspaceId, locked);
+                                                 return winrt::Microsoft::Terminal::Settings::Model::implementation::SetWorkspaceLocked(manager, workspaceId, true);
                                              }).has_value();
     }
 

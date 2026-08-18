@@ -1,6 +1,9 @@
     WUX::Controls::MenuFlyout TerminalPage::_CreateWorkspaceFlyout()
     {
         auto workspaceFlyout = WUX::Controls::MenuFlyout{};
+        // Keep the same visual rhythm and opening direction as the native
+        // new-Tab menu at the right side of the tab strip.
+        workspaceFlyout.Placement(WUX::Controls::Primitives::FlyoutPlacementMode::BottomEdgeAlignedLeft);
         workspaceFlyout.Opening([weakThis{ get_weak() }](auto&&, auto&&) {
             if (auto page{ weakThis.get() })
             {
@@ -25,13 +28,25 @@
 
         const auto loadedFlyoutState = ::terminal::workspace::LoadWorkspaceFlyoutState(_currentWorkspaceId.c_str());
         const auto& flyoutState = loadedFlyoutState.FlyoutState;
-        const auto appState = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
-
         for (const auto& entry : flyoutState.Entries)
         {
             auto workspaceItem = WUX::Controls::ToggleMenuFlyoutItem{};
             const auto& workspace = entry.Definition;
             workspaceItem.Text(winrt::hstring{ _WorkspaceDisplayName(workspace) });
+            if (!workspace.Icon.empty())
+            {
+                if (const auto icon = _CreateNewTabFlyoutIcon(winrt::hstring{ workspace.Icon }))
+                {
+                    if (const auto frameworkElement = icon.try_as<FrameworkElement>())
+                    {
+                        frameworkElement.Width(16);
+                        frameworkElement.Height(16);
+                        frameworkElement.HorizontalAlignment(HorizontalAlignment::Center);
+                        frameworkElement.VerticalAlignment(VerticalAlignment::Center);
+                    }
+                    workspaceItem.Icon(icon);
+                }
+            }
             if (const auto color = _parseWorkspaceColor(workspace.BackgroundColor))
             {
                 workspaceItem.Foreground(SolidColorBrush{ *color });
@@ -40,7 +55,7 @@
             workspaceItem.Click([workspaceId{ winrt::hstring{ workspace.Id } }, weakThis{ get_weak() }](auto&&, auto&&) {
                 if (auto page{ weakThis.get() })
                 {
-                    page->_OpenWorkspace(workspaceId, Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance().OpenInNewWindow());
+                    page->_OpenWorkspace(workspaceId, true);
                 }
             });
             workspaceFlyout.Items().Append(workspaceItem);
@@ -59,105 +74,6 @@
             placeholder.Text(RS_(L"WorkspaceNoneSaved"));
             placeholder.IsEnabled(false);
             workspaceFlyout.Items().Append(placeholder);
-        }
-
-        workspaceFlyout.Items().Append(WUX::Controls::MenuFlyoutSeparator{});
-
-        auto newWorkspaceItem = WUX::Controls::MenuFlyoutItem{};
-        newWorkspaceItem.Text(RS_(L"WorkspaceNewMenuItem"));
-        {
-            WUX::Controls::SymbolIcon icon{};
-            icon.Symbol(WUX::Controls::Symbol::Add);
-            newWorkspaceItem.Icon(icon);
-        }
-        newWorkspaceItem.Click([weakThis{ get_weak() }](auto&&, auto&&) {
-            if (auto page{ weakThis.get() })
-            {
-                page->_OpenNewWindow(NewTerminalArgs{});
-            }
-        });
-        workspaceFlyout.Items().Append(newWorkspaceItem);
-
-        auto lockWorkspaceItem = WUX::Controls::ToggleMenuFlyoutItem{};
-        lockWorkspaceItem.Text(_CurrentWorkspaceLocked() ? RS_(L"WorkspaceLockedStateLocked") : RS_(L"WorkspaceLockedStateUnlocked"));
-        lockWorkspaceItem.IsChecked(_CurrentWorkspaceLocked());
-        lockWorkspaceItem.IsEnabled(!_currentWorkspaceId.empty());
-        {
-            WUX::Controls::FontIcon icon{};
-            icon.FontFamily(Media::FontFamily{ L"Segoe Fluent Icons, Segoe MDL2 Assets" });
-            icon.Glyph(_CurrentWorkspaceLocked() ? L"\xE72E" : L"\xE785");
-            lockWorkspaceItem.Icon(icon);
-        }
-        lockWorkspaceItem.Click([weakThis{ get_weak() }](auto&& sender, auto&&) {
-            if (auto page{ weakThis.get() })
-            {
-                if (const auto toggle = sender.try_as<WUX::Controls::ToggleMenuFlyoutItem>())
-                {
-                    const auto locked = !page->_CurrentWorkspaceLocked();
-                    toggle.IsChecked(locked);
-                    toggle.Text(locked ? RS_(L"WorkspaceLockedStateLocked") : RS_(L"WorkspaceLockedStateUnlocked"));
-                    if (const auto icon = toggle.Icon().try_as<WUX::Controls::FontIcon>())
-                    {
-                        icon.Glyph(locked ? L"\xE72E" : L"\xE785");
-                    }
-                    page->_SetCurrentWorkspaceLocked(locked);
-                }
-            }
-        });
-        workspaceFlyout.Items().Append(lockWorkspaceItem);
-
-        auto openInNewWindowItem = WUX::Controls::ToggleMenuFlyoutItem{};
-        openInNewWindowItem.Text(RS_(L"WorkspaceOpenInNewWindow"));
-        openInNewWindowItem.IsChecked(appState.OpenInNewWindow());
-        openInNewWindowItem.Click([](auto&& sender, auto&&) {
-            if (const auto toggle = sender.try_as<WUX::Controls::ToggleMenuFlyoutItem>())
-            {
-                const auto current = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
-                current.OpenInNewWindow(toggle.IsChecked());
-                current.Flush();
-            }
-        });
-        workspaceFlyout.Items().Append(openInNewWindowItem);
-
-        auto manageWorkspacesItem = WUX::Controls::MenuFlyoutItem{};
-        manageWorkspacesItem.Text(RS_(L"WorkspaceManageMenuItem"));
-        manageWorkspacesItem.IsEnabled(!_CurrentWorkspaceLocked());
-
-        WUX::Controls::SymbolIcon manageWorkspacesIcon{};
-        manageWorkspacesIcon.Symbol(WUX::Controls::Symbol::Setting);
-        manageWorkspacesItem.Icon(manageWorkspacesIcon);
-
-        manageWorkspacesItem.Click([weakThis{ get_weak() }](auto&&, auto&&) {
-            if (auto page{ weakThis.get() })
-            {
-                page->_OpenWorkspaceManager();
-            }
-        });
-        workspaceFlyout.Items().Append(manageWorkspacesItem);
-
-        if (!_CurrentWorkspaceLocked() && _CurrentWorkspaceNeedsSave())
-        {
-            auto saveWorkspaceItem = WUX::Controls::MenuFlyoutItem{};
-            saveWorkspaceItem.Text(RS_(L"WorkspaceSaveMenuItem"));
-
-            WUX::Controls::SymbolIcon workspaceSaveIcon{};
-            workspaceSaveIcon.Symbol(WUX::Controls::Symbol::Save);
-            saveWorkspaceItem.Icon(workspaceSaveIcon);
-
-            saveWorkspaceItem.Click([weakThis{ get_weak() }](auto&&, auto&&) {
-                if (auto page{ weakThis.get() })
-                {
-                    if (page->_ResolvedWorkspaceSaveTargetId().empty())
-                    {
-                        page->_OpenWorkspaceSaver();
-                    }
-                    else
-                    {
-                        page->_SaveCurrentWindowAsWorkspace();
-                    }
-                }
-            });
-            workspaceFlyout.Items().Append(saveWorkspaceItem);
         }
 
         return workspaceFlyout;
@@ -188,10 +104,6 @@
                                                                                                                             !tabsToReplace.empty());
         if (executionPlan.Disposition == Microsoft::Terminal::Settings::Model::implementation::WorkspaceOpenExecutionDisposition::SummonExistingWindow)
         {
-            if (executionPlan.SetLastOpenedWorkspaceId)
-            {
-                appState.LastOpenedWorkspaceId(workspaceId);
-            }
             appState.Flush();
             SummonWindowRequested.raise(*this, winrt::box_value(*executionPlan.ExistingWindowId));
             co_return;
@@ -214,20 +126,13 @@
             }
         }
 
-        if (executionPlan.SetLastOpenedWorkspaceId)
-        {
-            appState.LastOpenedWorkspaceId(workspaceId);
-        }
-
         if (executionPlan.Disposition == Microsoft::Terminal::Settings::Model::implementation::WorkspaceOpenExecutionDisposition::OpenInNewWindow)
         {
-            if (executionPlan.UpdatePendingWorkspaceLaunch)
-            {
-                appState.RemovePendingWorkspaceLaunch(workspaceId);
-                appState.EnqueuePendingWorkspaceLaunch(workspaceId);
-            }
             appState.Flush();
-            _MoveContent(std::move(startupActions), L"new", 0);
+            // The workspace identity travels only with this one window request.
+            // It must never be persisted in ApplicationState: a stale request
+            // would otherwise turn a later normal launch into a workspace window.
+            _MoveContent(std::move(startupActions), winrt::hstring{ L"workspace:" } + workspaceId, 0);
             co_return;
         }
 
@@ -316,11 +221,6 @@
 
     safe_void_coroutine TerminalPage::_OpenWorkspaceManager()
     {
-        if (_CurrentWorkspaceLocked())
-        {
-            co_return;
-        }
-
         _workspaceExtension->WorkspaceEditorEditMode() = true;
         _workspaceExtension->WorkspaceDefinitionsDirty() = false;
         _LoadWorkspaceEditorState(false);
@@ -563,14 +463,40 @@
             return;
         }
 
-        const auto name = _CurrentWorkspaceTabRowName();
-        const auto dirty = !_CurrentWorkspaceLocked() && _CurrentWorkspaceNeedsSave();
+        const auto isWorkspaceWindow = !_currentWorkspaceId.empty();
+        const auto name = isWorkspaceWindow ? _CurrentWorkspaceTabRowName() : std::wstring{};
         _tabRow.WorkspaceName(winrt::hstring{ name });
         _tabRow.WorkspaceNameVisibility(name.empty() ? WUX::Visibility::Collapsed : WUX::Visibility::Visible);
-        _tabRow.WorkspaceDirtyVisibility(dirty ? WUX::Visibility::Visible : WUX::Visibility::Collapsed);
-        _tabRow.WorkspaceSaveVisibility(dirty ? WUX::Visibility::Visible : WUX::Visibility::Collapsed);
+        _tabRow.WorkspaceMenuVisibility(isWorkspaceWindow ? WUX::Visibility::Collapsed : WUX::Visibility::Visible);
+        WUX::Controls::IconElement workspaceIcon{ nullptr };
+        if (isWorkspaceWindow)
+        {
+            const auto manager = Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::Load();
+            for (const auto& workspace : manager.Workspaces())
+            {
+                if (workspace.Id == _currentWorkspaceId.c_str() && !workspace.Icon.empty())
+                {
+                    workspaceIcon = _CreateNewTabFlyoutIcon(winrt::hstring{ workspace.Icon });
+                    break;
+                }
+            }
+        }
+        if (workspaceIcon)
+        {
+            if (const auto frameworkElement = workspaceIcon.try_as<FrameworkElement>())
+            {
+                frameworkElement.Width(16);
+                frameworkElement.Height(16);
+                frameworkElement.HorizontalAlignment(HorizontalAlignment::Center);
+                frameworkElement.VerticalAlignment(VerticalAlignment::Center);
+            }
+        }
+        _tabRow.WorkspaceIconElement(workspaceIcon);
+        // Saving a runtime window into a workspace is no longer supported.
+        _tabRow.WorkspaceDirtyVisibility(WUX::Visibility::Collapsed);
+        _tabRow.WorkspaceSaveVisibility(WUX::Visibility::Collapsed);
         _tabRow.WorkspaceLockGlyph(_CurrentWorkspaceLocked() ? L"\xE72E" : L"\xE785");
-        _tabRow.WorkspaceLockVisibility(_currentWorkspaceId.empty() ? WUX::Visibility::Collapsed : WUX::Visibility::Visible);
+        _tabRow.WorkspaceLockVisibility(WUX::Visibility::Collapsed);
 
         if (const auto color = _CurrentWorkspaceColor())
         {

@@ -23,11 +23,15 @@ namespace SettingsModelUnitTests
         TEST_CLASS(WorkspaceTests);
 
         TEST_METHOD(ParseWorkspaceDirectoryYaml);
+        TEST_METHOD(ParseWorkspaceDirectoryYamlIgnoresLegacyTabOrderField);
+        TEST_METHOD(ParseWorkspaceDirectoryYamlUsesRootWorkspaceOrderFile);
         TEST_METHOD(ParseWorkspaceDirectoryYamlDefaultsToLocked);
         TEST_METHOD(IgnoreLegacyWorkspaceYamlFile);
         TEST_METHOD(IgnoreWorkspaceDirectoryWithoutWorkspaceYaml);
         TEST_METHOD(SanitizeWorkspaceDirectoryNames);
         TEST_METHOD(SanitizeInvalidWorkspaceDirectoryNamesOnSave);
+        TEST_METHOD(PrepareWorkspaceEditorForSaveRenamesTabOrderEntries);
+        TEST_METHOD(SaveWorkspaceYamlRoundTripPersistsRenamedWorkspaceOrder);
         TEST_METHOD(BuildWorkspaceStartupActions);
         TEST_METHOD(BuildWorkspaceStartupActionsForWindowsSshNode);
         TEST_METHOD(BuildWorkspaceStartupActionsForWindowsSshNodePreservesMultilineStartupAction);
@@ -83,7 +87,6 @@ namespace SettingsModelUnitTests
 
         static constexpr std::string_view workspaceYaml{
             "version: 1\n"
-            "order: 0\n"
             "description: 'daily development'\n"
             "backgroundColor: '#4682B4'\n"
             "locked: true\n"
@@ -92,7 +95,6 @@ namespace SettingsModelUnitTests
         };
         static constexpr std::string_view tabYaml{
             "version: 1\n"
-            "order: 0\n"
             "connectionRef: 'peer-app'\n"
             "profileGuid: '{00000000-0000-0000-0000-000000000101}'\n"
             "profileName: 'Ubuntu'\n"
@@ -135,6 +137,91 @@ namespace SettingsModelUnitTests
         VERIFY_IS_TRUE(workspace.Nodes.front().ShellType == L"powershell");
         VERIFY_IS_TRUE(workspace.Nodes.front().ShowInputPanel);
         VERIFY_IS_FALSE(workspace.Nodes.front().UseNodeNameAsTabTitle);
+    }
+
+    void WorkspaceTests::ParseWorkspaceDirectoryYamlIgnoresLegacyTabOrderField()
+    {
+        TempPath temp;
+        std::filesystem::create_directories(temp.path / L"Dev Workspace" / L"B Tab");
+        std::filesystem::create_directories(temp.path / L"Dev Workspace" / L"A Tab");
+
+        static constexpr std::string_view workspaceYaml{
+            "version: 1\n"
+        };
+        static constexpr std::string_view firstTabYaml{
+            "version: 1\n"
+            "order: 99\n"
+            "profileGuid: '{00000000-0000-0000-0000-000000000101}'\n"
+        };
+        static constexpr std::string_view secondTabYaml{
+            "version: 1\n"
+            "order: 0\n"
+            "profileGuid: '{00000000-0000-0000-0000-000000000202}'\n"
+        };
+
+        {
+            std::ofstream output{ temp.path / L"Dev Workspace" / L"workspace.yaml", std::ios::binary | std::ios::trunc };
+            output.write(workspaceYaml.data(), gsl::narrow_cast<std::streamsize>(workspaceYaml.size()));
+        }
+        {
+            std::ofstream output{ temp.path / L"Dev Workspace" / L"B Tab" / L"tab.yaml", std::ios::binary | std::ios::trunc };
+            output.write(firstTabYaml.data(), gsl::narrow_cast<std::streamsize>(firstTabYaml.size()));
+        }
+        {
+            std::ofstream output{ temp.path / L"Dev Workspace" / L"A Tab" / L"tab.yaml", std::ios::binary | std::ios::trunc };
+            output.write(secondTabYaml.data(), gsl::narrow_cast<std::streamsize>(secondTabYaml.size()));
+        }
+
+        const auto manager = WorkspaceManager::LoadFromPath(temp.path);
+        VERIFY_ARE_EQUAL(1u, gsl::narrow_cast<unsigned int>(manager.Workspaces().size()));
+        const auto& workspace = manager.Workspaces().front();
+        VERIFY_ARE_EQUAL(2u, gsl::narrow_cast<unsigned int>(workspace.Nodes.size()));
+        VERIFY_IS_TRUE(workspace.Nodes.at(0).Name == L"A Tab");
+        VERIFY_IS_TRUE(workspace.Nodes.at(0).Id == L"A Tab");
+        VERIFY_IS_TRUE(workspace.Nodes.at(1).Name == L"B Tab");
+        VERIFY_IS_TRUE(workspace.Nodes.at(1).Id == L"B Tab");
+    }
+
+    void WorkspaceTests::ParseWorkspaceDirectoryYamlUsesRootWorkspaceOrderFile()
+    {
+        TempPath temp;
+        std::filesystem::create_directories(temp.path / L"B Workspace" / L"Tab");
+        std::filesystem::create_directories(temp.path / L"A Workspace" / L"Tab");
+
+        static constexpr std::string_view workspaceYaml{
+            "version: 1\n"
+        };
+        static constexpr std::string_view tabYaml{
+            "version: 1\n"
+            "profileGuid: '{00000000-0000-0000-0000-000000000101}'\n"
+        };
+        static constexpr std::string_view orderYaml{
+            "version: 1\n"
+            "workspaces: |\n"
+            "  B Workspace\n"
+            "  A Workspace\n"
+        };
+
+        for (const auto& workspaceName : { L"B Workspace", L"A Workspace" })
+        {
+            {
+                std::ofstream output{ temp.path / workspaceName / L"workspace.yaml", std::ios::binary | std::ios::trunc };
+                output.write(workspaceYaml.data(), gsl::narrow_cast<std::streamsize>(workspaceYaml.size()));
+            }
+            {
+                std::ofstream output{ temp.path / workspaceName / L"Tab" / L"tab.yaml", std::ios::binary | std::ios::trunc };
+                output.write(tabYaml.data(), gsl::narrow_cast<std::streamsize>(tabYaml.size()));
+            }
+        }
+        {
+            std::ofstream output{ temp.path / L"workspaces.yaml", std::ios::binary | std::ios::trunc };
+            output.write(orderYaml.data(), gsl::narrow_cast<std::streamsize>(orderYaml.size()));
+        }
+
+        const auto manager = WorkspaceManager::LoadFromPath(temp.path);
+        VERIFY_ARE_EQUAL(2u, gsl::narrow_cast<unsigned int>(manager.Workspaces().size()));
+        VERIFY_IS_TRUE(manager.Workspaces().at(0).Name == L"B Workspace");
+        VERIFY_IS_TRUE(manager.Workspaces().at(1).Name == L"A Workspace");
     }
 
     void WorkspaceTests::BuildWorkspaceStartupActions()
@@ -358,7 +445,7 @@ namespace SettingsModelUnitTests
         node.Id = L"node-1";
         node.Name = L"Windows Remote";
         node.ProfileGuid = Utils::GuidToString(profile.Guid());
-        node.StartupDirectory = L"D:\\github\\tools\\terminal";
+        node.StartupDirectory = L"D:\\workspace";
         node.StartupAction = L"copilot --allow-all";
         node.OperatingSystem = L"windows";
         node.ShellType = L"pwsh";
@@ -372,7 +459,7 @@ namespace SettingsModelUnitTests
 
         const auto sendInputArgs = actions.at(1).Args().try_as<SendInputArgs>();
         VERIFY_IS_NOT_NULL(sendInputArgs);
-        VERIFY_IS_TRUE(std::wstring{ sendInputArgs.Input() } == L"Set-Location -LiteralPath 'D:\\github\\tools\\terminal'\rcopilot --allow-all\r");
+        VERIFY_IS_TRUE(std::wstring{ sendInputArgs.Input() } == L"Set-Location -LiteralPath 'D:\\workspace'\rcopilot --allow-all\r");
     }
 
     void WorkspaceTests::BuildWorkspaceStartupActionsIgnoresStaleSshShellTypeForLocalProfile()
@@ -855,11 +942,9 @@ namespace SettingsModelUnitTests
 
         static constexpr std::string_view workspaceYaml{
             "version: 1\n"
-            "order: 0\n"
         };
         static constexpr std::string_view tabYaml{
             "version: 1\n"
-            "order: 0\n"
             "id: 'node-1'\n"
             "profileGuid: '{00000000-0000-0000-0000-000000000101}'\n"
         };
@@ -951,6 +1036,61 @@ namespace SettingsModelUnitTests
         VERIFY_IS_TRUE(std::filesystem::exists(temp.path / L"Dev Workspace" / L"CON_" / L"tab.yaml"));
     }
 
+    void WorkspaceTests::PrepareWorkspaceEditorForSaveRenamesTabOrderEntries()
+    {
+        Workspace workspace;
+        workspace.Id = L"ws-dev";
+        workspace.Name = L"Dev Workspace";
+
+        WorkspaceNode node;
+        node.Id = L"node-1";
+        node.Name = L"bad:name";
+        workspace.Nodes.emplace_back(std::move(node));
+        workspace.TabOrder = { L"bad:name" };
+
+        WorkspaceEditorState editor;
+        editor.Workspace = workspace;
+
+        const auto prepared = PrepareWorkspaceEditorForSave(editor);
+        VERIFY_ARE_EQUAL(1u, gsl::narrow_cast<unsigned int>(prepared.Workspace.TabOrder.size()));
+        VERIFY_IS_TRUE(prepared.Workspace.TabOrder.front() == L"bad_name");
+        VERIFY_IS_TRUE(prepared.Workspace.Nodes.front().Name == L"bad_name");
+        VERIFY_IS_TRUE(prepared.Workspace.Nodes.front().Id == L"bad_name");
+    }
+
+    void WorkspaceTests::SaveWorkspaceYamlRoundTripPersistsRenamedWorkspaceOrder()
+    {
+        TempPath temp;
+
+        Workspace first;
+        first.Id = L"workspace-a";
+        first.Name = L"bad:name";
+        WorkspaceNode firstNode;
+        firstNode.Id = L"node-1";
+        firstNode.ProfileGuid = L"{00000000-0000-0000-0000-000000000101}";
+        first.Nodes.emplace_back(std::move(firstNode));
+
+        Workspace second;
+        second.Id = L"workspace-b";
+        second.Name = L"Second";
+        WorkspaceNode secondNode;
+        secondNode.Id = L"node-2";
+        secondNode.ProfileGuid = L"{00000000-0000-0000-0000-000000000202}";
+        second.Nodes.emplace_back(std::move(secondNode));
+
+        WorkspaceManager manager;
+        manager.SetWorkspaces({ first, second });
+
+        VERIFY_IS_TRUE(manager.SaveToPath(temp.path));
+        {
+            std::ifstream input{ temp.path / L"workspaces.yaml", std::ios::binary };
+            const std::string content{ std::istreambuf_iterator<char>{ input }, std::istreambuf_iterator<char>{} };
+            VERIFY_IS_TRUE(content.find("bad_name") != std::string::npos);
+            VERIFY_IS_TRUE(content.find("bad:name") == std::string::npos);
+            VERIFY_IS_TRUE(content.find("Second") != std::string::npos);
+        }
+    }
+
     void WorkspaceTests::SaveWorkspaceYamlRoundTrip()
     {
         TempPath temp;
@@ -985,17 +1125,25 @@ namespace SettingsModelUnitTests
         VERIFY_IS_TRUE(manager.SaveToPath(temp.path));
         VERIFY_IS_TRUE(std::filesystem::exists(temp.path / L"Dev Workspace" / L"workspace.yaml"));
         VERIFY_IS_TRUE(std::filesystem::exists(temp.path / L"Dev Workspace" / L"App 1" / L"tab.yaml"));
-        VERIFY_IS_FALSE(std::filesystem::exists(temp.path / L"workspaces.yaml"));
+        VERIFY_IS_TRUE(std::filesystem::exists(temp.path / L"workspaces.yaml"));
         {
             std::ifstream input{ temp.path / L"Dev Workspace" / L"workspace.yaml", std::ios::binary };
             const std::string content{ std::istreambuf_iterator<char>{ input }, std::istreambuf_iterator<char>{} };
+            VERIFY_IS_TRUE(content.rfind("order:", 0) != 0 && content.find("\norder:") == std::string::npos);
             VERIFY_IS_TRUE(content.find("name:") == std::string::npos);
             VERIFY_IS_TRUE(content.rfind("id:", 0) != 0 && content.find("\nid:") == std::string::npos);
             VERIFY_IS_TRUE(content.find("tabOrder:") != std::string::npos);
         }
         {
+            std::ifstream input{ temp.path / L"workspaces.yaml", std::ios::binary };
+            const std::string content{ std::istreambuf_iterator<char>{ input }, std::istreambuf_iterator<char>{} };
+            VERIFY_IS_TRUE(content.find("workspaces:") != std::string::npos);
+            VERIFY_IS_TRUE(content.find("Dev Workspace") != std::string::npos);
+        }
+        {
             std::ifstream input{ temp.path / L"Dev Workspace" / L"App 1" / L"tab.yaml", std::ios::binary };
             const std::string content{ std::istreambuf_iterator<char>{ input }, std::istreambuf_iterator<char>{} };
+            VERIFY_IS_TRUE(content.rfind("order:", 0) != 0 && content.find("\norder:") == std::string::npos);
             VERIFY_IS_TRUE(content.find("name:") == std::string::npos);
             VERIFY_IS_TRUE(content.rfind("id:", 0) != 0 && content.find("\nid:") == std::string::npos);
             VERIFY_IS_TRUE(content.find("profileName: 'Ubuntu'") != std::string::npos);
@@ -1224,7 +1372,6 @@ namespace SettingsModelUnitTests
 
         static constexpr std::string_view workspaceYaml{
             "version: 1\n"
-            "order: 0\n"
         };
 
         static constexpr std::string_view yaml{
@@ -1257,7 +1404,6 @@ namespace SettingsModelUnitTests
 
         static constexpr std::string_view workspaceYaml{
             "version: 1\n"
-            "order: 0\n"
         };
 
         {

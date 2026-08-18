@@ -8,6 +8,7 @@
             core.ConnectionRef = node.ConnectionRef;
             core.ProfileGuid = node.ProfileGuid;
             core.ProfileName = node.ProfileName;
+            core.Icon = node.Icon;
             core.TabColor = node.TabColor;
             core.ShowTab = node.ShowTab;
             core.StartupDirectory = node.StartupDirectory;
@@ -27,6 +28,7 @@
             wrapped.ConnectionRef = node.ConnectionRef;
             wrapped.ProfileGuid = node.ProfileGuid;
             wrapped.ProfileName = node.ProfileName;
+            wrapped.Icon = node.Icon;
             wrapped.TabColor = node.TabColor;
             wrapped.ShowTab = node.ShowTab;
             wrapped.StartupDirectory = node.StartupDirectory;
@@ -45,7 +47,9 @@
             core.Name = workspace.Name;
             core.Description = workspace.Description;
             core.BackgroundColor = workspace.BackgroundColor;
+            core.Icon = workspace.Icon;
             core.Locked = workspace.Locked;
+            core.NewNodeDefaults = _toCoreNode(workspace.NewNodeDefaults);
             core.TabOrder = workspace.TabOrder;
             core.Nodes.reserve(workspace.Nodes.size());
             for (const auto& node : workspace.Nodes)
@@ -62,7 +66,9 @@
             wrapped.Name = workspace.Name;
             wrapped.Description = workspace.Description;
             wrapped.BackgroundColor = workspace.BackgroundColor;
+            wrapped.Icon = workspace.Icon;
             wrapped.Locked = workspace.Locked;
+            wrapped.NewNodeDefaults = _fromCoreNode(workspace.NewNodeDefaults);
             wrapped.TabOrder = workspace.TabOrder;
             wrapped.Nodes.reserve(workspace.Nodes.size());
             for (const auto& node : workspace.Nodes)
@@ -1058,11 +1064,38 @@
 
     void EnsureWorkspaceNodeTabColors(Workspace& workspace, const Model::CascadiaSettings& settings)
     {
+        // Deliberately use a high-contrast palette at the workspace scope.
+        // A color is never reused while an unused candidate exists, so a new
+        // node and the "reselect" action both remain visually distinguishable.
+        static constexpr std::array<std::wstring_view, 12> palette{
+            L"#C50F1F", L"#0063B1", L"#0F7B0F", L"#CA5010",
+            L"#8E562E", L"#744DA9", L"#038387", L"#881798",
+            L"#498205", L"#515C6B", L"#567C73", L"#7A7574",
+        };
+        std::unordered_set<std::wstring> usedColors;
+        usedColors.reserve(workspace.Nodes.size());
         for (size_t i = 0; i < workspace.Nodes.size(); ++i)
         {
-            if (const auto color = ResolveWorkspaceNodeTabColor(workspace, i, settings))
+            const auto& color = workspace.Nodes.at(i).TabColor;
+            if (!color.empty())
             {
-                workspace.Nodes.at(i).TabColor = _colorToString(*color);
+                usedColors.emplace(color);
+                continue;
+            }
+
+            const auto paletteIt = std::find_if(palette.begin(), palette.end(), [&](const auto candidate) {
+                return !usedColors.contains(std::wstring{ candidate });
+            });
+            if (paletteIt != palette.end())
+            {
+                workspace.Nodes.at(i).TabColor = std::wstring{ *paletteIt };
+                usedColors.emplace(workspace.Nodes.at(i).TabColor);
+            }
+            else if (const auto fallback = ResolveWorkspaceNodeTabColor(workspace, i, settings))
+            {
+                // More nodes than palette entries: keep Terminal's derived
+                // color as a deterministic fallback.
+                workspace.Nodes.at(i).TabColor = _colorToString(*fallback);
             }
         }
     }

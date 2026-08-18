@@ -237,7 +237,18 @@ namespace winrt::TerminalApp::implementation
     {
         if (const auto content{ tab.GetActiveContent() })
         {
-            const auto& icon{ content.Icon() };
+            auto icon{ content.Icon() };
+            for (const auto& candidate : _tabs)
+            {
+                if (const auto tabImpl = _GetTabImpl(candidate); tabImpl && tabImpl.get() == &tab)
+                {
+                    if (const auto workspaceNode = _ResolveCurrentWorkspaceNode(tabImpl); workspaceNode && !workspaceNode->Icon.empty())
+                    {
+                        icon = winrt::hstring{ workspaceNode->Icon };
+                    }
+                    break;
+                }
+            }
             const auto theme = _settings.GlobalSettings().CurrentTheme();
             const auto iconStyle = (theme && theme.Tab()) ? theme.Tab().IconStyle() : IconStyle::Default;
 

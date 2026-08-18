@@ -173,11 +173,14 @@ namespace winrt::TerminalApp::implementation
         }
         else if (!_initialContentArgs.empty())
         {
-            const auto state = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
-            if (const auto workspaceId = state.ConsumePendingWorkspaceLaunch(); !workspaceId.empty())
+            // Workspace launches carry an explicit, one-shot marker in their
+            // new-window request. Do not consume persisted workspace state here:
+            // a normal Terminal launch must always follow upstream startup.
+            constexpr std::wstring_view workspaceWindowPrefix{ L"workspace:" };
+            const std::wstring_view windowName{ _WindowProperties->WindowName().c_str() };
+            if (windowName.starts_with(workspaceWindowPrefix))
             {
-                _initialWorkspaceId = workspaceId;
-                state.Flush();
+                _initialWorkspaceId = winrt::hstring{ windowName.substr(workspaceWindowPrefix.size()) };
             }
             _root->SetStartupActions(std::move(_initialContentArgs), _initialWorkspaceId);
         }
@@ -219,19 +222,6 @@ namespace winrt::TerminalApp::implementation
             _gotSettingsStartupActions)
         {
             _root->SetStartupActions(_settingsStartupArgs);
-        }
-        else if (!_hasCommandLineArguments &&
-                 _initialContentArgs.empty())
-        {
-            if (const auto appLogic = AppLogic::Current())
-            {
-                auto workspaceActions = appLogic->ConsumeInitialWorkspaceStartupActions();
-                if (!workspaceActions.empty())
-                {
-                    _initialWorkspaceId = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance().LastOpenedWorkspaceId();
-                    _root->SetStartupActions(std::move(workspaceActions), _initialWorkspaceId);
-                }
-            }
         }
         _root->SetSettings(_settings, false); // We're on our UI thread right now, so this is safe
         _root->Loaded({ get_weak(), &TerminalWindow::_OnLoaded });

@@ -7,6 +7,9 @@ namespace winrt::TerminalApp::implementation
     {
         ColorPickupFlyout();
 
+        Windows::UI::Color Color();
+        void Color(const Windows::UI::Color& value);
+
         void ColorButton_Click(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& args);
         void ShowColorPickerButton_Click(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& args);
         void CustomColorButton_Click(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& args);

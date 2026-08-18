@@ -11,47 +11,19 @@
 
         auto tabRowImpl = winrt::get_self<implementation::TabRowControl>(_tabRow);
         _newTabButton = tabRowImpl->NewTabButton();
-        tabRowImpl->WorkspaceSaveButton().Click([weakThis{ get_weak() }](auto&&, auto&&) {
+        // Workspace definitions are created and edited exclusively in the manager.
+        // Do not wire the legacy title-bar save affordance.
+        tabRowImpl->WorkspaceSaveButton().Visibility(WUX::Visibility::Collapsed);
+        const auto showWorkspaceMenu = [weakThis{ get_weak() }](auto&&, auto&&) {
             if (auto self{ weakThis.get() })
             {
-                if (self->_CurrentWorkspaceLocked())
-                {
-                    return;
-                }
-
-                if (self->_ResolvedWorkspaceSaveTargetId().empty())
-                {
-                    self->_OpenWorkspaceSaver();
-                }
-                else
-                {
-                    self->_SaveCurrentWindowAsWorkspace();
-                }
+                self->_ShowWorkspaceNameMenu();
             }
-        });
-        tabRowImpl->WorkspaceNameButton().Click([weakThis{ get_weak() }](auto&&, auto&&) {
-            if (auto self{ weakThis.get() })
-            {
-                auto& workspaceNameTapTimer = self->_workspaceExtension->WorkspaceNameTapTimer();
-                if (!workspaceNameTapTimer)
-                {
-                    workspaceNameTapTimer = WUX::DispatcherTimer{};
-                    workspaceNameTapTimer.Interval(std::chrono::milliseconds(220));
-                    workspaceNameTapTimer.Tick([weakThis](auto&& sender, auto&&) {
-                        if (const auto timer = sender.try_as<WUX::DispatcherTimer>())
-                        {
-                            timer.Stop();
-                        }
-                        if (auto self{ weakThis.get() })
-                        {
-                            self->_ShowWorkspaceNameMenu();
-                        }
-                    });
-                }
-                workspaceNameTapTimer.Stop();
-                workspaceNameTapTimer.Start();
-            }
-        });
+        };
+        // The default window uses the icon-only switcher. Workspace windows
+        // retain their named button; both open the same constrained flyout.
+        tabRowImpl->WorkspaceMenuButton().Click(showWorkspaceMenu);
+        tabRowImpl->WorkspaceNameButton().Click(showWorkspaceMenu);
         tabRowImpl->WorkspaceNameButton().DoubleTapped([weakThis{ get_weak() }](auto&&, auto&&) {
             if (auto self{ weakThis.get() })
             {

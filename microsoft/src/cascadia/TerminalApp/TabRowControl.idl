@@ -10,10 +10,12 @@ namespace TerminalApp
         Microsoft.UI.Xaml.Controls.TabView TabView { get; };
         Boolean ShowElevationShield;
         String WorkspaceName;
+        Windows.UI.Xaml.Controls.IconElement WorkspaceIconElement;
         Windows.UI.Xaml.Visibility WorkspaceDirtyVisibility;
         Windows.UI.Xaml.Visibility WorkspaceSaveVisibility;
         String WorkspaceLockGlyph;
         Windows.UI.Xaml.Visibility WorkspaceNameVisibility;
+        Windows.UI.Xaml.Visibility WorkspaceMenuVisibility;
         Windows.UI.Xaml.Visibility WorkspaceLockVisibility;
         Windows.UI.Xaml.Media.Brush WorkspaceBackgroundBrush;
         Windows.UI.Xaml.Media.Brush WorkspaceForegroundBrush;

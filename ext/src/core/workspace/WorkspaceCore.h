@@ -22,6 +22,8 @@ namespace terminal::workspace
         std::wstring ConnectionRef;
         std::wstring ProfileGuid;
         std::wstring ProfileName;
+        // Empty means inherit the selected profile's icon.
+        std::wstring Icon;
         std::wstring TabColor;
         bool ShowTab{ true };
         std::wstring StartupDirectory;
@@ -29,7 +31,7 @@ namespace terminal::workspace
         std::wstring OperatingSystem;
         std::wstring ShellType;
         bool ShowInputPanel{ false };
-        bool UseNodeNameAsTabTitle{ true };
+        bool UseNodeNameAsTabTitle{ false };
     };
 
     struct Workspace
@@ -38,7 +40,10 @@ namespace terminal::workspace
         std::wstring Name;
         std::wstring Description;
         std::wstring BackgroundColor;
+        std::wstring Icon;
         bool Locked{ true };
+        // Values copied into a newly created blank node for this workspace.
+        WorkspaceNode NewNodeDefaults;
         std::vector<std::wstring> TabOrder;
         std::vector<WorkspaceNode> Nodes;
     };

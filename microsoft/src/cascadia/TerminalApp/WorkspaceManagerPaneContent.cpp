@@ -60,7 +60,9 @@ namespace winrt::TerminalApp::implementation
 
     winrt::hstring WorkspaceManagerPaneContent::Icon() const
     {
-        static constexpr std::wstring_view glyph{ L"\xE713" };
+        // Keep this identical to the default-window workspace switcher and
+        // the workspace-management menu item (Symbol::AllApps).
+        static constexpr std::wstring_view glyph{ L"\xE71D" };
         return winrt::hstring{ glyph };
     }
 

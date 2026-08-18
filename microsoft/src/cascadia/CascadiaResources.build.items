@@ -26,6 +26,11 @@
       <DeploymentContent>true</DeploymentContent>
       <Link>ProfileGeneratorIcons\%(RecursiveDir)%(FileName)%(Extension)</Link>
     </Content>
+    <!-- Workspace icon atlases -->
+    <Content Include="$(OpenConsoleDir)ext\res\v1\assets\*\merged.png">
+      <DeploymentContent>true</DeploymentContent>
+      <Link>res\v1\assets\%(RecursiveDir)%(FileName)%(Extension)</Link>
+    </Content>
     <!-- Default Settings -->
     <Content Include="$(OpenConsoleDir)src\cascadia\TerminalSettingsModel\defaults.json">
       <DeploymentContent>true</DeploymentContent>

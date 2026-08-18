@@ -6,7 +6,12 @@
         }
 
         auto tabRowImpl = winrt::get_self<implementation::TabRowControl>(_tabRow);
-        const auto button = tabRowImpl->WorkspaceNameButton();
+        // Use the same flyout contract as the New Tab split button: the visible
+        // button is both the flyout owner and the ShowAt target. Do not add a
+        // workspace-specific placement or offset.
+        const auto button = _currentWorkspaceId.empty() ?
+                                tabRowImpl->WorkspaceMenuButton() :
+                                tabRowImpl->WorkspaceNameButton();
         if (_workspaceFlyout)
         {
             _workspaceFlyout.Hide();
@@ -14,6 +19,7 @@
         }
 
         _workspaceFlyout = _CreateWorkspaceFlyout();
+        button.Flyout(_workspaceFlyout);
         _workspaceFlyout.ShowAt(button);
     }
 
@@ -485,6 +491,20 @@
             }
 
             _actionDispatch->DoAction(actions[i]);
+        }
+    }
+
+    void TerminalPage::_ApplyWorkspaceNodeIcon(const size_t nodeIndex)
+    {
+        const auto* workspace = _SelectedWorkspaceForEditing();
+        if (!workspace || workspace->Id != _currentWorkspaceId.c_str() || nodeIndex >= workspace->Nodes.size())
+        {
+            return;
+        }
+
+        if (const auto tabImpl = _GetWorkspaceBackedTabByNodeIndex(nodeIndex))
+        {
+            _UpdateTabIcon(*tabImpl);
         }
     }
 

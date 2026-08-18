@@ -1,49 +1,6 @@
     void TerminalPage::_OpenWorkspaceSaver()
     {
-        if (_CurrentWorkspaceLocked())
-        {
-            return;
-        }
-
-        if (WorkspaceSaver() == nullptr)
-        {
-            if (auto tip{ FindName(L"WorkspaceSaver").try_as<MUX::Controls::TeachingTip>() })
-            {
-                tip.Closed({ get_weak(), &TerminalPage::_FocusActiveControl });
-            }
-        }
-
-        _UpdateTeachingTipTheme(WorkspaceSaver().try_as<winrt::Windows::UI::Xaml::FrameworkElement>());
-
-        auto tip = WorkspaceSaver();
-        tip.Title(RS_(L"WorkspaceSaver_Title"));
-        tip.Subtitle(RS_(L"WorkspaceSaver_Subtitle"));
-        tip.ActionButtonContent(box_value(RS_(L"WorkspaceSaver_ActionButtonContent")));
-        tip.CloseButtonContent(box_value(RS_(L"WorkspaceSaver_CloseButtonContent")));
-
-        WorkspaceSaverTextBox().Text(_SuggestedWorkspaceSaveName());
-
-        _workspaceSaverLayoutUpdatedRevoker.revoke();
-        _workspaceSaverLayoutUpdatedRevoker = WorkspaceSaverTextBox().LayoutUpdated(winrt::auto_revoke, [weakThis = get_weak()](auto&&, auto&&) {
-            if (auto self{ weakThis.get() })
-            {
-                auto& count{ self->_workspaceExtension->WorkspaceSaverLayoutCount() };
-                if (count < 2)
-                {
-                    count++;
-                }
-
-                if (count >= 2)
-                {
-                    self->_workspaceExtension->WorkspaceSaverLayoutUpdatedRevoker().revoke();
-                    self->WorkspaceSaverTextBox().Focus(FocusState::Programmatic);
-                    self->WorkspaceSaverTextBox().SelectAll();
-                }
-            }
-        });
-
-        _workspaceSaverPressedEnter = false;
-        WorkspaceSaver().IsOpen(true);
+        // Definitions are created only through the workspace manager.
     }
 
     std::wstring TerminalPage::_SuggestedWorkspaceSaveName() const
@@ -83,6 +40,9 @@
 
     void TerminalPage::_SaveCurrentWindowAsWorkspace(const winrt::hstring& workspaceName)
     {
+        // Runtime state must never be inferred back into a definition.
+        return;
+
         using Microsoft::Terminal::Settings::Model::implementation::Workspace;
         using Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager;
         using Microsoft::Terminal::Settings::Model::implementation::WorkspaceNode;
@@ -173,10 +133,6 @@
                 bindWorkspaceNodeIdToTab(tabImpl, visibleNodeIds.at(visibleNodeIndex));
                 ++visibleNodeIndex;
             }
-
-            const auto state = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
-            state.LastOpenedWorkspaceId(workspace.Name);
-            state.Flush();
 
             _SetCurrentWorkspaceSaveBaseline(workspace);
             CurrentWorkspaceId(winrt::hstring{ workspace.Name });
@@ -272,37 +228,15 @@
 
     winrt::Windows::Foundation::IAsyncOperation<bool> TerminalPage::_ConfirmWorkspaceCloseWindowIfNeeded()
     {
-        if (_CurrentWorkspaceNeedsSave() &&
-            !_displayingCloseDialog)
-        {
-            _displayingCloseDialog = true;
-            const auto weak = get_weak();
-            const auto proceed = co_await _ConfirmSaveWorkspaceOnExit();
-            auto strong = weak.get();
-            if (!strong)
-            {
-                co_return false;
-            }
-
-            _displayingCloseDialog = false;
-            if (!proceed)
-            {
-                co_return false;
-            }
-        }
-
+        // Runtime windows never write workspace definitions. Closing them is
+        // therefore the same as closing an ordinary Terminal window.
         co_return true;
     }
 
     void TerminalPage::_WorkspaceSaverActionClick(const IInspectable& /*sender*/,
                                                   const IInspectable& /*eventArgs*/)
     {
-        const auto workspaceName = WorkspaceSaverTextBox().Text();
-        if (!workspaceName.empty())
-        {
-            WorkspaceSaver().IsOpen(false);
-            _SaveCurrentWindowAsWorkspace(workspaceName);
-        }
+        // The obsolete title-bar saver intentionally has no action.
     }
 
     void TerminalPage::_WorkspaceSaverKeyDown(const IInspectable& /*sender*/,

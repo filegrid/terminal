@@ -18,6 +18,8 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         std::wstring ConnectionRef;
         std::wstring ProfileGuid;
         std::wstring ProfileName;
+        // Empty means inherit the selected profile's icon.
+        std::wstring Icon;
         std::wstring TabColor;
         bool ShowTab{ true };
         std::wstring StartupDirectory;
@@ -25,7 +27,7 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         std::wstring OperatingSystem;
         std::wstring ShellType;
         bool ShowInputPanel{ false };
-        bool UseNodeNameAsTabTitle{ true };
+        bool UseNodeNameAsTabTitle{ false };
     };
 
     struct Workspace
@@ -34,7 +36,9 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         std::wstring Name;
         std::wstring Description;
         std::wstring BackgroundColor;
+        std::wstring Icon;
         bool Locked{ true };
+        WorkspaceNode NewNodeDefaults;
         std::vector<std::wstring> TabOrder;
         std::vector<WorkspaceNode> Nodes;
     };

@@ -26,10 +26,12 @@ namespace terminal::workspace
         constexpr int32_t _workspaceManagerNodeSelectionBase{ 10 };
 
         std::vector<std::wstring> _captureVisibleWorkspaceNodeOrder(const std::vector<WorkspaceNode>& nodes);
+        std::vector<size_t> _orderedVisibleWorkspaceNodeIndices(const Workspace& workspace);
         void _writeMultilineValue(std::wostringstream& stream,
                                   std::wstring_view indent,
                                   std::wstring_view key,
                                   std::wstring_view value);
+        std::vector<std::wstring> _parseMultilineEntries(std::wstring_view value);
     }
 
     namespace
@@ -495,9 +497,15 @@ namespace terminal::workspace
             {
                 workspace.BackgroundColor = value;
             }
+            else if (key == L"icon")
+            {
+                workspace.Icon = value;
+            }
             else if (key == L"locked")
             {
-                workspace.Locked = _parseBool(value, workspace.Locked);
+                // Workspace windows are always locked. Keep accepting the legacy
+                // field so existing definitions load, but never restore its value.
+                workspace.Locked = true;
             }
             else if (key == L"tabOrder")
             {
@@ -528,6 +536,10 @@ namespace terminal::workspace
             else if (key == L"profileName")
             {
                 node.ProfileName = value;
+            }
+            else if (key == L"icon")
+            {
+                node.Icon = value;
             }
             else if (key == L"tabColor")
             {
@@ -694,36 +706,32 @@ namespace terminal::workspace
 
         std::optional<std::pair<Workspace, size_t>> _loadWorkspaceMetadataFile(const std::filesystem::path& path)
         {
-            return _loadFlatYamlObject<Workspace>(path, [](Workspace& workspace, const std::wstring& key, const std::wstring& value, size_t& order) {
-                if (key == L"order")
-                {
-                    order = static_cast<size_t>(_parseUnsigned(value));
-                }
-                else if (key != L"version")
+            return _loadFlatYamlObject<Workspace>(path, [](Workspace& workspace, const std::wstring& key, const std::wstring& value, size_t&) {
+                if (key != L"version")
                 {
                     _applyWorkspaceField(workspace, key, value);
                 }
             });
         }
 
-        std::optional<std::pair<WorkspaceNode, size_t>> _loadWorkspaceNodeMetadataFile(const std::filesystem::path& path)
+        std::optional<WorkspaceNode> _loadWorkspaceNodeMetadataFile(const std::filesystem::path& path)
         {
-            return _loadFlatYamlObject<WorkspaceNode>(path, [](WorkspaceNode& node, const std::wstring& key, const std::wstring& value, size_t& order) {
-                if (key == L"order")
+            if (const auto metadata = _loadFlatYamlObject<WorkspaceNode>(path, [](WorkspaceNode& node, const std::wstring& key, const std::wstring& value, size_t&) {
+                    if (key != L"version")
+                    {
+                        _applyNodeField(node, key, value);
+                    }
+                }))
                 {
-                    order = static_cast<size_t>(_parseUnsigned(value));
+                    return std::move(metadata->first);
                 }
-                else if (key != L"version")
-                {
-                    _applyNodeField(node, key, value);
-                }
-            });
+
+            return std::nullopt;
         }
 
         struct PersistedWorkspaceDirectory
         {
             std::filesystem::path Directory;
-            size_t Order{};
             Workspace Definition;
         };
 
@@ -761,13 +769,12 @@ namespace terminal::workspace
 
                 workspaces.emplace_back(PersistedWorkspaceDirectory{
                     workspaceEntry.path(),
-                    metadata->second,
                     std::move(workspace),
                 });
             }
 
             std::stable_sort(workspaces.begin(), workspaces.end(), [](const auto& lhs, const auto& rhs) {
-                return lhs.Order < rhs.Order;
+                return _toLower(lhs.Definition.Name) < _toLower(rhs.Definition.Name);
             });
             return workspaces;
         }
@@ -788,11 +795,40 @@ namespace terminal::workspace
             return _enumeratePersistedWorkspaceDirectories(path);
         }
 
-        std::wstring _serializeWorkspaceMetadata(const Workspace& workspace, const size_t order)
+        std::wstring _serializeWorkspaceOrder(const std::vector<Workspace>& workspaces)
         {
             std::wostringstream stream;
             stream << L"version: 1\n";
-            stream << L"order: " << order << L"\n";
+            if (!workspaces.empty())
+            {
+                std::wstring serializedOrder;
+                for (const auto& workspace : workspaces)
+                {
+                    const auto& workspaceName = workspace.Name.empty() ? workspace.Id : workspace.Name;
+                    if (workspaceName.empty())
+                    {
+                        continue;
+                    }
+
+                    if (!serializedOrder.empty())
+                    {
+                        serializedOrder.push_back(L'\n');
+                    }
+                    serializedOrder.append(workspaceName);
+                }
+
+                if (!serializedOrder.empty())
+                {
+                    _writeMultilineValue(stream, L"", L"workspaces", serializedOrder);
+                }
+            }
+            return stream.str();
+        }
+
+        std::wstring _serializeWorkspaceMetadata(const Workspace& workspace)
+        {
+            std::wostringstream stream;
+            stream << L"version: 1\n";
             if (!workspace.Description.empty())
             {
                 stream << L"description: " << _quote(workspace.Description) << L"\n";
@@ -801,7 +837,12 @@ namespace terminal::workspace
             {
                 stream << L"backgroundColor: " << _quote(workspace.BackgroundColor) << L"\n";
             }
-            stream << L"locked: " << (workspace.Locked ? L"true" : L"false") << L"\n";
+            if (!workspace.Icon.empty())
+            {
+                stream << L"icon: " << _quote(workspace.Icon) << L"\n";
+            }
+            // New definitions have no unlock state.
+            stream << L"locked: true\n";
             if (!workspace.TabOrder.empty())
             {
                 std::wstring serializedOrder;
@@ -825,6 +866,21 @@ namespace terminal::workspace
                 }
             }
             return stream.str();
+        }
+
+        std::vector<std::wstring> _parseMultilineEntries(const std::wstring_view value)
+        {
+            std::vector<std::wstring> entries;
+            std::wistringstream stream{ std::wstring{ value } };
+            for (std::wstring line; std::getline(stream, line);)
+            {
+                const auto trimmed = std::wstring{ _trim(line) };
+                if (!trimmed.empty())
+                {
+                    entries.emplace_back(trimmed);
+                }
+            }
+            return entries;
         }
 
         bool _containsLineBreak(std::wstring_view value) noexcept
@@ -866,11 +922,10 @@ namespace terminal::workspace
             }
         }
 
-        std::wstring _serializeWorkspaceNodeMetadata(const WorkspaceNode& node, const size_t order)
+        std::wstring _serializeWorkspaceNodeMetadata(const WorkspaceNode& node)
         {
             std::wostringstream stream;
             stream << L"version: 1\n";
-            stream << L"order: " << order << L"\n";
             if (!node.ConnectionRef.empty())
             {
                 stream << L"connectionRef: " << _quote(node.ConnectionRef) << L"\n";
@@ -882,6 +937,10 @@ namespace terminal::workspace
             if (!node.ProfileName.empty())
             {
                 stream << L"profileName: " << _quote(node.ProfileName) << L"\n";
+            }
+            if (!node.Icon.empty())
+            {
+                stream << L"icon: " << _quote(node.Icon) << L"\n";
             }
             if (!node.TabColor.empty())
             {
@@ -1149,13 +1208,7 @@ namespace terminal::workspace
         for (auto persistedWorkspace : *persistedWorkspaces)
         {
             auto workspace = std::move(persistedWorkspace.Definition);
-            struct OrderedNode
-            {
-                size_t Order{};
-                WorkspaceNode Definition;
-            };
-
-            std::vector<OrderedNode> orderedNodes;
+            std::vector<WorkspaceNode> loadedNodes;
             for (const auto& nodeEntry : std::filesystem::directory_iterator(persistedWorkspace.Directory, ec))
             {
                 if (ec)
@@ -1174,25 +1227,35 @@ namespace terminal::workspace
                     continue;
                 }
 
-                const auto nodeMetadata = _loadWorkspaceNodeMetadataFile(nodeFile);
+                auto nodeMetadata = _loadWorkspaceNodeMetadataFile(nodeFile);
                 if (!nodeMetadata.has_value())
                 {
                     continue;
                 }
 
-                auto node = std::move(nodeMetadata->first);
+                auto node = std::move(*nodeMetadata);
                 node.Name = nodeEntry.path().filename().wstring();
                 node.Id = node.Name;
-                orderedNodes.emplace_back(OrderedNode{ nodeMetadata->second, std::move(node) });
+                loadedNodes.emplace_back(std::move(node));
             }
 
-            std::stable_sort(orderedNodes.begin(), orderedNodes.end(), [](const auto& lhs, const auto& rhs) {
-                return lhs.Order < rhs.Order;
+            std::stable_sort(loadedNodes.begin(), loadedNodes.end(), [](const auto& lhs, const auto& rhs) {
+                return _toLower(lhs.Name) < _toLower(rhs.Name);
             });
-            workspace.Nodes.reserve(orderedNodes.size());
-            for (auto& node : orderedNodes)
+            workspace.Nodes.reserve(loadedNodes.size());
+            for (auto& node : loadedNodes)
             {
-                workspace.Nodes.emplace_back(std::move(node.Definition));
+                workspace.Nodes.emplace_back(std::move(node));
+            }
+
+            if (!workspace.Nodes.empty())
+            {
+                std::vector<WorkspaceNode> orderedVisibleNodes;
+                for (const auto nodeIndex : _orderedVisibleWorkspaceNodeIndices(workspace))
+                {
+                    orderedVisibleNodes.emplace_back(workspace.Nodes.at(nodeIndex));
+                }
+                std::ignore = ApplyVisibleWorkspaceNodeOrder(workspace, orderedVisibleNodes);
             }
             workspaces.emplace_back(std::move(workspace));
         }
@@ -1235,7 +1298,7 @@ namespace terminal::workspace
             }
 
             if (!_writeUtf8TextFile(workspaceDir / std::filesystem::path{ terminal::workspacepaths::WorkspaceMetadataFileName },
-                                    _serializeWorkspaceMetadata(workspace, workspaceIndex)))
+                                    _serializeWorkspaceMetadata(workspace)))
             {
                 return false;
             }
@@ -1255,7 +1318,7 @@ namespace terminal::workspace
                 }
 
                 if (!_writeUtf8TextFile(nodeDir / std::filesystem::path{ terminal::workspacepaths::WorkspaceNodeMetadataFileName },
-                                        _serializeWorkspaceNodeMetadata(node, nodeIndex)))
+                                        _serializeWorkspaceNodeMetadata(node)))
                 {
                     return false;
                 }
@@ -1316,6 +1379,12 @@ namespace terminal::workspace
 
         std::filesystem::remove(path / std::filesystem::path{ terminal::workspacepaths::LegacyWorkspaceFileName }, ec);
         if (ec)
+        {
+            return false;
+        }
+
+        if (!_writeUtf8TextFile(path / std::filesystem::path{ terminal::workspacepaths::WorkspaceOrderFileName },
+                                _serializeWorkspaceOrder(_workspaces)))
         {
             return false;
         }
@@ -2416,6 +2485,16 @@ namespace terminal::workspace
         }
 
         workspace.TabOrder.assign(orderedNodeIds.begin(), orderedNodeIds.end());
+        // Keep the persisted node list aligned with the tab order as well.
+        // Hidden nodes retain their relative positions; only visible nodes move.
+        size_t visibleCursor = 0;
+        for (auto& node : workspace.Nodes)
+        {
+            if (node.ShowTab)
+            {
+                node = orderedVisibleNodes.at(visibleCursor++);
+            }
+        }
         return true;
     }
 
@@ -2505,6 +2584,14 @@ namespace terminal::workspace
         workspace.Name = SanitizeWorkspaceDirectoryName(workspace.Name, L"workspace");
         workspace.Id = workspace.Name;
 
+        const auto previousTabOrder = workspace.TabOrder;
+        std::vector<std::wstring> originalNodeIds;
+        originalNodeIds.reserve(workspace.Nodes.size());
+        for (const auto& node : workspace.Nodes)
+        {
+            originalNodeIds.emplace_back(node.Id);
+        }
+
         std::unordered_set<std::wstring> usedNodeNames;
         for (auto& node : workspace.Nodes)
         {
@@ -2512,6 +2599,23 @@ namespace terminal::workspace
             node.Name = MakeUniquePersistedName(node.Name, usedNodeNames);
             node.Id = node.Name;
         }
+
+        std::unordered_map<std::wstring, std::wstring> normalizedNodeIds;
+        for (size_t nodeIndex = 0; nodeIndex < workspace.Nodes.size() && nodeIndex < originalNodeIds.size(); ++nodeIndex)
+        {
+            normalizedNodeIds.emplace(originalNodeIds.at(nodeIndex), workspace.Nodes.at(nodeIndex).Id);
+        }
+
+        std::vector<std::wstring> normalizedTabOrder;
+        normalizedTabOrder.reserve(previousTabOrder.size());
+        for (const auto& nodeId : previousTabOrder)
+        {
+            if (const auto it = normalizedNodeIds.find(nodeId); it != normalizedNodeIds.end() && !it->second.empty())
+            {
+                normalizedTabOrder.emplace_back(it->second);
+            }
+        }
+        workspace.TabOrder = std::move(normalizedTabOrder);
     }
 
     bool WorkspaceNodeEquivalent(const WorkspaceNode& lhs, const WorkspaceNode& rhs)
@@ -2521,6 +2625,7 @@ namespace terminal::workspace
         return lhs.Name == rhs.Name &&
                lhs.ProfileGuid == rhs.ProfileGuid &&
                lhs.ProfileName == rhs.ProfileName &&
+               lhs.Icon == rhs.Icon &&
                lhsTabColor == rhsTabColor &&
                lhs.ShowTab == rhs.ShowTab &&
                lhs.StartupDirectory == rhs.StartupDirectory &&
@@ -2695,12 +2800,14 @@ namespace terminal::workspace
         plan.TargetWorkspace = *workspace;
         plan.PendingNodeIds = VisibleWorkspaceNodeIds(*workspace);
         plan.PendingNodeInputVisibility = VisibleWorkspaceNodeInputVisibility(*workspace);
-        plan.ConfirmSaveCurrentWorkspace = !openInNewWindow &&
-                                           !currentWorkspaceId.empty() &&
-                                           currentWorkspaceId != workspaceId &&
-                                           currentWorkspaceNeedsSave;
-        plan.Disposition = openInNewWindow ? WorkspaceOpenDisposition::OpenInNewWindow :
-                                             WorkspaceOpenDisposition::ReplaceCurrentWindow;
+        // Workspaces are immutable at runtime and always get their own window.
+        // Retain the legacy parameters for the adapter ABI while intentionally
+        // ignoring the old replace-current/save path.
+        (void)openInNewWindow;
+        (void)currentWorkspaceId;
+        (void)currentWorkspaceNeedsSave;
+        plan.ConfirmSaveCurrentWorkspace = false;
+        plan.Disposition = WorkspaceOpenDisposition::OpenInNewWindow;
         return plan;
     }
 
@@ -2716,7 +2823,6 @@ namespace terminal::workspace
         {
         case WorkspaceOpenDisposition::SummonExistingWindow:
             plan.Disposition = WorkspaceOpenExecutionDisposition::SummonExistingWindow;
-            plan.SetLastOpenedWorkspaceId = true;
             return plan;
         case WorkspaceOpenDisposition::Missing:
             plan.Disposition = WorkspaceOpenExecutionDisposition::Missing;
@@ -2728,23 +2834,15 @@ namespace terminal::workspace
                 return plan;
             }
             plan.Disposition = WorkspaceOpenExecutionDisposition::OpenInNewWindow;
-            plan.SetLastOpenedWorkspaceId = true;
             plan.UpdatePendingWorkspaceLaunch = true;
             return plan;
         case WorkspaceOpenDisposition::ReplaceCurrentWindow:
-            if (!hasStartupActions)
-            {
-                plan.Disposition = WorkspaceOpenExecutionDisposition::NoStartupActions;
-                return plan;
-            }
-            plan.Disposition = WorkspaceOpenExecutionDisposition::ReplaceCurrentWindow;
-            plan.SetLastOpenedWorkspaceId = true;
-            plan.SetSaveBaseline = true;
-            plan.SetCurrentWorkspaceBeforeActions = true;
-            plan.ReplacePendingNodeQueues = true;
-            plan.FocusActiveContentAfterActions = true;
-            plan.RemoveCapturedTabsAfterActions = hasTabsToReplace;
-            plan.SetCurrentWorkspaceAfterActions = true;
+            // Compatibility for callers that still construct the old disposition:
+            // route it to the same new-window behavior rather than replacing tabs.
+            (void)hasTabsToReplace;
+            plan.Disposition = hasStartupActions ? WorkspaceOpenExecutionDisposition::OpenInNewWindow :
+                                                   WorkspaceOpenExecutionDisposition::NoStartupActions;
+            plan.UpdatePendingWorkspaceLaunch = hasStartupActions;
             return plan;
         default:
             plan.Disposition = WorkspaceOpenExecutionDisposition::Missing;
@@ -2800,7 +2898,7 @@ namespace terminal::workspace
         WorkspaceNode node = state.PersistedNode.value_or(WorkspaceNode{});
         if (!state.PersistedNode.has_value())
         {
-            node.UseNodeNameAsTabTitle = true;
+            node.UseNodeNameAsTabTitle = false;
             node.Name = state.LiveTabTitle.empty() ? state.StartupTabTitle : state.LiveTabTitle;
             if (node.Name.empty())
             {
@@ -2830,7 +2928,9 @@ namespace terminal::workspace
             });
             workspace != manager.Workspaces().end())
         {
-            workspace->Locked = locked;
+            // A workspace is permanently locked outside the management tab.
+            (void)locked;
+            workspace->Locked = true;
             return true;
         }
 

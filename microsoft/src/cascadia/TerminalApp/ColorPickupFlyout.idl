@@ -6,6 +6,7 @@ namespace TerminalApp
     [default_interface] runtimeclass ColorPickupFlyout : Windows.UI.Xaml.Controls.Flyout
     {
         ColorPickupFlyout();
+        Windows.UI.Color Color{ get; set; };
         event ColorSelectedArgs ColorSelected;
         event ColorClearedArgs ColorCleared;
     }

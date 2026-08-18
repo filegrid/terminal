@@ -46,6 +46,32 @@
                           Foreground="{ThemeResource SystemControlForegroundBaseMediumBrush}"
                           Glyph="&#xEA18;"
                           Visibility="{x:Bind ShowElevationShield, Mode=OneWay}" />
+                <Button x:Name="WorkspaceMenuButton"
+                        Margin="8,4,0,4"
+                        Width="50"
+                        Height="24"
+                        Padding="0"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Stretch"
+                        HorizontalContentAlignment="Center"
+                        Background="{ThemeResource TabViewButtonBackground}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        Visibility="{x:Bind WorkspaceMenuVisibility, Mode=OneWay}"
+                        AutomationProperties.Name="工作区">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <!-- Match the workspace management menu and tab icon. -->
+                            <SymbolIcon Symbol="AllApps"
+                                        Width="18"
+                                        Height="18"
+                                        VerticalAlignment="Center" />
+                            <FontIcon VerticalAlignment="Center"
+                                      FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                      FontSize="10"
+                                      Glyph="&#xE70D;" />
+                        </StackPanel>
+                </Button>
                 <Border Margin="8,4,0,4"
                         Padding="8,0"
                         MinHeight="24"
@@ -68,6 +94,8 @@
                                 Foreground="{x:Bind WorkspaceForegroundBrush, Mode=OneWay}">
                             <StackPanel Orientation="Horizontal"
                                         Spacing="6">
+                                <ContentControl VerticalAlignment="Center"
+                                                Content="{x:Bind WorkspaceIconElement, Mode=OneWay}" />
                                 <TextBlock VerticalAlignment="Center"
                                            Foreground="{x:Bind WorkspaceForegroundBrush, Mode=OneWay}"
                                            FontWeight="SemiBold"

@@ -626,7 +626,7 @@ namespace TerminalAppLocalTests
 
             auto& captureState = page->_workspaceExtension->GetOrCreateWorkspaceChatTerminalState(page->_WorkspaceChatStateKey(control));
             terminal::workspacechat::SeedCapturedInputState(captureState,
-                                                            L"D:\\github\\tools\\terminal",
+                                                            L"D:\\workspace",
                                                             L"git status",
                                                             L"windows",
                                                             L"powershell");
@@ -641,7 +641,7 @@ namespace TerminalAppLocalTests
             VERIFY_IS_TRUE(capturedNode.Id == L"node-1");
             VERIFY_IS_TRUE(capturedNode.Name == L"Saved node");
             VERIFY_IS_TRUE(capturedNode.ProfileGuid == L"{6239a42c-1111-49a3-80bd-e8fdd045185c}");
-            VERIFY_IS_TRUE(capturedNode.StartupDirectory == L"D:\\github\\tools\\terminal");
+            VERIFY_IS_TRUE(capturedNode.StartupDirectory == L"D:\\workspace");
             VERIFY_IS_TRUE(capturedNode.StartupAction == L"git status");
             VERIFY_IS_TRUE(capturedNode.OperatingSystem == L"windows");
             VERIFY_IS_TRUE(capturedNode.ShellType == L"powershell");
@@ -670,7 +670,7 @@ namespace TerminalAppLocalTests
             node.Id = L"node-1";
             node.Name = L"Saved node";
             node.ProfileGuid = L"{6239a42c-1111-49a3-80bd-e8fdd045185c}";
-            node.StartupDirectory = L"D:\\github\\tools\\terminal";
+            node.StartupDirectory = L"D:\\workspace";
             node.StartupAction = L"git status";
             node.OperatingSystem = L"windows";
             node.ShellType = L"powershell";
@@ -686,7 +686,7 @@ namespace TerminalAppLocalTests
 
             auto& captureState = page->_workspaceExtension->GetOrCreateWorkspaceChatTerminalState(page->_WorkspaceChatStateKey(control));
             terminal::workspacechat::SeedCapturedInputState(captureState,
-                                                            L"D:\\github\\tools\\terminal",
+                                                            L"D:\\workspace",
                                                             L"git status",
                                                             L"windows",
                                                             L"powershell");
@@ -701,7 +701,7 @@ namespace TerminalAppLocalTests
             VERIFY_IS_TRUE(page->_CurrentWorkspaceNeedsSave());
 
             terminal::workspacechat::SeedCapturedInputState(captureState,
-                                                            L"D:\\github\\tools\\terminal",
+                                                            L"D:\\workspace",
                                                             L"git status",
                                                             L"windows",
                                                             L"powershell");

@@ -19,6 +19,16 @@ namespace winrt::TerminalApp::implementation
         ClearColorButton().Content(winrt::box_value(RS_(L"TabColorClearButton/Content")));
     }
 
+    Windows::UI::Color ColorPickupFlyout::Color()
+    {
+        return customColorPicker().Color();
+    }
+
+    void ColorPickupFlyout::Color(const Windows::UI::Color& value)
+    {
+        customColorPicker().Color(value);
+    }
+
     // Method Description:
     // - Handler of the click event for the preset color swatches.
     // Reads the color from the clicked rectangle and fires an event

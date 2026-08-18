@@ -496,6 +496,20 @@ namespace winrt::TerminalApp::implementation
             settingsItem.Click({ this, &TerminalPage::_SettingsButtonOnClick });
             newTabFlyout.Items().Append(settingsItem);
 
+            auto manageWorkspacesItem = WUX::Controls::MenuFlyoutItem{};
+            manageWorkspacesItem.Text(RS_(L"WorkspaceManageMenuItem"));
+            // A four-pane layout distinguishes workspace management from Settings.
+            WUX::Controls::SymbolIcon workspaceIcon{};
+            workspaceIcon.Symbol(WUX::Controls::Symbol::AllApps);
+            manageWorkspacesItem.Icon(workspaceIcon);
+            manageWorkspacesItem.Click([weakThis{ get_weak() }](auto&&, auto&&) {
+                if (auto page{ weakThis.get() })
+                {
+                    page->_OpenWorkspaceManager();
+                }
+            });
+            newTabFlyout.Items().Append(manageWorkspacesItem);
+
             auto actionMap = _settings.ActionMap();
             const auto settingsKeyChord{ actionMap.GetKeyBindingForAction(L"Terminal.OpenSettingsUI") };
             if (settingsKeyChord)
