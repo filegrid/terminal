@@ -140,6 +140,7 @@
             applyWorkspaceStyle(setting, L"WorkspaceSettingContainerStyle");
             return setting;
         };
+        const auto& workspaces = _workspaceEditorManager.Workspaces();
         auto nav = MUX::Controls::NavigationView{};
         nav.Background(SolidColorBrush{ Colors::Transparent() });
         nav.IsBackButtonVisible(MUX::Controls::NavigationViewBackButtonVisible::Collapsed);
@@ -149,7 +150,6 @@
         nav.OpenPaneLength(320);
         nav.AlwaysShowHeader(false);
 
-        const auto& workspaces = _workspaceEditorManager.Workspaces();
         if (_workspaceManagerNavSelection == 0 && !workspaces.empty())
         {
             _workspaceManagerNavSelection = Microsoft::Terminal::Settings::Model::implementation::WorkspaceManagerNavSelectionForWorkspace(0);
@@ -552,21 +552,34 @@
 
         auto root = StackPanel{};
         root.HorizontalAlignment(HorizontalAlignment::Center);
+        root.VerticalAlignment(workspaces.empty() ? VerticalAlignment::Center : VerticalAlignment::Stretch);
         root.Margin(WUX::ThicknessHelper::FromLengths(16, 0, 16, 16));
         root.Resources().MergedDictionaries().Append(workspaceResources);
         applyWorkspaceStyle(root, L"WorkspaceSettingsStackStyle");
         scrollViewer.Content(root);
         contentGrid.Children().Append(scrollViewer);
 
-        if (_workspaceManagerNavSelection >= 1000)
+        if (workspaces.empty())
+        {
+            auto empty = TextBlock{};
+            empty.Text(L"暂时没有工作区");
+            empty.TextWrapping(TextWrapping::Wrap);
+            empty.HorizontalTextAlignment(TextAlignment::Center);
+            empty.HorizontalAlignment(HorizontalAlignment::Center);
+            empty.VerticalAlignment(VerticalAlignment::Center);
+            root.Children().Append(empty);
+        }
+        else if (_workspaceManagerNavSelection >= 1000)
         {
             auto* workspace = _SelectedWorkspaceForEditing();
             const auto selectedNodeIndex = Microsoft::Terminal::Settings::Model::implementation::ResolveWorkspaceNodeIndexFromManagerNavSelection(_workspaceManagerNavSelection);
             if (workspace == nullptr)
             {
                 auto empty = TextBlock{};
-                empty.Text(RS_(L"WorkspaceEditor_NoneSaved"));
+                empty.Text(L"暂时没有工作区");
                 empty.TextWrapping(TextWrapping::Wrap);
+                empty.HorizontalTextAlignment(TextAlignment::Center);
+                empty.HorizontalAlignment(HorizontalAlignment::Center);
                 root.Children().Append(empty);
             }
             else
@@ -2128,54 +2141,57 @@
             root.Children().Append(makeSectionTitle(L"工作区管理"));
         }
 
-        auto footer = Grid{};
-        footer.Height(56);
-        footer.BorderBrush(SolidColorBrush{ Colors::DarkGray() });
-        footer.BorderThickness(WUX::ThicknessHelper::FromLengths(0, 1, 0, 0));
-        footer.Padding(WUX::ThicknessHelper::FromLengths(16, 0, 16, 0));
-        footer.ColumnDefinitions().Append(ColumnDefinition{});
-        auto buttonsColumn = ColumnDefinition{};
-        buttonsColumn.Width(GridLengthHelper::Auto());
-        footer.ColumnDefinitions().Append(buttonsColumn);
-        Controls::Grid::SetRow(footer, 1);
+        if (!workspaces.empty())
+        {
+            auto footer = Grid{};
+            footer.Height(56);
+            footer.BorderBrush(SolidColorBrush{ Colors::DarkGray() });
+            footer.BorderThickness(WUX::ThicknessHelper::FromLengths(0, 1, 0, 0));
+            footer.Padding(WUX::ThicknessHelper::FromLengths(16, 0, 16, 0));
+            footer.ColumnDefinitions().Append(ColumnDefinition{});
+            auto buttonsColumn = ColumnDefinition{};
+            buttonsColumn.Width(GridLengthHelper::Auto());
+            footer.ColumnDefinitions().Append(buttonsColumn);
+            Controls::Grid::SetRow(footer, 1);
 
-        auto footerButtons = StackPanel{};
-        footerButtons.Orientation(Orientation::Horizontal);
-        footerButtons.HorizontalAlignment(HorizontalAlignment::Right);
-        footerButtons.VerticalAlignment(VerticalAlignment::Center);
-        Controls::Grid::SetColumn(footerButtons, 1);
+            auto footerButtons = StackPanel{};
+            footerButtons.Orientation(Orientation::Horizontal);
+            footerButtons.HorizontalAlignment(HorizontalAlignment::Right);
+            footerButtons.VerticalAlignment(VerticalAlignment::Center);
+            Controls::Grid::SetColumn(footerButtons, 1);
 
-        auto saveButton = Button{};
-        saveButton.Content(box_value(RS_(L"WorkspaceEditor_DialogPrimaryButton")));
-        applyOptionalStyle(saveButton, L"AccentButtonStyle");
-        saveButton.IsEnabled(true);
-        saveButton.Margin(WUX::ThicknessHelper::FromLengths(0, 0, 12, 0));
-        saveButton.Click([weakThis{ get_weak() }](auto&&, auto&&) {
-            if (auto self{ weakThis.get() })
-            {
-                self->_SaveWorkspaceEditorState();
-            }
-        });
-        footerButtons.Children().Append(saveButton);
+            auto saveButton = Button{};
+            saveButton.Content(box_value(RS_(L"WorkspaceEditor_DialogPrimaryButton")));
+            applyOptionalStyle(saveButton, L"AccentButtonStyle");
+            saveButton.IsEnabled(true);
+            saveButton.Margin(WUX::ThicknessHelper::FromLengths(0, 0, 12, 0));
+            saveButton.Click([weakThis{ get_weak() }](auto&&, auto&&) {
+                if (auto self{ weakThis.get() })
+                {
+                    self->_SaveWorkspaceEditorState();
+                }
+            });
+            footerButtons.Children().Append(saveButton);
 
-        auto resetButton = Button{};
-        resetButton.Content(box_value(RS_(L"WorkspaceEditor_ResetButton")));
-        resetButton.IsEnabled(_workspaceDefinitionsDirty);
-        resetButton.Click([weakThis{ get_weak() }](auto&&, auto&&) {
-            if (auto self{ weakThis.get() })
-            {
-                self->_workspaceExtension->WorkspaceDefinitionsDirty() = false;
-                self->_workspaceExtension->WorkspaceEditorEditMode() = true;
-                self->_LoadWorkspaceEditorState(false);
-                self->_workspaceExtension->WorkspaceManagerNavSelection() = Microsoft::Terminal::Settings::Model::implementation::ResolveWorkspaceManagerNavSelectionForEditor(self->_workspaceExtension->WorkspaceEditorManager().Workspaces().size(),
-                                                                                                                                                                            self->_workspaceExtension->WorkspaceEditorSelectedIndex());
-                self->_RebuildWorkspaceManagerTab();
-            }
-        });
-        footerButtons.Children().Append(resetButton);
+            auto resetButton = Button{};
+            resetButton.Content(box_value(RS_(L"WorkspaceEditor_ResetButton")));
+            resetButton.IsEnabled(_workspaceDefinitionsDirty);
+            resetButton.Click([weakThis{ get_weak() }](auto&&, auto&&) {
+                if (auto self{ weakThis.get() })
+                {
+                    self->_workspaceExtension->WorkspaceDefinitionsDirty() = false;
+                    self->_workspaceExtension->WorkspaceEditorEditMode() = true;
+                    self->_LoadWorkspaceEditorState(false);
+                    self->_workspaceExtension->WorkspaceManagerNavSelection() = Microsoft::Terminal::Settings::Model::implementation::ResolveWorkspaceManagerNavSelectionForEditor(self->_workspaceExtension->WorkspaceEditorManager().Workspaces().size(),
+                                                                                                                                                                                self->_workspaceExtension->WorkspaceEditorSelectedIndex());
+                    self->_RebuildWorkspaceManagerTab();
+                }
+            });
+            footerButtons.Children().Append(resetButton);
 
-        footer.Children().Append(footerButtons);
-        contentGrid.Children().Append(footer);
+            footer.Children().Append(footerButtons);
+            contentGrid.Children().Append(footer);
+        }
 
         nav.Content(contentGrid);
         {
