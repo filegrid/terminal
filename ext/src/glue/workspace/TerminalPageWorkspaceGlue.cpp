@@ -10,6 +10,10 @@
 
     #include "WorkspaceEditorGlue.cpp"
 
+    #include "WorkspaceManagerIconPickerGlue.cpp"
+
+    #include "WorkspaceManagerEditorPanels.cpp"
+
     #include "WorkspaceManagerContentGlue.cpp"
 
     #include "WorkspaceSaverGlue.cpp"

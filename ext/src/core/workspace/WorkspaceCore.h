@@ -1,5 +1,5 @@
-// Copyright (c) Microsoft Corporation.
-// Licensed under the MIT license.
+// Copyright (c) Tommy Yan <tommy.yxd@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-only
 
 #pragma once
 
@@ -51,6 +51,8 @@ namespace terminal::workspace
     struct WorkspaceStateWindow
     {
         uint64_t WindowId{};
+        uint32_t ProcessId{};
+        std::wstring ProcessName;
         std::wstring WindowName;
         std::wstring WorkspaceId;
     };
@@ -149,6 +151,25 @@ namespace terminal::workspace
         std::wstring TerminalStartingDirectory;
     };
 
+    struct WorkspaceNodeLaunchResolutionPlanInput
+    {
+        std::optional<WorkspaceNode> PersistedNode;
+        std::wstring ObservedStartupAction;
+        std::wstring ObservedWorkingDirectory;
+        std::wstring TrackedWorkingDirectory;
+        std::wstring ObservedOperatingSystem;
+        std::wstring ObservedShellType;
+        std::wstring RuntimeStartupAction;
+        std::wstring RuntimeExplicitCommandline;
+        std::wstring RuntimeStartingDirectory;
+        std::wstring RuntimeOperatingSystem;
+        std::wstring RuntimeShellType;
+        std::wstring ProfileSource;
+        std::wstring ProfileCommandline;
+        std::wstring TerminalCommandline;
+        std::wstring TerminalStartingDirectory;
+    };
+
     struct WorkspaceNodeLaunchResolution
     {
         std::wstring StartupAction;
@@ -186,6 +207,38 @@ namespace terminal::workspace
         std::wstring TabColor;
     };
 
+    struct WorkspaceCapturedNodeInput
+    {
+        WorkspaceNodeLaunchResolutionInput LaunchInput;
+        WorkspaceLiveTabCaptureState CaptureState;
+    };
+
+    struct WorkspaceCapturedNodePlanInput
+    {
+        std::optional<WorkspaceNode> PersistedNode;
+        std::wstring ProfileSource;
+        std::wstring ProfileCommandline;
+        std::wstring TerminalCommandline;
+        std::wstring TerminalStartingDirectory;
+        std::wstring ObservedStartupAction;
+        std::wstring ObservedWorkingDirectory;
+        std::wstring TrackedWorkingDirectory;
+        std::wstring ObservedOperatingSystem;
+        std::wstring ObservedShellType;
+        std::wstring RuntimeStartupAction;
+        std::wstring RuntimeExplicitCommandline;
+        std::wstring RuntimeStartingDirectory;
+        std::wstring RuntimeOperatingSystem;
+        std::wstring RuntimeShellType;
+        std::wstring LiveTabTitle;
+        std::wstring StartupTabTitle;
+        std::wstring GeneratedNodeName;
+        std::wstring ProfileGuid;
+        std::wstring ProfileName;
+        bool ShowInputPanel{ false };
+        std::wstring TabColor;
+    };
+
     enum class WorkspaceNodeMutationDisposition
     {
         NotFound,
@@ -206,6 +259,7 @@ namespace terminal::workspace
         std::wstring DisplayName;
         std::wstring TabRowName;
         std::wstring BackgroundColor;
+        std::wstring Icon;
         bool Locked{ false };
     };
 
@@ -277,6 +331,93 @@ namespace terminal::workspace
         bool RemovedCurrentWorkspace{ false };
         bool LastOpenedWorkspaceExists{ true };
         size_t SelectedWorkspaceIndex{};
+    };
+
+    struct LoadedWorkspaceFlyoutState
+    {
+        WorkspaceManager Manager;
+        WorkspaceFlyoutState FlyoutState;
+    };
+
+    struct LoadedWorkspaceOpenState
+    {
+        WorkspaceManager Manager;
+        WorkspaceOpenPlan OpenPlan;
+    };
+
+    struct LoadedWorkspaceOpenExecutionState
+    {
+        WorkspaceManager Manager;
+        WorkspaceOpenPlan OpenPlan;
+        WorkspaceStartupState StartupState;
+        WorkspaceOpenExecutionPlan ExecutionPlan;
+    };
+
+    struct PersistedWorkspaceRename
+    {
+        WorkspaceManager Manager;
+        std::wstring ResolvedWorkspaceName;
+    };
+
+    struct PersistedWorkspaceEditorSave
+    {
+        WorkspaceManager Manager;
+        WorkspaceEditorSavePlan SavePlan;
+    };
+
+    struct WorkspaceEditorDefinitionAddResult
+    {
+        size_t AddedWorkspaceIndex{};
+    };
+
+    struct WorkspaceEditorNodeAddResult
+    {
+        bool Added{ false };
+    };
+
+    struct WorkspaceCurrentIdChangePlan
+    {
+        std::wstring LastWorkspaceId;
+        bool ResetSaveBaseline{ false };
+        bool StartHeartbeat{ false };
+    };
+
+    struct WorkspaceWindowRefreshPlan
+    {
+        bool SkipRefresh{ false };
+        bool ClearPendingWorkspaceLaunch{ false };
+        bool Refreshed{ false };
+        uint32_t ProcessId{};
+        std::wstring WorkspaceId;
+    };
+
+    struct WorkspaceNodeRuntimeStatePlan
+    {
+        std::wstring WorkspaceNodeId;
+        std::wstring StartupAction;
+        std::wstring ExplicitCommandline;
+        std::wstring StartingDirectory;
+        std::wstring OperatingSystem;
+        std::wstring ShellType;
+        bool IsSshTransport{ false };
+        bool HasSshTtyOption{ false };
+        std::vector<std::wstring> DeferredStartupInputs;
+        bool StartupInputPending{ false };
+        bool StartupInputDispatched{ false };
+        bool SkipPendingStartupSendInput{ false };
+        bool HasRuntimeState{ false };
+    };
+
+    struct WorkspaceNodeRuntimeRegistrationInput
+    {
+        std::wstring WorkspaceNodeId;
+        std::wstring PendingStartupAction;
+        std::wstring StartingDirectory;
+        std::wstring ProfileSource;
+        std::wstring ProfileCommandline;
+        std::wstring TerminalCommandline;
+        std::wstring CurrentWorkspaceId;
+        std::optional<Workspace> SelectedWorkspace;
     };
 
     class WorkspaceStateManager;
@@ -354,6 +495,26 @@ namespace terminal::workspace
     WorkspaceFlyoutState BuildWorkspaceFlyoutState(std::wstring_view currentWorkspaceId,
                                                    const WorkspaceManager& manager,
                                                    const WorkspaceStateManager& stateManager);
+    LoadedWorkspaceFlyoutState LoadWorkspaceFlyoutState(std::wstring_view currentWorkspaceId);
+    LoadedWorkspaceOpenState LoadWorkspaceOpenState(std::wstring_view workspaceId,
+                                                    bool openInNewWindow,
+                                                    std::wstring_view currentWorkspaceId,
+                                                    bool currentWorkspaceNeedsSave);
+    LoadedWorkspaceOpenExecutionState LoadWorkspaceOpenExecutionState(std::wstring_view workspaceId,
+                                                                      bool openInNewWindow,
+                                                                      std::wstring_view currentWorkspaceId,
+                                                                      bool currentWorkspaceNeedsSave,
+                                                                      bool hasTabsToReplace);
+    std::optional<Workspace> LoadWorkspaceDefinition(std::wstring_view workspaceId);
+    std::optional<Workspace> LoadResolvedWorkspaceDefinition(std::wstring_view currentWorkspaceId,
+                                                             const std::optional<Workspace>& selectedWorkspace);
+    std::optional<WorkspaceNode> LoadResolvedWorkspaceNode(std::wstring_view currentWorkspaceId,
+                                                           const std::optional<Workspace>& selectedWorkspace,
+                                                           std::wstring_view nodeId);
+    WorkspaceCurrentState LoadCurrentWorkspaceState(std::wstring_view currentWorkspaceId,
+                                                    std::wstring_view defaultDisplayName,
+                                                    std::wstring_view unsavedTabRowName);
+    WorkspaceStartupState LoadWorkspaceStartupState(std::wstring_view workspaceId);
     WorkspaceRuntimeMetadata InferWorkspaceRuntimeMetadataFromProfile(std::wstring_view source);
     WorkspaceRuntimeMetadata InferWorkspaceRuntimeMetadataFromCommandline(std::wstring_view value);
     bool IsWorkspaceSshCommandline(std::wstring_view value);
@@ -362,10 +523,11 @@ namespace terminal::workspace
                                  std::wstring_view profileCommandline,
                                  std::wstring_view commandline);
     WorkspaceRuntimeLaunchState PrepareWorkspaceRuntimeLaunchState(std::wstring_view startingDirectory,
-                                                                   std::wstring_view profileSource,
-                                                                   std::wstring_view profileCommandline,
-                                                                   std::wstring_view commandline);
+                                                                  std::wstring_view profileSource,
+                                                                  std::wstring_view profileCommandline,
+                                                                  std::wstring_view commandline);
     WorkspaceNodeLaunchResolution ResolveWorkspaceNodeLaunchResolution(const WorkspaceNodeLaunchResolutionInput& input);
+    WorkspaceNodeLaunchResolution ResolveWorkspaceNodeLaunchResolution(const WorkspaceNodeLaunchResolutionPlanInput& input);
     std::wstring ResolveTrackedWorkspaceDirectory(const WorkspaceTrackedDirectoryInput& input);
     bool IsWorkspaceDirty(const Workspace& capturedWorkspace,
                           std::wstring_view currentWorkspaceId,
@@ -395,11 +557,15 @@ namespace terminal::workspace
     WorkspaceOpenExecutionPlan ResolveWorkspaceOpenExecutionPlan(const WorkspaceOpenPlan& openPlan,
                                                                  bool hasStartupActions,
                                                                  bool hasTabsToReplace);
+    WorkspaceNodeRuntimeStatePlan PrepareWorkspaceNodeRuntimeState(const WorkspaceNodeRuntimeRegistrationInput& input);
     WorkspaceSshStartupPlan PrepareSshStartupPlan(std::wstring_view pendingStartupAction,
                                                   std::wstring_view startingDirectory,
                                                   std::wstring_view operatingSystem,
                                                   std::wstring_view shellType,
                                                   const std::optional<WorkspaceNode>& workspaceNode);
+    WorkspaceCapturedNodeInput BuildWorkspaceCapturedNodeInput(const WorkspaceCapturedNodePlanInput& input);
+    WorkspaceNode BuildWorkspaceCapturedNode(const WorkspaceCapturedNodePlanInput& input);
+    WorkspaceNode BuildWorkspaceCapturedNode(const WorkspaceCapturedNodeInput& input);
     WorkspaceNode BuildWorkspaceCapturedNode(const WorkspaceLiveTabCaptureState& state);
     std::optional<size_t> ResolveWorkspaceBackedTabIndex(const std::optional<Workspace>& workspaceDefinition,
                                                          const std::vector<WorkspaceLiveTabSnapshot>& tabs,
@@ -410,12 +576,42 @@ namespace terminal::workspace
     std::optional<size_t> FindWorkspaceBackedTabSnapshotIndex(const std::optional<Workspace>& workspaceDefinition,
                                                               const std::vector<WorkspaceLiveTabSnapshot>& tabs,
                                                               size_t nodeIndex);
+    bool IsWorkspaceLocked(std::wstring_view workspaceId);
     bool SetWorkspaceLocked(WorkspaceManager& manager, std::wstring_view workspaceId, bool locked);
     bool SetWorkspaceNodeInputVisibility(WorkspaceManager& manager, std::wstring_view workspaceId, size_t nodeIndex, bool showInputPanel);
+    bool PersistWorkspaceLockedState(std::wstring_view workspaceId, bool locked);
     bool RemoveWorkspaceDefinition(WorkspaceManager& manager, std::wstring_view workspaceId, size_t* removedWorkspaceIndex = nullptr);
     WorkspaceNodeMutationResult RemoveWorkspaceNode(WorkspaceManager& manager, std::wstring_view workspaceId, std::wstring_view nodeId);
     void FinalizeWorkspaceManagerNames(WorkspaceManager& manager);
     std::optional<std::wstring> RenameWorkspace(WorkspaceManager& manager, std::wstring_view workspaceId, std::wstring_view newName);
+    std::optional<uint64_t> FindPersistedOpenWorkspaceWindowId(std::wstring_view workspaceId);
+    std::optional<PersistedWorkspaceRename> PersistWorkspaceRename(std::wstring_view workspaceId, std::wstring_view newName);
+    std::optional<PersistedWorkspaceEditorSave> PersistWorkspaceEditorState(const WorkspaceManager& editorManager,
+                                                                            std::wstring_view currentWorkspaceId,
+                                                                            std::wstring_view lastOpenedWorkspaceId,
+                                                                            size_t fallbackSelectedWorkspaceIndex);
+    WorkspaceCurrentIdChangePlan PrepareWorkspaceCurrentIdChange(std::wstring_view previousWorkspaceId,
+                                                                 std::wstring_view nextWorkspaceId,
+                                                                 std::wstring_view lastWorkspaceId,
+                                                                 std::wstring_view currentBaselineWorkspaceId);
+    WorkspaceWindowRefreshPlan PrepareWorkspaceWindowRefresh(std::uint64_t windowId,
+                                                             std::wstring_view currentWorkspaceId);
+    WorkspaceWindowRefreshPlan RefreshWorkspaceWindowState(std::uint64_t windowId,
+                                                           std::wstring_view currentWorkspaceId);
+    std::optional<WorkspaceEditorDefinitionAddResult> AddWorkspaceDefinition(WorkspaceManager& manager,
+                                                                             std::wstring_view generatedName,
+                                                                             std::optional<size_t> templateIndex);
+    WorkspaceEditorNodeAddResult AddWorkspaceNode(WorkspaceManager& manager,
+                                                  size_t workspaceIndex,
+                                                  std::wstring_view generatedName,
+                                                  std::wstring_view defaultProfileGuid,
+                                                  std::wstring_view defaultProfileName);
+    std::optional<WorkspaceManager> PersistWorkspaceNodeInputVisibility(const WorkspaceManager& preferredManager,
+                                                                        std::wstring_view workspaceId,
+                                                                        size_t nodeIndex,
+                                                                        bool showInputPanel);
+    std::optional<WorkspaceManager> PersistWorkspaceNodeOrder(std::wstring_view workspaceId,
+                                                              const std::vector<std::wstring>& orderedNodeIds);
     std::wstring ResolveWorkspaceSaveTargetId(std::wstring_view currentWorkspaceId, std::wstring_view lastWorkspaceId, const WorkspaceManager& manager);
     std::wstring ResolveWorkspaceSaveTargetName(std::wstring_view currentWorkspaceId, std::wstring_view lastWorkspaceId, const WorkspaceManager& manager);
     std::wstring SuggestWorkspaceSaveName(std::wstring_view resolvedTargetName,
@@ -430,6 +626,10 @@ namespace terminal::workspace
         static std::filesystem::path DefaultPath();
         static WorkspaceStateManager Load();
         static WorkspaceStateManager LoadFromPath(const std::filesystem::path& path);
+        static WorkspaceStateManager LoadRuntime();
+        static uint64_t RuntimeHeartbeatIntervalMs() noexcept;
+        static bool RemoveRuntimeWindowState(uint64_t windowId);
+        static bool RefreshRuntimeWindowState(uint64_t windowId, std::wstring_view windowName, std::wstring_view workspaceId);
 
         bool Save() const;
         bool SaveToPath(const std::filesystem::path& path) const;
@@ -439,6 +639,7 @@ namespace terminal::workspace
         void UpsertWindow(WorkspaceStateWindow window);
         void RemoveWindow(uint64_t windowId) noexcept;
         void UpdateWindowState(uint64_t windowId, std::wstring_view windowName, std::wstring_view workspaceId);
+        bool HasOpenWorkspace(std::wstring_view workspaceId) const noexcept;
         std::optional<uint64_t> FindOpenWorkspaceWindowId(std::wstring_view workspaceId) const noexcept;
 
     protected:

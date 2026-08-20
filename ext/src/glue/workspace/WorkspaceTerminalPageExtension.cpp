@@ -1,9 +1,9 @@
-// Copyright (c) Microsoft Corporation.
-// Licensed under the MIT license.
+// Copyright (c) Tommy Yan <tommy.yxd@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-only
 
 #include "pch.h"
 #include "WorkspaceHostInterfaces.h"
-#include "WorkspaceHostBridge.h"
+#include "WorkspaceApi.h"
 #include "..\chat\TerminalInputHarness.h"
 #include "TerminalPageWorkspaceTypes.h"
 #include "..\chat\WorkspaceChatController.h"
@@ -18,6 +18,7 @@ namespace terminal::workspace
 {
     namespace
     {
+        // This TU owns the workspace terminal glue include chain, status writes, and process-based diagnostics.
         void _logWorkspaceChatControllerSubmit(const terminal::workspacechat::ChatMessageEntry& entry)
         {
             Json::Value payload{ Json::objectValue };
@@ -85,7 +86,7 @@ namespace terminal::workspace
 
         bool IsCurrentWorkspaceLocked() const override
         {
-            return ::terminal::workspace::IsWorkspaceLocked(_host.CurrentWorkspaceId().c_str());
+            return !_host.CurrentWorkspaceId().empty();
         }
 
         void OnPreparingStartupActions() override

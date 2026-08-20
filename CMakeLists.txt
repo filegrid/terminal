@@ -32,6 +32,14 @@ set(_workspace_root "${CMAKE_SOURCE_DIR}")
 set(_openconsole_root "${CMAKE_SOURCE_DIR}/microsoft")
 set(_portable_output_root "${_workspace_root}/bin")
 set(_portable_package_root "${_portable_output_root}/msix")
+set(_ext_version_file "${_workspace_root}/ext/VERSION")
+set(_ext_generated_root "${_workspace_root}/ext/generated")
+set(_ext_generated_version_header "${_ext_generated_root}/ExtBuildVersion.h")
+set(_ext_generate_version_script "${_workspace_root}/ext/tools/cmake/GenerateExtBuildVersion.cmake")
+
+if(NOT EXISTS "${_ext_version_file}")
+    file(WRITE "${_ext_version_file}" "0.0.1\n")
+endif()
 
 file(TO_NATIVE_PATH "${_workspace_root}" _workspace_root_native)
 file(TO_NATIVE_PATH "${_openconsole_root}" _openconsole_root_native)
@@ -177,6 +185,23 @@ set(_workspace_extension_release_root "${_openconsole_root}/bin/${PORTABLE_PLATF
 
 file(GLOB _workspace_extension_vcpkg_libs "${_workspace_extension_vcpkg_lib_root}/*.lib")
 
+add_custom_command(
+    OUTPUT "${_ext_generated_version_header}"
+    COMMAND ${CMAKE_COMMAND}
+        -DINPUT_FILE=${_ext_version_file}
+        -DOUTPUT_FILE=${_ext_generated_version_header}
+        -P "${_ext_generate_version_script}"
+    DEPENDS
+        "${_ext_version_file}"
+        "${_ext_generate_version_script}"
+    VERBATIM
+    COMMENT "Generating ext About version header from ${_ext_version_file}"
+)
+
+add_custom_target(ext-build-version
+    DEPENDS "${_ext_generated_version_header}"
+)
+
 add_library(${_workspace_extension_target} SHARED
     "${_workspace_root}/ext/src/glue/workspace/WorkspaceTerminalPageExtension.cpp"
     "${_workspace_root}/ext/src/glue/workspace/dll/WorkspaceModelWrapper.cpp"
@@ -188,6 +213,13 @@ add_library(${_workspace_extension_target} SHARED
     "${_workspace_root}/ext/src/glue/chat/WorkspaceDiagnosticLog.cpp"
     "${_workspace_root}/ext/src/core/chat/WorkspaceChatStore.cpp"
     "${_workspace_root}/ext/src/core/chat/WorkspaceStoragePaths.cpp"
+)
+
+set_source_files_properties(
+    "${_workspace_root}/ext/src/glue/workspace/dll/WorkspaceModelWrapper.cpp"
+    PROPERTIES
+        OBJECT_DEPENDS
+            "${_workspace_root}/ext/src/glue/workspace/WorkspaceApi.h;${_workspace_root}/ext/src/glue/workspace/WorkspaceDataTypes.h;${_workspace_root}/ext/src/glue/workspace/WorkspaceRuntimeTypes.h;${_workspace_root}/ext/src/glue/workspace/WorkspaceEditorTypes.h;${_workspace_root}/ext/src/glue/workspace/WorkspaceModel.cpp;${_workspace_root}/ext/src/core/workspace/WorkspaceCore.cpp;${_workspace_root}/ext/src/core/workspace/WorkspaceCoreManagerStorage.cpp;${_workspace_root}/ext/src/core/workspace/WorkspaceCoreNavigation.cpp;${_workspace_root}/ext/src/core/workspace/WorkspaceCoreEditor.cpp;${_workspace_root}/ext/src/core/workspace/WorkspaceCoreEditorState.cpp;${_workspace_root}/ext/src/core/workspace/WorkspaceCoreLaunch.cpp;${_workspace_root}/ext/src/core/workspace/WorkspaceCorePersistence.cpp;${_workspace_root}/ext/src/core/workspace/WorkspaceCoreRuntime.cpp;${_workspace_root}/ext/src/core/workspace/WorkspaceCoreRuntimeOps.cpp;${_workspace_root}/ext/src/core/workspace/WorkspaceCoreStateManager.cpp;${_workspace_root}/ext/src/core/workspace/deprecated/WorkspaceCaptureDeprecated.cpp;${_workspace_root}/ext/src/glue/workspace/WorkspacePaletteHelpers.cpp;${_workspace_root}/ext/src/glue/workspace/WorkspaceFacadeConversionHelpers.cpp;${_workspace_root}/ext/src/glue/workspace/WorkspaceFacadeEditorStateMethods.cpp;${_workspace_root}/ext/src/glue/workspace/WorkspaceFacadeStartupMethods.cpp;${_workspace_root}/ext/src/glue/workspace/WorkspaceFacadePersistenceMethods.cpp;${_workspace_root}/ext/src/glue/workspace/WorkspaceFacadeMethods.cpp;${_workspace_root}/ext/src/glue/workspace/WorkspaceUtilityHelpers.cpp;${_workspace_root}/ext/src/glue/workspace/WorkspaceStartupColorLogic.cpp;${_workspace_root}/ext/src/glue/workspace/WorkspaceTerminalPageLegacyGlue.cpp;${_workspace_root}/ext/src/glue/workspace/TerminalPageWorkspacePrelude.cpp;${_workspace_root}/ext/src/glue/workspace/TerminalPageWorkspaceGlue.cpp;${_workspace_root}/ext/src/glue/workspace/WorkspaceTerminalGlue.cpp;${_workspace_root}/ext/src/glue/workspace/WorkspaceUiStateGlue.cpp;${_workspace_root}/ext/src/glue/workspace/WorkspaceSaveRuntimeGlue.cpp;${_workspace_root}/ext/src/glue/workspace/WorkspaceEditorGlue.cpp;${_workspace_root}/ext/src/glue/workspace/WorkspaceManagerIconPickerGlue.cpp;${_workspace_root}/ext/src/glue/workspace/WorkspaceManagerEditorPanels.cpp;${_workspace_root}/ext/src/glue/workspace/WorkspaceManagerContentGlue.cpp;${_workspace_root}/ext/src/glue/workspace/WorkspaceSaverGlue.cpp;${_workspace_root}/ext/src/glue/workspace/WorkspaceLaunchRuntimeGlue.cpp;${_workspace_root}/ext/src/glue/workspace/WorkspaceCreateGlue.cpp;${_workspace_root}/ext/src/core/chat/WorkspaceChatTextHelpers.cpp;${_workspace_root}/ext/src/glue/chat/WorkspaceChatDispatchGlue.cpp;${_workspace_root}/ext/src/glue/chat/WorkspaceChatTerminalGlue.cpp;${_workspace_root}/ext/src/glue/chat/WorkspaceChatTopLevelHelpers.cpp"
 )
 
 target_compile_features(${_workspace_extension_target} PRIVATE cxx_std_20)
@@ -259,7 +291,7 @@ target_compile_options(${_workspace_extension_target} PRIVATE
     /diagnostics:column
     /sdl
     /MP
-    /O2
+    "$<$<NOT:$<CONFIG:Debug>>:/O2>"
     /Oi
     /Oy-
     /Zc:preprocessor
@@ -449,7 +481,9 @@ add_custom_target(full
         --csc-path "${_roslyn_csc_path_native}"
         --single-file-output
         --portable-mode
-    DEPENDS ${_workspace_extension_target}
+    DEPENDS
+        ext-build-version
+        ${_workspace_extension_target}
     USES_TERMINAL
     VERBATIM
     COMMENT "Packaging final bin artifacts into ${_portable_output_root} from a full rebuild"

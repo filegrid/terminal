@@ -412,11 +412,11 @@ namespace SettingsModelUnitTests
         const auto terminalArgs = newTabArgs.ContentArgs().try_as<NewTerminalArgs>();
         VERIFY_IS_NOT_NULL(terminalArgs);
         VERIFY_IS_TRUE(std::wstring{ terminalArgs.Profile() } == Utils::GuidToString(profile.Guid()));
-        VERIFY_IS_TRUE(std::wstring{ terminalArgs.StartingDirectory() } == L"/app");
+        VERIFY_IS_TRUE(std::wstring{ terminalArgs.StartingDirectory() }.empty());
 
         const auto sendInputArgs = actions.at(1).Args().try_as<SendInputArgs>();
         VERIFY_IS_NOT_NULL(sendInputArgs);
-        VERIFY_IS_TRUE(std::wstring{ sendInputArgs.Input() } == L"pwd\r");
+        VERIFY_IS_TRUE(std::wstring{ sendInputArgs.Input() } == L"cd \"/app\"\rpwd\r");
     }
 
     void WorkspaceTests::BuildWorkspaceStartupActionsForWindowsPwshAliasNode()

@@ -332,21 +332,6 @@
         return std::nullopt;
     }
 
-    static constexpr std::array<std::wstring_view, 12> _workspaceColorPalette{
-        L"#C50F1F",
-        L"#0063B1",
-        L"#0F7B0F",
-        L"#CA5010",
-        L"#8E562E",
-        L"#744DA9",
-        L"#038387",
-        L"#881798",
-        L"#498205",
-        L"#515C6B",
-        L"#567C73",
-        L"#7A7574",
-    };
-
     bool _isHexDigit(const wchar_t ch) noexcept
     {
         return (ch >= L'0' && ch <= L'9') ||
@@ -405,15 +390,7 @@
             }
         }
 
-        for (const auto color : _workspaceColorPalette)
-        {
-            if (!usedColors.contains(std::wstring{ color }))
-            {
-                return std::wstring{ color };
-            }
-        }
-
-        return std::wstring{ _workspaceColorPalette[workspaces.size() % _workspaceColorPalette.size()] };
+        return PickWorkspacePaletteColor(usedColors, workspaces.size());
     }
 
     winrt::Windows::UI::Color _workspaceForegroundColor(const winrt::Windows::UI::Color& color)

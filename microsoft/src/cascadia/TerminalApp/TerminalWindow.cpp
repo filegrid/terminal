@@ -6,6 +6,7 @@
 
 #include "AppLogic.h"
 #include "..\..\..\..\ext\src\glue\workspace\WorkspaceHostBridge.h"
+#include "..\..\..\..\ext\src\glue\chat\WorkspaceDiagnosticLog.h"
 
 #include <til/env.h>
 
@@ -182,6 +183,13 @@ namespace winrt::TerminalApp::implementation
             {
                 _initialWorkspaceId = winrt::hstring{ windowName.substr(workspaceWindowPrefix.size()) };
             }
+            {
+                Json::Value payload{ Json::objectValue };
+                terminal::workspacechat::AddOptionalDiagnosticString(payload, "windowName", windowName);
+                terminal::workspacechat::AddOptionalDiagnosticString(payload, "initialWorkspaceId", _initialWorkspaceId.c_str());
+                payload["startupActionCount"] = Json::UInt64{ gsl::narrow_cast<uint64_t>(_initialContentArgs.size()) };
+                std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_terminal_window_startup_content", payload);
+            }
             _root->SetStartupActions(std::move(_initialContentArgs), _initialWorkspaceId);
         }
         else if (const auto& layout = LoadPersistedLayout())
@@ -233,6 +241,9 @@ namespace winrt::TerminalApp::implementation
 
         if (!_initialWorkspaceId.empty())
         {
+            Json::Value payload{ Json::objectValue };
+            terminal::workspacechat::AddOptionalDiagnosticString(payload, "initialWorkspaceId", _initialWorkspaceId.c_str());
+            std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_terminal_window_current_id", payload);
             _root->CurrentWorkspaceId(_initialWorkspaceId);
         }
         else

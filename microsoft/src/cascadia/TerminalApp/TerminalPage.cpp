@@ -2203,6 +2203,8 @@ namespace winrt::TerminalApp::implementation
         {
             IdentifyWindow();
         }
+
+        RefreshWorkspaceWindowState();
     }
 
     WUX::Controls::MenuFlyout TerminalPage::_CreateRunAsAdminFlyout(int profileIndex)

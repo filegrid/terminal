@@ -7,9 +7,12 @@
         WT_WORKSPACE_EXT_API void _NormalizeWorkspacePersistableNames(winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace& workspace) const;
         WT_WORKSPACE_EXT_API void _SetCurrentWorkspaceSaveBaseline(const winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace& workspace);
         WT_WORKSPACE_EXT_API void _RefreshCurrentWorkspaceSaveBaseline();
+        WT_WORKSPACE_EXT_API winrt::Microsoft::Terminal::Settings::Model::implementation::WorkspaceSaveTargetState _LoadWorkspaceSaveTargetStateSnapshot() const;
         WT_WORKSPACE_EXT_API std::wstring _ResolvedWorkspaceSaveTargetId() const;
         WT_WORKSPACE_EXT_API std::wstring _ResolvedWorkspaceSaveTargetName() const;
         WT_WORKSPACE_EXT_API bool _TryCaptureCurrentWorkspace(winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace& workspace) const;
+        WT_WORKSPACE_EXT_API std::optional<winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace> _SelectedCurrentWorkspaceForEditing() const;
+        WT_WORKSPACE_EXT_API std::vector<winrt::Microsoft::Terminal::Settings::Model::implementation::WorkspaceLiveTabSnapshot> _BuildWorkspaceLiveTabSnapshots(const winrt::com_ptr<Tab>& targetTab, size_t* targetTabIndex = nullptr) const;
         WT_WORKSPACE_EXT_API std::optional<size_t> _GetWorkspaceBackedTabNodeIndex(const winrt::com_ptr<Tab>& tab) const;
         WT_WORKSPACE_EXT_API winrt::com_ptr<Tab> _GetWorkspaceBackedTabByNodeIndex(size_t nodeIndex) const;
         WT_WORKSPACE_EXT_API void _ApplyWorkspaceNodeInputVisibility(size_t nodeIndex, bool showInputPanel);
@@ -20,7 +23,31 @@
         WT_WORKSPACE_EXT_API void _RemoveWorkspaceManagedTabsForLockedState();
         WT_WORKSPACE_EXT_API void _SetCurrentWorkspaceLocked(bool locked);
         WT_WORKSPACE_EXT_API void _LoadWorkspaceEditorState(bool preserveSelection = true);
+        WT_WORKSPACE_EXT_API void _ApplyWorkspaceEditorState(const winrt::Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager& manager,
+                                                             size_t selectedWorkspaceIndex,
+                                                             std::optional<int32_t> navSelection = std::nullopt);
+        WT_WORKSPACE_EXT_API winrt::Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager _LoadWorkspaceEditorMutationManager() const;
+        WT_WORKSPACE_EXT_API bool _TryPersistWorkspaceEditorMutation(winrt::Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager& manager);
+        WT_WORKSPACE_EXT_API std::optional<winrt::Microsoft::Terminal::Settings::Model::implementation::WorkspaceEditorDefinitionRemovalPlan> _PrepareWorkspaceDefinitionRemovalPlan(winrt::Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager& manager,
+                                                                                                                                                                                    std::wstring_view workspaceId) const;
+        WT_WORKSPACE_EXT_API winrt::Microsoft::Terminal::Settings::Model::implementation::WorkspaceEditorNodeRemovalPlan _PrepareWorkspaceNodeRemovalPlan(winrt::Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager& manager,
+                                                                                                                                                           std::wstring_view workspaceId,
+                                                                                                                                                           std::wstring_view nodeId) const;
+        WT_WORKSPACE_EXT_API void _FinalizeWorkspaceEditorMutationUi(bool removedCurrentWorkspace);
         WT_WORKSPACE_EXT_API void _RebuildWorkspaceManagerTab();
+        WT_WORKSPACE_EXT_API int32_t _WorkspaceManagerWorkspaceNavSelection(size_t workspaceIndex) const;
+        WT_WORKSPACE_EXT_API int32_t _WorkspaceManagerWorkspaceNodeNavSelection(size_t workspaceIndex, size_t nodeIndex) const;
+        WT_WORKSPACE_EXT_API int32_t _WorkspaceManagerEditorNavSelection() const;
+        WT_WORKSPACE_EXT_API void _ApplyWorkspaceManagerNavSelection(int32_t navSelection, bool rebuild = true);
+        WT_WORKSPACE_EXT_API void _ApplyWorkspaceManagerWorkspaceIconSelection(std::wstring_view iconValue);
+        WT_WORKSPACE_EXT_API void _ApplyWorkspaceManagerNodeIconSelection(size_t nodeIndex, std::wstring_view iconValue);
+        WT_WORKSPACE_EXT_API safe_void_coroutine _ShowWorkspaceManagerWorkspaceIconPicker();
+        WT_WORKSPACE_EXT_API safe_void_coroutine _ShowWorkspaceManagerNodeIconPicker(size_t nodeIndex);
+        WT_WORKSPACE_EXT_API void _AppendWorkspaceManagerWorkspaceEditorContent(const winrt::Windows::UI::Xaml::Controls::StackPanel& root,
+                                                                                const winrt::Windows::UI::Xaml::ResourceDictionary& workspaceResources);
+        WT_WORKSPACE_EXT_API void _AppendWorkspaceManagerNodeEditorContent(const winrt::Windows::UI::Xaml::Controls::StackPanel& root,
+                                                                           size_t nodeIndex,
+                                                                           const winrt::Windows::UI::Xaml::ResourceDictionary& workspaceResources);
         WT_WORKSPACE_EXT_API void _AddWorkspaceDefinition(std::optional<size_t> templateIndex = std::nullopt);
         WT_WORKSPACE_EXT_API void _DeleteSelectedWorkspaceDefinition();
         WT_WORKSPACE_EXT_API void _AddWorkspaceNode();
@@ -31,12 +58,16 @@
         WT_WORKSPACE_EXT_API winrt::Windows::UI::Xaml::UIElement _BuildWorkspaceManagerContent();
         WT_WORKSPACE_EXT_API winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace* _SelectedWorkspaceForEditing() noexcept;
         WT_WORKSPACE_EXT_API const winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace* _SelectedWorkspaceForEditing() const noexcept;
+        WT_WORKSPACE_EXT_API winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace* _SelectedCurrentWorkspaceForEditingPtr() noexcept;
+        WT_WORKSPACE_EXT_API const winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace* _SelectedCurrentWorkspaceForEditingPtr() const noexcept;
         WT_WORKSPACE_EXT_API std::wstring _SelectedWorkspaceId() const;
         WT_WORKSPACE_EXT_API std::wstring _WorkspaceDisplayName(const winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace& workspace) const;
+        WT_WORKSPACE_EXT_API winrt::Microsoft::Terminal::Settings::Model::implementation::WorkspaceCurrentState _LoadCurrentWorkspaceStateSnapshot() const;
         WT_WORKSPACE_EXT_API std::wstring _CurrentWorkspaceDisplayName() const;
         WT_WORKSPACE_EXT_API std::wstring _CurrentWorkspaceTabRowName() const;
         WT_WORKSPACE_EXT_API std::optional<winrt::Windows::UI::Color> _CurrentWorkspaceColor() const;
         WT_WORKSPACE_EXT_API std::optional<uint64_t> _FindOpenWorkspaceWindowId(std::wstring_view workspaceId) const;
+        WT_WORKSPACE_EXT_API void _RefreshWorkspaceChrome();
         WT_WORKSPACE_EXT_API void _UpdateWorkspaceInteractionState();
         WT_WORKSPACE_EXT_API winrt::Microsoft::Terminal::Settings::Model::TabCloseButtonVisibility _CurrentTabCloseButtonVisibility() const;
         WT_WORKSPACE_EXT_API bool _WorkspaceMiddleClickHookEnabled(winrt::Microsoft::Terminal::Settings::Model::TabCloseButtonVisibility visibility) const;

@@ -63,6 +63,13 @@
     </ClCompile>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="AppHost.cpp" />
+    <ClCompile Include="..\..\..\..\ext\src\glue\chat\WorkspaceDiagnosticLog.cpp" />
+    <ClCompile Include="..\..\..\..\ext\src\core\chat\WorkspaceChatTextHelpers.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\..\..\ext\src\core\chat\WorkspaceStoragePaths.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="IslandWindow.cpp" />
     <ClCompile Include="NonClientIslandWindow.cpp" />
     <ClCompile Include="VirtualDesktopUtils.cpp" />

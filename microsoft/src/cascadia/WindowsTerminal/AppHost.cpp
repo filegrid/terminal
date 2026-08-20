@@ -11,6 +11,7 @@
 #include "VirtualDesktopUtils.h"
 #include "WindowEmperor.h"
 #include "../types/inc/utils.hpp"
+#include "../../../../ext/src/glue/chat/WorkspaceDiagnosticLog.h"
 
 using namespace winrt::Windows::UI;
 using namespace winrt::Windows::UI::Composition;
@@ -134,12 +135,23 @@ void AppHost::_HandleCommandlineArgs(const winrt::TerminalApp::WindowRequestedAr
 
     if (const auto content = windowArgs.Content(); !content.empty())
     {
+        Json::Value payload{ Json::objectValue };
+        terminal::workspacechat::AddOptionalDiagnosticString(payload, "windowName", windowArgs.WindowName().c_str());
+        payload["windowId"] = Json::UInt64{ windowArgs.Id() };
+        payload["hasContent"] = true;
+        payload["contentLength"] = Json::UInt64{ gsl::narrow_cast<uint64_t>(content.size()) };
+        std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_apphost_handle_args", payload);
         _windowLogic.SetStartupContent(content, windowArgs.InitialBounds());
         _launchShowWindowCommand = SW_NORMAL;
     }
     else
     {
         const auto args = windowArgs.Command();
+        Json::Value payload{ Json::objectValue };
+        terminal::workspacechat::AddOptionalDiagnosticString(payload, "windowName", windowArgs.WindowName().c_str());
+        payload["windowId"] = Json::UInt64{ windowArgs.Id() };
+        payload["hasContent"] = false;
+        std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_apphost_handle_args", payload);
         _windowLogic.SetStartupCommandline(args);
         _launchShowWindowCommand = args.ShowWindowCommand();
     }
@@ -1447,6 +1459,16 @@ void AppHost::_handleMoveContent(const winrt::Windows::Foundation::IInspectable&
     {
         target = _windowManager->GetWindowByName(windowName);
         sanitizedWindowName = windowName;
+    }
+
+    {
+        Json::Value payload{ Json::objectValue };
+        terminal::workspacechat::AddOptionalDiagnosticString(payload, "requestedWindowName", windowName.c_str());
+        terminal::workspacechat::AddOptionalDiagnosticString(payload, "sanitizedWindowName", sanitizedWindowName.c_str());
+        payload["tabIndex"] = Json::UInt64{ args.TabIndex() };
+        payload["targetFound"] = target != nullptr;
+        payload["contentLength"] = Json::UInt64{ gsl::narrow_cast<uint64_t>(args.Content().size()) };
+        std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_apphost_move_content", payload);
     }
 
     if (target)

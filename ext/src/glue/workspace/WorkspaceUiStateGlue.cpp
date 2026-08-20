@@ -179,7 +179,7 @@
 
     void TerminalPage::_PreparePendingWorkspaceNodeIds(const Workspace& workspace)
     {
-        const auto startupState = Microsoft::Terminal::Settings::Model::implementation::ResolveWorkspaceStartupState(workspace, _settings);
+        const auto startupState = ::terminal::workspace::ResolveWorkspaceStartupState(workspace, _settings);
         _workspaceExtension->ReplacePendingWorkspaceNodeIds(std::move(startupState.PendingNodeIds));
     }
 
@@ -250,8 +250,8 @@
 
     void TerminalPage::_ApplyWorkspaceNodeTitlePolicy(const size_t nodeIndex)
     {
-        const auto* workspace = _SelectedWorkspaceForEditing();
-        if (!workspace || workspace->Id != _currentWorkspaceId.c_str() || nodeIndex >= workspace->Nodes.size())
+        const auto* workspace = _SelectedCurrentWorkspaceForEditingPtr();
+        if (!workspace || nodeIndex >= workspace->Nodes.size())
         {
             return;
         }

@@ -155,51 +155,43 @@
                 const auto profileSource = profile ? std::wstring{ profile.Source().c_str() } : std::wstring{};
                 const auto profileCommandline = profile ? std::wstring{ profile.Commandline().c_str() } : std::wstring{};
                 const auto commandline = std::wstring{ terminalArgs->Commandline().c_str() };
-                Microsoft::Terminal::Settings::Model::implementation::WorkspaceNodeLaunchResolutionInput resolutionInput;
-                resolutionInput.PersistedNode = existingNode;
-                resolutionInput.ProfileSource = profileSource;
-                resolutionInput.ProfileCommandline = profileCommandline;
-                resolutionInput.TerminalCommandline = commandline;
-                resolutionInput.TerminalStartingDirectory = terminalArgs->StartingDirectory().c_str();
+                Microsoft::Terminal::Settings::Model::implementation::WorkspaceCapturedNodePlanInput capturePlanInput;
+                capturePlanInput.PersistedNode = existingNode;
+                capturePlanInput.ProfileSource = profileSource;
+                capturePlanInput.ProfileCommandline = profileCommandline;
+                capturePlanInput.TerminalCommandline = commandline;
+                capturePlanInput.TerminalStartingDirectory = terminalArgs->StartingDirectory().c_str();
                 if (const auto control = tabImpl->GetActiveTerminalControl())
                 {
                     if (const auto captureState = _workspaceExtension->FindWorkspaceChatTerminalState(_WorkspaceChatStateKey(control)))
                     {
-                        resolutionInput.ObservedStartupAction = terminal::workspacechat::ResolveCapturedStartupAction(*captureState);
-                        resolutionInput.ObservedWorkingDirectory = terminal::workspacechat::ResolveCapturedWorkingDirectory(*captureState);
-                        resolutionInput.ObservedOperatingSystem = terminal::workspacechat::ResolveCapturedOperatingSystem(*captureState);
-                        resolutionInput.ObservedShellType = terminal::workspacechat::ResolveCapturedShellType(*captureState);
+                        capturePlanInput.ObservedStartupAction = terminal::workspacechat::ResolveCapturedStartupAction(*captureState);
+                        capturePlanInput.ObservedWorkingDirectory = terminal::workspacechat::ResolveCapturedWorkingDirectory(*captureState);
+                        capturePlanInput.ObservedOperatingSystem = terminal::workspacechat::ResolveCapturedOperatingSystem(*captureState);
+                        capturePlanInput.ObservedShellType = terminal::workspacechat::ResolveCapturedShellType(*captureState);
                     }
-
-                    if (resolutionInput.ObservedWorkingDirectory.empty())
-                    {
-                        resolutionInput.ObservedWorkingDirectory = _ResolveTrackedTerminalWorkingDirectory(control);
-                    }
+                    capturePlanInput.TrackedWorkingDirectory = _ResolveTrackedTerminalWorkingDirectory(control);
                 }
                 if (const auto runtimeState = _FindWorkspaceNodeRuntimeState(tabImpl))
                 {
-                    resolutionInput.RuntimeStartupAction = runtimeState->StartupAction;
-                    resolutionInput.RuntimeExplicitCommandline = runtimeState->ExplicitCommandline;
-                    resolutionInput.RuntimeStartingDirectory = runtimeState->StartingDirectory;
-                    resolutionInput.RuntimeOperatingSystem = runtimeState->OperatingSystem;
-                    resolutionInput.RuntimeShellType = runtimeState->ShellType;
+                    capturePlanInput.RuntimeStartupAction = runtimeState->StartupAction;
+                    capturePlanInput.RuntimeExplicitCommandline = runtimeState->ExplicitCommandline;
+                    capturePlanInput.RuntimeStartingDirectory = runtimeState->StartingDirectory;
+                    capturePlanInput.RuntimeOperatingSystem = runtimeState->OperatingSystem;
+                    capturePlanInput.RuntimeShellType = runtimeState->ShellType;
                 }
 
-                const auto resolution = Microsoft::Terminal::Settings::Model::implementation::ResolveWorkspaceNodeLaunchResolution(resolutionInput);
-                Microsoft::Terminal::Settings::Model::implementation::WorkspaceLiveTabCaptureState captureState;
-                captureState.PersistedNode = existingNode;
-                captureState.LiveTabTitle = tabImpl->Title().c_str();
-                captureState.StartupTabTitle = terminalArgs->TabTitle().c_str();
-                captureState.GeneratedNodeName = RS_fmt(L"WorkspaceEditor_NodeGeneratedName", nodeIndex + 1).c_str();
-                captureState.ProfileGuid = terminalArgs->Profile().empty() ? ::Microsoft::Console::Utils::GuidToString(_settings.GlobalSettings().DefaultProfile()) : terminalArgs->Profile().c_str();
-                captureState.ProfileName = profile ? std::wstring{ (profile.Name().empty() ? profile.Source() : profile.Name()).c_str() } : std::wstring{};
-                captureState.LaunchResolution = resolution;
-                captureState.ShowInputPanel = tabImpl->ShowWorkspaceInputPanel();
+                capturePlanInput.LiveTabTitle = tabImpl->Title().c_str();
+                capturePlanInput.StartupTabTitle = terminalArgs->TabTitle().c_str();
+                capturePlanInput.GeneratedNodeName = RS_fmt(L"WorkspaceEditor_NodeGeneratedName", nodeIndex + 1).c_str();
+                capturePlanInput.ProfileGuid = terminalArgs->Profile().empty() ? ::Microsoft::Console::Utils::GuidToString(_settings.GlobalSettings().DefaultProfile()) : terminalArgs->Profile().c_str();
+                capturePlanInput.ProfileName = profile ? std::wstring{ (profile.Name().empty() ? profile.Source() : profile.Name()).c_str() } : std::wstring{};
+                capturePlanInput.ShowInputPanel = tabImpl->ShowWorkspaceInputPanel();
                 if (const auto tabColor = tabImpl->GetTabColor())
                 {
-                    captureState.TabColor = _workspaceColorToString(*tabColor);
+                    capturePlanInput.TabColor = _workspaceColorToString(*tabColor);
                 }
-                node = Microsoft::Terminal::Settings::Model::implementation::BuildWorkspaceCapturedNode(captureState);
+                node = Microsoft::Terminal::Settings::Model::implementation::BuildWorkspaceCapturedNode(capturePlanInput);
                 capturedNodes.emplace_back(std::move(node));
                 ++nodeIndex;
             }
@@ -215,25 +207,21 @@
         return false;
     }
 
-    std::optional<size_t> TerminalPage::_GetWorkspaceBackedTabNodeIndex(const winrt::com_ptr<Tab>& tab) const
+    std::optional<Workspace> TerminalPage::_SelectedCurrentWorkspaceForEditing() const
     {
-        if (!tab)
+        if (const auto* workspace = _SelectedCurrentWorkspaceForEditingPtr())
         {
-            return std::nullopt;
+            return *workspace;
         }
 
-        const auto selectedWorkspace = [&]() -> std::optional<Workspace> {
-            if (const auto workspace = _SelectedWorkspaceForEditing();
-                workspace && workspace->Id == _currentWorkspaceId.c_str())
-            {
-                return *workspace;
-            }
-            return std::nullopt;
-        }();
-        const auto workspaceDefinition = ::terminal::workspace::LoadResolvedWorkspaceDefinition(_currentWorkspaceId.c_str(), selectedWorkspace);
+        return std::nullopt;
+    }
+
+    std::vector<Microsoft::Terminal::Settings::Model::implementation::WorkspaceLiveTabSnapshot> TerminalPage::_BuildWorkspaceLiveTabSnapshots(const winrt::com_ptr<Tab>& targetTab, size_t* targetTabIndex) const
+    {
         std::vector<Microsoft::Terminal::Settings::Model::implementation::WorkspaceLiveTabSnapshot> tabs;
         tabs.reserve(_tabs.Size());
-        size_t targetTabIndex = 0;
+
         bool foundTargetTab = false;
         for (const auto& candidate : _tabs)
         {
@@ -245,17 +233,37 @@
                 {
                     snapshot.RuntimeNodeId = state->WorkspaceNodeId;
                 }
-                if (tabImpl.get() == tab.get())
+                if (targetTabIndex && tabImpl.get() == targetTab.get())
                 {
-                    targetTabIndex = tabs.size();
+                    *targetTabIndex = tabs.size();
                     foundTargetTab = true;
                 }
             }
             tabs.emplace_back(std::move(snapshot));
         }
 
-        return foundTargetTab ? Microsoft::Terminal::Settings::Model::implementation::ResolveWorkspaceBackedTabIndex(workspaceDefinition, tabs, targetTabIndex) :
-                                std::nullopt;
+        if (targetTabIndex && !foundTargetTab)
+        {
+            *targetTabIndex = std::numeric_limits<size_t>::max();
+        }
+
+        return tabs;
+    }
+
+    std::optional<size_t> TerminalPage::_GetWorkspaceBackedTabNodeIndex(const winrt::com_ptr<Tab>& tab) const
+    {
+        if (!tab)
+        {
+            return std::nullopt;
+        }
+
+        size_t targetTabIndex = 0;
+        const auto selectedWorkspace = _SelectedCurrentWorkspaceForEditing();
+        const auto tabs = _BuildWorkspaceLiveTabSnapshots(tab, &targetTabIndex);
+
+        return targetTabIndex != std::numeric_limits<size_t>::max() ?
+                   ::terminal::workspace::LoadResolvedWorkspaceBackedTabIndex(_currentWorkspaceId.c_str(), selectedWorkspace, tabs, targetTabIndex) :
+                   std::nullopt;
     }
 
     const TerminalPage::WorkspaceNodeRuntimeState* TerminalPage::_FindWorkspaceNodeRuntimeState(const TermControl& control) const
@@ -305,40 +313,13 @@
             return std::nullopt;
         }
 
-        const auto selectedWorkspace = [&]() -> std::optional<Workspace> {
-            if (const auto workspace = _SelectedWorkspaceForEditing();
-                workspace && workspace->Id == _currentWorkspaceId.c_str())
-            {
-                return *workspace;
-            }
-            return std::nullopt;
-        }();
-        const auto workspaceDefinition = ::terminal::workspace::LoadResolvedWorkspaceDefinition(_currentWorkspaceId.c_str(), selectedWorkspace);
-        std::vector<Microsoft::Terminal::Settings::Model::implementation::WorkspaceLiveTabSnapshot> tabs;
-        tabs.reserve(_tabs.Size());
         size_t targetTabIndex = 0;
-        bool foundTargetTab = false;
-        for (const auto& candidate : _tabs)
-        {
-            Microsoft::Terminal::Settings::Model::implementation::WorkspaceLiveTabSnapshot snapshot;
-            if (const auto tabImpl = _GetTabImpl(candidate))
-            {
-                snapshot.LoadsWorkspaceNode = _BuildWorkspaceNodeArgs(tabImpl).has_value();
-                if (const auto state = _FindWorkspaceNodeRuntimeState(tabImpl))
-                {
-                    snapshot.RuntimeNodeId = state->WorkspaceNodeId;
-                }
-                if (tabImpl.get() == tab.get())
-                {
-                    targetTabIndex = tabs.size();
-                    foundTargetTab = true;
-                }
-            }
-            tabs.emplace_back(std::move(snapshot));
-        }
+        const auto selectedWorkspace = _SelectedCurrentWorkspaceForEditing();
+        const auto tabs = _BuildWorkspaceLiveTabSnapshots(tab, &targetTabIndex);
 
-        return foundTargetTab ? Microsoft::Terminal::Settings::Model::implementation::ResolveWorkspaceBackedTabNode(workspaceDefinition, tabs, targetTabIndex) :
-                                std::nullopt;
+        return targetTabIndex != std::numeric_limits<size_t>::max() ?
+                   ::terminal::workspace::LoadResolvedWorkspaceBackedTabNode(_currentWorkspaceId.c_str(), selectedWorkspace, tabs, targetTabIndex) :
+                   std::nullopt;
     }
 
     std::wstring TerminalPage::_ResolveLiveCurrentWorkspaceNodeId(const winrt::com_ptr<Tab>& tab) const
@@ -358,8 +339,8 @@
 
     winrt::com_ptr<Tab> TerminalPage::_GetWorkspaceBackedTabByNodeIndex(const size_t nodeIndex) const
     {
-        if (const auto* workspace = _SelectedWorkspaceForEditing();
-            workspace && workspace->Id == _currentWorkspaceId.c_str() && nodeIndex < workspace->Nodes.size())
+        if (const auto* workspace = _SelectedCurrentWorkspaceForEditingPtr();
+            workspace && nodeIndex < workspace->Nodes.size())
         {
             if (const auto tab = _GetCurrentWorkspaceTabByNodeId(workspace->Nodes.at(nodeIndex).Id))
             {
@@ -367,39 +348,23 @@
             }
         }
 
-        const auto selectedWorkspace = [&]() -> std::optional<Workspace> {
-            if (const auto workspace = _SelectedWorkspaceForEditing();
-                workspace && workspace->Id == _currentWorkspaceId.c_str())
-            {
-                return *workspace;
-            }
-            return std::nullopt;
-        }();
-        const auto workspaceDefinition = ::terminal::workspace::LoadResolvedWorkspaceDefinition(_currentWorkspaceId.c_str(), selectedWorkspace);
-        std::vector<Microsoft::Terminal::Settings::Model::implementation::WorkspaceLiveTabSnapshot> tabs;
-        tabs.reserve(_tabs.Size());
+        const auto selectedWorkspace = _SelectedCurrentWorkspaceForEditing();
+        const auto tabs = _BuildWorkspaceLiveTabSnapshots(nullptr);
         std::vector<winrt::com_ptr<Tab>> tabImpls;
         tabImpls.reserve(_tabs.Size());
         for (const auto& tab : _tabs)
         {
-            Microsoft::Terminal::Settings::Model::implementation::WorkspaceLiveTabSnapshot snapshot;
             if (const auto tabImpl = _GetTabImpl(tab))
             {
-                snapshot.LoadsWorkspaceNode = _BuildWorkspaceNodeArgs(tabImpl).has_value();
-                if (const auto state = _FindWorkspaceNodeRuntimeState(tabImpl))
-                {
-                    snapshot.RuntimeNodeId = state->WorkspaceNodeId;
-                }
                 tabImpls.emplace_back(tabImpl);
             }
             else
             {
                 tabImpls.emplace_back(nullptr);
             }
-            tabs.emplace_back(std::move(snapshot));
         }
 
-        if (const auto tabIndex = Microsoft::Terminal::Settings::Model::implementation::FindWorkspaceBackedTabSnapshotIndex(workspaceDefinition, tabs, nodeIndex);
+        if (const auto tabIndex = ::terminal::workspace::FindResolvedWorkspaceBackedTabSnapshotIndex(_currentWorkspaceId.c_str(), selectedWorkspace, tabs, nodeIndex);
             tabIndex.has_value() && tabIndex.value() < tabImpls.size())
         {
             return tabImpls.at(tabIndex.value());
@@ -431,8 +396,8 @@
 
     void TerminalPage::_ApplyWorkspaceNodeInputVisibility(const size_t nodeIndex, const bool showInputPanel)
     {
-        const auto* workspace = _SelectedWorkspaceForEditing();
-        if (!workspace || workspace->Id != _currentWorkspaceId.c_str())
+        const auto* workspace = _SelectedCurrentWorkspaceForEditingPtr();
+        if (!workspace)
         {
             return;
         }
@@ -445,8 +410,8 @@
 
     void TerminalPage::_ApplyWorkspaceNodeLoadState(const size_t nodeIndex)
     {
-        const auto* workspace = _SelectedWorkspaceForEditing();
-        if (!workspace || workspace->Id != _currentWorkspaceId.c_str() || nodeIndex >= workspace->Nodes.size())
+        const auto* workspace = _SelectedCurrentWorkspaceForEditingPtr();
+        if (!workspace || nodeIndex >= workspace->Nodes.size())
         {
             return;
         }
@@ -496,8 +461,8 @@
 
     void TerminalPage::_ApplyWorkspaceNodeIcon(const size_t nodeIndex)
     {
-        const auto* workspace = _SelectedWorkspaceForEditing();
-        if (!workspace || workspace->Id != _currentWorkspaceId.c_str() || nodeIndex >= workspace->Nodes.size())
+        const auto* workspace = _SelectedCurrentWorkspaceForEditingPtr();
+        if (!workspace || nodeIndex >= workspace->Nodes.size())
         {
             return;
         }
@@ -510,8 +475,8 @@
 
     void TerminalPage::_ApplyWorkspaceNodeTabColor(const size_t nodeIndex)
     {
-        const auto* workspace = _SelectedWorkspaceForEditing();
-        if (!workspace || workspace->Id != _currentWorkspaceId.c_str() || nodeIndex >= workspace->Nodes.size())
+        const auto* workspace = _SelectedCurrentWorkspaceForEditingPtr();
+        if (!workspace || nodeIndex >= workspace->Nodes.size())
         {
             return;
         }

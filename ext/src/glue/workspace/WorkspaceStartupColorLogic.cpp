@@ -17,8 +17,9 @@
 
         winrt::Windows::UI::Color _fallbackProfileColor(std::wstring_view profileKey)
         {
-            const auto index = gsl::narrow_cast<size_t>(_stableHash(profileKey) % _workspaceNodeColorPalette.size());
-            return _parseColor(_workspaceNodeColorPalette[index]).value();
+            const auto& palette = WorkspaceColorPalette();
+            const auto index = gsl::narrow_cast<size_t>(_stableHash(profileKey) % palette.size());
+            return _parseColor(palette[index]).value();
         }
 
         winrt::Windows::UI::Color _resolveBaseNodeColor(const WorkspaceNode& node,
@@ -258,6 +259,20 @@
                     return input;
                 }
                 return _buildWindowsSshStartupDirectoryInput(startupDirectory);
+            }
+
+            std::wstring input{ L"cd \"" };
+            input.append(startupDirectory);
+            input.append(L"\"\r");
+            return input;
+        }
+
+        std::wstring _buildWslStartupInput(const WorkspaceNode& node)
+        {
+            const auto startupDirectory = _trim(node.StartupDirectory);
+            if (startupDirectory.empty())
+            {
+                return {};
             }
 
             std::wstring input{ L"cd \"" };

@@ -1,9 +1,7 @@
-// Copyright (c) Microsoft Corporation.
-// Licensed under the MIT license.
-
 #include "WorkspaceCore.h"
 
 #include "WorkspacePersistencePaths.h"
+#include "../../glue/chat/WorkspaceDiagnosticLog.h"
 
 #include <algorithm>
 #include <array>
@@ -16,6 +14,7 @@
 #include <system_error>
 #include <unordered_map>
 #include <unordered_set>
+#include <windows.h>
 
 namespace terminal::workspace
 {
@@ -32,6 +31,54 @@ namespace terminal::workspace
                                   std::wstring_view key,
                                   std::wstring_view value);
         std::vector<std::wstring> _parseMultilineEntries(std::wstring_view value);
+        constexpr std::wstring_view _workspaceWindowStateMappingName{ L"Local\\FileGridTerminalWorkspaceWindowState.v1" };
+        constexpr std::wstring_view _workspaceWindowStateMutexName{ L"Local\\FileGridTerminalWorkspaceWindowStateMutex.v1" };
+        constexpr uint32_t _workspaceWindowStateVersion{ 1 };
+        constexpr size_t _workspaceWindowStateCapacity{ 128 };
+        constexpr size_t _workspaceWindowStateWorkspaceIdCapacity{ 128 };
+        constexpr size_t _workspaceWindowStateWindowNameCapacity{ 256 };
+        constexpr size_t _workspaceWindowStateWorkspaceNameCapacity{ 256 };
+        constexpr size_t _workspaceWindowStateProcessNameCapacity{ 128 };
+        constexpr uint64_t WorkspaceWindowStateHeartbeatIntervalMs{ 3000 };
+        constexpr uint64_t WorkspaceWindowStateHeartbeatTimeoutMs{ 12000 };
+
+        struct RuntimeWorkspaceStateRecord
+        {
+            uint64_t WindowId;
+            uint32_t ProcessId;
+            uint64_t LastSeenTick;
+            wchar_t WorkspaceId[_workspaceWindowStateWorkspaceIdCapacity];
+            wchar_t ProcessName[_workspaceWindowStateProcessNameCapacity];
+            wchar_t WorkspaceName[_workspaceWindowStateWorkspaceNameCapacity];
+            wchar_t WindowName[_workspaceWindowStateWindowNameCapacity];
+        };
+
+        struct RuntimeWorkspaceStateBlock
+        {
+            uint32_t Version;
+            uint32_t Reserved;
+            RuntimeWorkspaceStateRecord Records[_workspaceWindowStateCapacity];
+        };
+
+        template<size_t N>
+        void _copyWorkspaceStateString(std::wstring_view value, wchar_t (&destination)[N]) noexcept;
+        template<size_t N>
+        std::wstring_view _workspaceStateStringView(const wchar_t (&value)[N]) noexcept;
+        std::wstring _resolveWorkspaceName(std::wstring_view workspaceId);
+        std::wstring _queryProcessImageName(const uint32_t processId);
+        bool _isWorkspaceWindowProcessAlive(const WorkspaceStateWindow& window) noexcept;
+        template<typename TManager, typename TApply>
+        std::optional<TManager> _persistManagerChange(TManager manager, TApply&& apply);
+        bool _workspaceStateRecordExpired(const RuntimeWorkspaceStateRecord& record, uint64_t now);
+        void _clearWorkspaceStateRecord(RuntimeWorkspaceStateRecord& record) noexcept;
+        void _initializeWorkspaceStateBlock(RuntimeWorkspaceStateBlock& block) noexcept;
+        void _pruneWorkspaceStateBlock(RuntimeWorkspaceStateBlock& block, uint64_t now) noexcept;
+        WorkspaceStateManager _loadRuntimeWorkspaceStateManagerFromBlock(const RuntimeWorkspaceStateBlock& block);
+        void _saveRuntimeWorkspaceStateManagerToBlock(const WorkspaceStateManager& manager,
+                                                      RuntimeWorkspaceStateBlock& block,
+                                                      uint64_t now) noexcept;
+        template<typename TCallback>
+        auto _withRuntimeWorkspaceStateBlock(TCallback&& callback);
     }
 
     namespace
@@ -51,6 +98,273 @@ namespace terminal::workspace
         std::wstring_view _trim(const std::wstring_view value)
         {
             return _trimRight(_trimLeft(value));
+        }
+
+        std::wstring _queryProcessImageName(const uint32_t processId)
+        {
+            if (processId == 0)
+            {
+                return {};
+            }
+
+            const auto process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId);
+            if (process == nullptr)
+            {
+                return {};
+            }
+
+            auto closeProcess = wil::scope_exit([&]() noexcept {
+                CloseHandle(process);
+            });
+
+            std::wstring buffer(MAX_PATH, L'\0');
+            auto length = gsl::narrow_cast<DWORD>(buffer.size());
+            if (!QueryFullProcessImageNameW(process, 0, buffer.data(), &length) || length == 0)
+            {
+                return {};
+            }
+
+            buffer.resize(length);
+            return std::filesystem::path{ buffer }.filename().wstring();
+        }
+
+        bool _isWorkspaceWindowProcessAlive(const WorkspaceStateWindow& window) noexcept
+        {
+            if (window.ProcessId == 0 || window.ProcessName.empty())
+            {
+                return false;
+            }
+
+            const auto currentProcessName = _queryProcessImageName(window.ProcessId);
+            return !currentProcessName.empty() && _wcsicmp(currentProcessName.c_str(), window.ProcessName.c_str()) == 0;
+        }
+
+        template<size_t N>
+        void _copyWorkspaceStateString(const std::wstring_view value, wchar_t (&destination)[N]) noexcept
+        {
+            std::fill(std::begin(destination), std::end(destination), L'\0');
+            const auto length = (std::min)(value.size(), N - 1);
+            if (length == 0)
+            {
+                return;
+            }
+
+            std::copy_n(value.data(), length, destination);
+        }
+
+        template<size_t N>
+        std::wstring_view _workspaceStateStringView(const wchar_t (&value)[N]) noexcept
+        {
+            size_t length = 0;
+            while (length < N && value[length] != L'\0')
+            {
+                ++length;
+            }
+
+            return { value, length };
+        }
+
+        std::wstring _resolveWorkspaceName(const std::wstring_view workspaceId)
+        {
+            if (workspaceId.empty())
+            {
+                return {};
+            }
+
+            const auto manager = WorkspaceManager::Load();
+            if (const auto workspace = manager.FindById(workspaceId))
+            {
+                return workspace->Name;
+            }
+
+            return {};
+        }
+
+        bool _workspaceStateRecordExpired(const RuntimeWorkspaceStateRecord& record, const uint64_t now)
+        {
+            if (record.WindowId == 0)
+            {
+                return true;
+            }
+
+            const auto workspaceId = _workspaceStateStringView(record.WorkspaceId);
+            if (workspaceId.empty())
+            {
+                return true;
+            }
+
+            const WorkspaceStateWindow window{
+                .WindowId = record.WindowId,
+                .ProcessId = record.ProcessId,
+                .ProcessName = std::wstring{ _workspaceStateStringView(record.ProcessName) },
+                .WindowName = std::wstring{ _workspaceStateStringView(record.WindowName) },
+                .WorkspaceId = std::wstring{ workspaceId },
+            };
+            if (!_isWorkspaceWindowProcessAlive(window))
+            {
+                return true;
+            }
+
+            const auto expectedWorkspaceName = _workspaceStateStringView(record.WorkspaceName);
+            if (expectedWorkspaceName.empty())
+            {
+                return true;
+            }
+
+            const auto actualWorkspaceName = _resolveWorkspaceName(workspaceId);
+            if (actualWorkspaceName.empty() || actualWorkspaceName != expectedWorkspaceName)
+            {
+                return true;
+            }
+
+            return now > record.LastSeenTick && now - record.LastSeenTick > WorkspaceWindowStateHeartbeatTimeoutMs;
+        }
+
+        void _clearWorkspaceStateRecord(RuntimeWorkspaceStateRecord& record) noexcept
+        {
+            record = {};
+        }
+
+        void _initializeWorkspaceStateBlock(RuntimeWorkspaceStateBlock& block) noexcept
+        {
+            block = {};
+            block.Version = _workspaceWindowStateVersion;
+        }
+
+        void _pruneWorkspaceStateBlock(RuntimeWorkspaceStateBlock& block, const uint64_t now) noexcept
+        {
+            if (block.Version != _workspaceWindowStateVersion)
+            {
+                _initializeWorkspaceStateBlock(block);
+                return;
+            }
+
+            for (auto& record : block.Records)
+            {
+                if (_workspaceStateRecordExpired(record, now))
+                {
+                    _clearWorkspaceStateRecord(record);
+                }
+            }
+        }
+
+        WorkspaceStateManager _loadRuntimeWorkspaceStateManagerFromBlock(const RuntimeWorkspaceStateBlock& block)
+        {
+            WorkspaceStateManager manager;
+            std::vector<WorkspaceStateWindow> windows;
+            windows.reserve(_workspaceWindowStateCapacity);
+
+            for (const auto& record : block.Records)
+            {
+                const auto workspaceId = _workspaceStateStringView(record.WorkspaceId);
+                if (record.WindowId == 0 || workspaceId.empty())
+                {
+                    continue;
+                }
+
+                windows.emplace_back(WorkspaceStateWindow{
+                    .WindowId = record.WindowId,
+                    .ProcessId = record.ProcessId,
+                    .ProcessName = std::wstring{ _workspaceStateStringView(record.ProcessName) },
+                    .WindowName = std::wstring{ _workspaceStateStringView(record.WindowName) },
+                    .WorkspaceId = std::wstring{ workspaceId },
+                });
+            }
+
+            manager.SetWindows(std::move(windows));
+            return manager;
+        }
+
+        void _saveRuntimeWorkspaceStateManagerToBlock(const WorkspaceStateManager& manager,
+                                                      RuntimeWorkspaceStateBlock& block,
+                                                      const uint64_t now) noexcept
+        {
+            _initializeWorkspaceStateBlock(block);
+
+            size_t index = 0;
+            for (const auto& window : manager.Windows())
+            {
+                if (index >= _workspaceWindowStateCapacity || window.WindowId == 0 || window.WorkspaceId.empty())
+                {
+                    continue;
+                }
+
+                auto& record = block.Records[index++];
+                record.WindowId = window.WindowId;
+                record.ProcessId = window.ProcessId;
+                record.LastSeenTick = now;
+                _copyWorkspaceStateString(window.WorkspaceId, record.WorkspaceId);
+                _copyWorkspaceStateString(window.ProcessName, record.ProcessName);
+                _copyWorkspaceStateString(_resolveWorkspaceName(window.WorkspaceId), record.WorkspaceName);
+                _copyWorkspaceStateString(window.WindowName, record.WindowName);
+            }
+        }
+
+        template<typename TCallback>
+        auto _withRuntimeWorkspaceStateBlock(TCallback&& callback)
+        {
+            using TResult = decltype(callback(std::declval<RuntimeWorkspaceStateBlock&>(), uint64_t{}));
+
+            auto result = TResult{};
+            const auto mutex = CreateMutexW(nullptr, FALSE, _workspaceWindowStateMutexName.data());
+            if (mutex == nullptr)
+            {
+                return result;
+            }
+
+            const auto waitResult = WaitForSingleObject(mutex, 500);
+            if (waitResult != WAIT_OBJECT_0 && waitResult != WAIT_ABANDONED)
+            {
+                CloseHandle(mutex);
+                return result;
+            }
+
+            const auto mapping = CreateFileMappingW(INVALID_HANDLE_VALUE,
+                                                    nullptr,
+                                                    PAGE_READWRITE,
+                                                    0,
+                                                    sizeof(RuntimeWorkspaceStateBlock),
+                                                    _workspaceWindowStateMappingName.data());
+            if (mapping == nullptr)
+            {
+                ReleaseMutex(mutex);
+                CloseHandle(mutex);
+                return result;
+            }
+
+            auto* block = static_cast<RuntimeWorkspaceStateBlock*>(MapViewOfFile(mapping,
+                                                                                 FILE_MAP_READ | FILE_MAP_WRITE,
+                                                                                 0,
+                                                                                 0,
+                                                                                 sizeof(RuntimeWorkspaceStateBlock)));
+            if (block == nullptr)
+            {
+                CloseHandle(mapping);
+                ReleaseMutex(mutex);
+                CloseHandle(mutex);
+                return result;
+            }
+
+            const auto now = GetTickCount64();
+            _pruneWorkspaceStateBlock(*block, now);
+            result = callback(*block, now);
+
+            UnmapViewOfFile(block);
+            CloseHandle(mapping);
+            ReleaseMutex(mutex);
+            CloseHandle(mutex);
+            return result;
+        }
+
+        template<typename TManager, typename TApply>
+        std::optional<TManager> _persistManagerChange(TManager manager, TApply&& apply)
+        {
+            if (!apply(manager) || !manager.Save())
+            {
+                return std::nullopt;
+            }
+
+            return manager;
         }
 
         std::wstring _unquote(std::wstring_view value)
@@ -1168,2159 +1482,12 @@ namespace terminal::workspace
         }
     }
 
-    std::filesystem::path WorkspaceManager::DefaultPath()
-    {
-        return terminal::workspacepaths::ResolveWorkspaceDefinitionsPath();
-    }
+    #include "WorkspaceCoreManagerStorage.cpp"
 
-    WorkspaceManager WorkspaceManager::Load()
-    {
-        return LoadFromPath(DefaultPath());
-    }
+    #include "deprecated/WorkspaceCaptureDeprecated.cpp"
+    #include "WorkspaceCoreNavigation.cpp"
 
-    WorkspaceManager WorkspaceManager::LoadFromPath(const std::filesystem::path& path)
-    {
-        std::error_code ec;
-        if (!std::filesystem::exists(path, ec) || ec)
-        {
-            return {};
-        }
+    #include "WorkspaceCoreEditor.cpp"
 
-        if (std::filesystem::is_regular_file(path, ec) && !ec)
-        {
-            return {};
-        }
-
-        WorkspaceManager manager;
-        if (!std::filesystem::is_directory(path, ec) || ec)
-        {
-            return manager;
-        }
-
-        const auto persistedWorkspaces = _enumeratePersistedWorkspaceDirectories(path);
-        if (!persistedWorkspaces.has_value())
-        {
-            return manager;
-        }
-
-        std::vector<Workspace> workspaces;
-        workspaces.reserve(persistedWorkspaces->size());
-        for (auto persistedWorkspace : *persistedWorkspaces)
-        {
-            auto workspace = std::move(persistedWorkspace.Definition);
-            std::vector<WorkspaceNode> loadedNodes;
-            for (const auto& nodeEntry : std::filesystem::directory_iterator(persistedWorkspace.Directory, ec))
-            {
-                if (ec)
-                {
-                    return {};
-                }
-                if (!nodeEntry.is_directory())
-                {
-                    continue;
-                }
-
-                const auto nodeFile = nodeEntry.path() / std::filesystem::path{ terminal::workspacepaths::WorkspaceNodeMetadataFileName };
-                if (!std::filesystem::exists(nodeFile, ec) || ec)
-                {
-                    ec.clear();
-                    continue;
-                }
-
-                auto nodeMetadata = _loadWorkspaceNodeMetadataFile(nodeFile);
-                if (!nodeMetadata.has_value())
-                {
-                    continue;
-                }
-
-                auto node = std::move(*nodeMetadata);
-                node.Name = nodeEntry.path().filename().wstring();
-                node.Id = node.Name;
-                loadedNodes.emplace_back(std::move(node));
-            }
-
-            std::stable_sort(loadedNodes.begin(), loadedNodes.end(), [](const auto& lhs, const auto& rhs) {
-                return _toLower(lhs.Name) < _toLower(rhs.Name);
-            });
-            workspace.Nodes.reserve(loadedNodes.size());
-            for (auto& node : loadedNodes)
-            {
-                workspace.Nodes.emplace_back(std::move(node));
-            }
-
-            if (!workspace.Nodes.empty())
-            {
-                std::vector<WorkspaceNode> orderedVisibleNodes;
-                for (const auto nodeIndex : _orderedVisibleWorkspaceNodeIndices(workspace))
-                {
-                    orderedVisibleNodes.emplace_back(workspace.Nodes.at(nodeIndex));
-                }
-                std::ignore = ApplyVisibleWorkspaceNodeOrder(workspace, orderedVisibleNodes);
-            }
-            workspaces.emplace_back(std::move(workspace));
-        }
-
-        manager.SetWorkspaces(std::move(workspaces));
-        return manager;
-    }
-
-    bool WorkspaceManager::Save() const
-    {
-        return SaveToPath(DefaultPath());
-    }
-
-    bool WorkspaceManager::SaveToPath(const std::filesystem::path& path) const
-    {
-        if (path.has_extension())
-        {
-            return false;
-        }
-
-        std::error_code ec;
-        std::filesystem::create_directories(path, ec);
-        if (ec)
-        {
-            return false;
-        }
-
-        std::unordered_set<std::wstring> desiredWorkspaceDirs;
-        for (size_t workspaceIndex = 0; workspaceIndex < _workspaces.size(); ++workspaceIndex)
-        {
-            const auto& workspace = _workspaces.at(workspaceIndex);
-            const auto workspaceDirName = _makeUniqueDirectoryName(
-                SanitizeWorkspaceDirectoryName(workspace.Name, L"workspace"),
-                desiredWorkspaceDirs);
-            const auto workspaceDir = path / workspaceDirName;
-            std::filesystem::create_directories(workspaceDir, ec);
-            if (ec)
-            {
-                return false;
-            }
-
-            if (!_writeUtf8TextFile(workspaceDir / std::filesystem::path{ terminal::workspacepaths::WorkspaceMetadataFileName },
-                                    _serializeWorkspaceMetadata(workspace)))
-            {
-                return false;
-            }
-
-            std::unordered_set<std::wstring> desiredNodeDirs;
-            for (size_t nodeIndex = 0; nodeIndex < workspace.Nodes.size(); ++nodeIndex)
-            {
-                const auto& node = workspace.Nodes.at(nodeIndex);
-                const auto nodeDirName = _makeUniqueDirectoryName(
-                    SanitizeWorkspaceDirectoryName(node.Name, L"tab"),
-                    desiredNodeDirs);
-                const auto nodeDir = workspaceDir / nodeDirName;
-                std::filesystem::create_directories(nodeDir, ec);
-                if (ec)
-                {
-                    return false;
-                }
-
-                if (!_writeUtf8TextFile(nodeDir / std::filesystem::path{ terminal::workspacepaths::WorkspaceNodeMetadataFileName },
-                                        _serializeWorkspaceNodeMetadata(node)))
-                {
-                    return false;
-                }
-            }
-
-            for (const auto& existingNodeEntry : std::filesystem::directory_iterator(workspaceDir, ec))
-            {
-                if (ec)
-                {
-                    return false;
-                }
-                if (!existingNodeEntry.is_directory())
-                {
-                    continue;
-                }
-                if (!std::filesystem::exists(existingNodeEntry.path() / std::filesystem::path{ terminal::workspacepaths::WorkspaceNodeMetadataFileName }, ec) || ec)
-                {
-                    ec.clear();
-                    continue;
-                }
-
-                if (desiredNodeDirs.find(_toLower(existingNodeEntry.path().filename().wstring())) == desiredNodeDirs.end())
-                {
-                    std::filesystem::remove_all(existingNodeEntry.path(), ec);
-                    if (ec)
-                    {
-                        return false;
-                    }
-                }
-            }
-        }
-
-        for (const auto& existingWorkspaceEntry : std::filesystem::directory_iterator(path, ec))
-        {
-            if (ec)
-            {
-                return false;
-            }
-            if (!existingWorkspaceEntry.is_directory())
-            {
-                continue;
-            }
-            if (!std::filesystem::exists(existingWorkspaceEntry.path() / std::filesystem::path{ terminal::workspacepaths::WorkspaceMetadataFileName }, ec) || ec)
-            {
-                ec.clear();
-                continue;
-            }
-
-            if (desiredWorkspaceDirs.find(_toLower(existingWorkspaceEntry.path().filename().wstring())) == desiredWorkspaceDirs.end())
-            {
-                std::filesystem::remove_all(existingWorkspaceEntry.path(), ec);
-                if (ec)
-                {
-                    return false;
-                }
-            }
-        }
-
-        std::filesystem::remove(path / std::filesystem::path{ terminal::workspacepaths::LegacyWorkspaceFileName }, ec);
-        if (ec)
-        {
-            return false;
-        }
-
-        if (!_writeUtf8TextFile(path / std::filesystem::path{ terminal::workspacepaths::WorkspaceOrderFileName },
-                                _serializeWorkspaceOrder(_workspaces)))
-        {
-            return false;
-        }
-
-        if (path == terminal::workspacepaths::ResolveWorkspaceDefinitionsPath())
-        {
-            return _removeLegacyWorkspaceDirectoriesIfPresent();
-        }
-
-        return true;
-    }
-
-    const Workspace* WorkspaceManager::FindById(std::wstring_view id) const noexcept
-    {
-        const auto it = std::find_if(_workspaces.begin(), _workspaces.end(), [&](const auto& workspace) {
-            return workspace.Id == id;
-        });
-        return it == _workspaces.end() ? nullptr : &*it;
-    }
-
-    bool ApplyVisibleWorkspaceNodeOrder(Workspace& workspace, const std::vector<WorkspaceNode>& orderedVisibleNodes)
-    {
-        const auto visibleNodeCount = static_cast<size_t>(std::count_if(workspace.Nodes.begin(), workspace.Nodes.end(), [](const auto& node) {
-            return node.ShowTab;
-        }));
-        if (orderedVisibleNodes.size() < visibleNodeCount)
-        {
-            return false;
-        }
-
-        std::vector<std::wstring_view> seenNodeIds;
-        seenNodeIds.reserve(orderedVisibleNodes.size());
-        for (const auto& node : orderedVisibleNodes)
-        {
-            if (node.Id.empty())
-            {
-                return false;
-            }
-
-            if (std::find(seenNodeIds.begin(), seenNodeIds.end(), std::wstring_view{ node.Id }) != seenNodeIds.end())
-            {
-                return false;
-            }
-
-            seenNodeIds.emplace_back(node.Id);
-        }
-
-        std::vector<WorkspaceNode> reorderedNodes;
-        reorderedNodes.reserve(workspace.Nodes.size() + orderedVisibleNodes.size() - visibleNodeCount);
-
-        size_t visibleNodeCursor = 0;
-        for (const auto& existingNode : workspace.Nodes)
-        {
-            if (!existingNode.ShowTab)
-            {
-                reorderedNodes.emplace_back(existingNode);
-                continue;
-            }
-
-            reorderedNodes.emplace_back(orderedVisibleNodes.at(visibleNodeCursor++));
-        }
-
-        while (visibleNodeCursor < orderedVisibleNodes.size())
-        {
-            reorderedNodes.emplace_back(orderedVisibleNodes.at(visibleNodeCursor++));
-        }
-
-        workspace.Nodes = std::move(reorderedNodes);
-        return true;
-    }
-
-    std::optional<Workspace> PrepareWorkspaceForCapture(const std::optional<Workspace>& currentWorkspaceDefinition,
-                                                        std::vector<WorkspaceNode> capturedNodes)
-    {
-        const auto capturedTabOrder = _captureVisibleWorkspaceNodeOrder(capturedNodes);
-        Workspace workspace;
-        if (currentWorkspaceDefinition.has_value())
-        {
-            workspace = *currentWorkspaceDefinition;
-
-            std::vector<WorkspaceNode> mergedNodes;
-            mergedNodes.reserve(workspace.Nodes.size() + capturedNodes.size());
-            std::vector<bool> consumedCapturedNodes(capturedNodes.size(), false);
-
-            for (const auto& existingNode : workspace.Nodes)
-            {
-                if (!WorkspaceNodeLoadsTab(existingNode))
-                {
-                    mergedNodes.emplace_back(existingNode);
-                    continue;
-                }
-
-                if (!existingNode.Id.empty())
-                {
-                    auto matched = false;
-                    for (size_t capturedIndex = 0; capturedIndex < capturedNodes.size(); ++capturedIndex)
-                    {
-                        const auto& capturedNode = capturedNodes.at(capturedIndex);
-                        if (!consumedCapturedNodes.at(capturedIndex) && capturedNode.Id == existingNode.Id)
-                        {
-                            mergedNodes.emplace_back(capturedNode);
-                            consumedCapturedNodes.at(capturedIndex) = true;
-                            matched = true;
-                            break;
-                        }
-                    }
-
-                    if (matched)
-                    {
-                        continue;
-                    }
-                }
-
-                // Visible nodes missing from the live capture were removed from the workspace.
-            }
-
-            for (size_t capturedIndex = 0; capturedIndex < capturedNodes.size(); ++capturedIndex)
-            {
-                if (!consumedCapturedNodes.at(capturedIndex))
-                {
-                    mergedNodes.emplace_back(std::move(capturedNodes.at(capturedIndex)));
-                }
-            }
-
-            workspace.Nodes = std::move(mergedNodes);
-        }
-        else
-        {
-            workspace.Nodes = std::move(capturedNodes);
-        }
-
-        workspace.TabOrder = capturedTabOrder;
-
-        if (workspace.Nodes.empty())
-        {
-            return std::nullopt;
-        }
-
-        return workspace;
-    }
-
-    std::optional<Workspace> ResolveWorkspaceDefinition(const std::wstring_view currentWorkspaceId,
-                                                        const std::optional<Workspace>& selectedWorkspace,
-                                                        const WorkspaceManager& manager)
-    {
-        if (currentWorkspaceId.empty())
-        {
-            return std::nullopt;
-        }
-
-        if (selectedWorkspace && selectedWorkspace->Id == currentWorkspaceId)
-        {
-            return selectedWorkspace;
-        }
-
-        if (const auto workspace = manager.FindById(currentWorkspaceId))
-        {
-            return *workspace;
-        }
-
-        return std::nullopt;
-    }
-
-    bool WorkspaceNodeLoadsTab(const WorkspaceNode& node) noexcept
-    {
-        return node.ShowTab;
-    }
-
-    namespace
-    {
-        std::vector<size_t> _orderedVisibleWorkspaceNodeIndices(const Workspace& workspace)
-        {
-            std::vector<size_t> orderedIndices;
-            orderedIndices.reserve(workspace.Nodes.size());
-
-            std::vector<bool> consumed(workspace.Nodes.size(), false);
-            for (const auto& nodeId : workspace.TabOrder)
-            {
-                if (nodeId.empty())
-                {
-                    continue;
-                }
-
-                for (size_t index = 0; index < workspace.Nodes.size(); ++index)
-                {
-                    const auto& node = workspace.Nodes.at(index);
-                    if (consumed[index] || !WorkspaceNodeLoadsTab(node) || node.Id != nodeId)
-                    {
-                        continue;
-                    }
-
-                    orderedIndices.emplace_back(index);
-                    consumed[index] = true;
-                    break;
-                }
-            }
-
-            for (size_t index = 0; index < workspace.Nodes.size(); ++index)
-            {
-                if (!consumed[index] && WorkspaceNodeLoadsTab(workspace.Nodes.at(index)))
-                {
-                    orderedIndices.emplace_back(index);
-                }
-            }
-
-            return orderedIndices;
-        }
-
-        std::vector<std::wstring> _captureVisibleWorkspaceNodeOrder(const std::vector<WorkspaceNode>& nodes)
-        {
-            std::vector<std::wstring> orderedIds;
-            orderedIds.reserve(nodes.size());
-            for (const auto& node : nodes)
-            {
-                if (WorkspaceNodeLoadsTab(node) && !node.Id.empty())
-                {
-                    orderedIds.emplace_back(node.Id);
-                }
-            }
-            return orderedIds;
-        }
-    }
-
-    std::optional<WorkspaceNode> FindWorkspaceNodeById(const Workspace& workspace, const std::wstring_view nodeId)
-    {
-        if (const auto index = FindWorkspaceNodeIndexById(workspace, nodeId))
-        {
-            return workspace.Nodes.at(*index);
-        }
-        return std::nullopt;
-    }
-
-    std::optional<WorkspaceNode> FindWorkspaceNodeById(const WorkspaceManager& manager, const std::wstring_view workspaceId, const std::wstring_view nodeId)
-    {
-        if (const auto workspace = manager.FindById(workspaceId))
-        {
-            return FindWorkspaceNodeById(*workspace, nodeId);
-        }
-        return std::nullopt;
-    }
-
-    std::optional<WorkspaceNode> ResolveCurrentWorkspaceNode(const std::wstring_view currentWorkspaceId,
-                                                             const std::optional<Workspace>& selectedWorkspace,
-                                                             const WorkspaceManager& manager,
-                                                             const std::wstring_view nodeId)
-    {
-        if (nodeId.empty() || currentWorkspaceId.empty())
-        {
-            return std::nullopt;
-        }
-
-        if (selectedWorkspace && selectedWorkspace->Id == currentWorkspaceId)
-        {
-            if (const auto node = FindWorkspaceNodeById(*selectedWorkspace, nodeId))
-            {
-                return node;
-            }
-        }
-
-        return FindWorkspaceNodeById(manager, currentWorkspaceId, nodeId);
-    }
-
-    std::optional<size_t> FindWorkspaceNodeIndexById(const Workspace& workspace, const std::wstring_view nodeId)
-    {
-        if (nodeId.empty())
-        {
-            return std::nullopt;
-        }
-
-        for (size_t i = 0; i < workspace.Nodes.size(); ++i)
-        {
-            if (workspace.Nodes.at(i).Id == nodeId)
-            {
-                return i;
-            }
-        }
-
-        return std::nullopt;
-    }
-
-    std::optional<size_t> FindWorkspaceVisibleNodeIndex(const Workspace& workspace, const size_t visibleOrdinal)
-    {
-        const auto orderedIndices = _orderedVisibleWorkspaceNodeIndices(workspace);
-        return visibleOrdinal < orderedIndices.size() ? std::optional<size_t>{ orderedIndices.at(visibleOrdinal) } : std::nullopt;
-    }
-
-    std::optional<size_t> ResolveWorkspaceBackedNodeIndex(const std::optional<Workspace>& workspaceDefinition,
-                                                          const std::wstring_view runtimeNodeId,
-                                                          const std::optional<size_t> visibleOrdinal)
-    {
-        if (!workspaceDefinition.has_value())
-        {
-            return visibleOrdinal;
-        }
-
-        if (const auto nodeIndex = FindWorkspaceNodeIndexById(*workspaceDefinition, runtimeNodeId))
-        {
-            return nodeIndex;
-        }
-
-        if (visibleOrdinal.has_value())
-        {
-            return FindWorkspaceVisibleNodeIndex(*workspaceDefinition, *visibleOrdinal);
-        }
-
-        return std::nullopt;
-    }
-
-    std::optional<WorkspaceNode> ResolveWorkspaceBackedNode(const std::optional<Workspace>& workspaceDefinition,
-                                                            const std::wstring_view runtimeNodeId,
-                                                            const std::optional<size_t> visibleOrdinal)
-    {
-        if (!workspaceDefinition.has_value())
-        {
-            return std::nullopt;
-        }
-
-        if (const auto nodeIndex = ResolveWorkspaceBackedNodeIndex(workspaceDefinition, runtimeNodeId, visibleOrdinal);
-            nodeIndex.has_value() && *nodeIndex < workspaceDefinition->Nodes.size())
-        {
-            return workspaceDefinition->Nodes.at(*nodeIndex);
-        }
-
-        return std::nullopt;
-    }
-
-    namespace
-    {
-        std::optional<size_t> _resolveWorkspaceLiveTabVisibleOrdinal(const std::vector<WorkspaceLiveTabSnapshot>& tabs, const size_t targetTabIndex)
-        {
-            if (targetTabIndex >= tabs.size() || !tabs.at(targetTabIndex).LoadsWorkspaceNode)
-            {
-                return std::nullopt;
-            }
-
-            size_t visibleOrdinal = 0;
-            for (size_t index = 0; index < targetTabIndex; ++index)
-            {
-                if (tabs.at(index).LoadsWorkspaceNode)
-                {
-                    ++visibleOrdinal;
-                }
-            }
-            return visibleOrdinal;
-        }
-    }
-
-    std::optional<size_t> ResolveWorkspaceBackedTabIndex(const std::optional<Workspace>& workspaceDefinition,
-                                                         const std::vector<WorkspaceLiveTabSnapshot>& tabs,
-                                                         const size_t targetTabIndex)
-    {
-        if (targetTabIndex >= tabs.size())
-        {
-            return std::nullopt;
-        }
-
-        return ResolveWorkspaceBackedNodeIndex(workspaceDefinition,
-                                               tabs.at(targetTabIndex).RuntimeNodeId,
-                                               _resolveWorkspaceLiveTabVisibleOrdinal(tabs, targetTabIndex));
-    }
-
-    std::optional<WorkspaceNode> ResolveWorkspaceBackedTabNode(const std::optional<Workspace>& workspaceDefinition,
-                                                               const std::vector<WorkspaceLiveTabSnapshot>& tabs,
-                                                               const size_t targetTabIndex)
-    {
-        if (targetTabIndex >= tabs.size())
-        {
-            return std::nullopt;
-        }
-
-        return ResolveWorkspaceBackedNode(workspaceDefinition,
-                                          tabs.at(targetTabIndex).RuntimeNodeId,
-                                          _resolveWorkspaceLiveTabVisibleOrdinal(tabs, targetTabIndex));
-    }
-
-    std::optional<size_t> FindWorkspaceBackedTabSnapshotIndex(const std::optional<Workspace>& workspaceDefinition,
-                                                              const std::vector<WorkspaceLiveTabSnapshot>& tabs,
-                                                              const size_t nodeIndex)
-    {
-        for (size_t tabIndex = 0; tabIndex < tabs.size(); ++tabIndex)
-        {
-            if (const auto currentNodeIndex = ResolveWorkspaceBackedTabIndex(workspaceDefinition, tabs, tabIndex);
-                currentNodeIndex.has_value() && currentNodeIndex.value() == nodeIndex)
-            {
-                return tabIndex;
-            }
-        }
-
-        return std::nullopt;
-    }
-
-    std::vector<std::wstring> VisibleWorkspaceNodeIds(const Workspace& workspace)
-    {
-        std::vector<std::wstring> values;
-        for (const auto nodeIndex : _orderedVisibleWorkspaceNodeIndices(workspace))
-        {
-            values.emplace_back(workspace.Nodes.at(nodeIndex).Id);
-        }
-        return values;
-    }
-
-    std::vector<bool> VisibleWorkspaceNodeInputVisibility(const Workspace& workspace)
-    {
-        std::vector<bool> values;
-        for (const auto nodeIndex : _orderedVisibleWorkspaceNodeIndices(workspace))
-        {
-            values.emplace_back(workspace.Nodes.at(nodeIndex).ShowInputPanel);
-        }
-        return values;
-    }
-
-    int32_t WorkspaceManagerNavSelectionForWorkspace(const size_t workspaceIndex) noexcept
-    {
-        return _workspaceManagerWorkspaceSelectionBase + gsl::narrow_cast<int32_t>(workspaceIndex * _workspaceManagerWorkspaceSelectionStride);
-    }
-
-    int32_t WorkspaceManagerNavSelectionForWorkspaceNode(const size_t workspaceIndex, const size_t nodeIndex) noexcept
-    {
-        return WorkspaceManagerNavSelectionForWorkspace(workspaceIndex) + _workspaceManagerNodeSelectionBase + gsl::narrow_cast<int32_t>(nodeIndex);
-    }
-
-    std::optional<size_t> ResolveWorkspaceIndexFromManagerNavSelection(const int32_t navSelection) noexcept
-    {
-        if (navSelection < _workspaceManagerWorkspaceSelectionBase)
-        {
-            return std::nullopt;
-        }
-
-        return gsl::narrow_cast<size_t>((navSelection - _workspaceManagerWorkspaceSelectionBase) / _workspaceManagerWorkspaceSelectionStride);
-    }
-
-    std::optional<size_t> ResolveWorkspaceNodeIndexFromManagerNavSelection(const int32_t navSelection) noexcept
-    {
-        if (navSelection < _workspaceManagerWorkspaceSelectionBase)
-        {
-            return std::nullopt;
-        }
-
-        const auto subSelection = (navSelection - _workspaceManagerWorkspaceSelectionBase) % _workspaceManagerWorkspaceSelectionStride;
-        if (subSelection < _workspaceManagerNodeSelectionBase)
-        {
-            return std::nullopt;
-        }
-
-        return gsl::narrow_cast<size_t>(subSelection - _workspaceManagerNodeSelectionBase);
-    }
-
-    int32_t ResolveWorkspaceManagerNavSelectionForEditor(const size_t workspaceCount, const size_t selectedWorkspaceIndex) noexcept
-    {
-        if (workspaceCount == 0)
-        {
-            return 0;
-        }
-
-        return WorkspaceManagerNavSelectionForWorkspace(std::min(selectedWorkspaceIndex, workspaceCount - 1));
-    }
-
-    int32_t ResolveWorkspaceManagerNavSelectionAfterWorkspaceRemoval(const int32_t previousNavSelection,
-                                                                     const std::wstring_view selectedWorkspaceId,
-                                                                     const std::wstring_view removedWorkspaceId,
-                                                                     const size_t removedWorkspaceIndex,
-                                                                     const size_t remainingWorkspaceCount) noexcept
-    {
-        const auto previousWorkspaceIndex = ResolveWorkspaceIndexFromManagerNavSelection(previousNavSelection);
-        if (!previousWorkspaceIndex.has_value())
-        {
-            return previousNavSelection;
-        }
-
-        if (remainingWorkspaceCount == 0)
-        {
-            return 0;
-        }
-
-        if (selectedWorkspaceId == removedWorkspaceId)
-        {
-            return WorkspaceManagerNavSelectionForWorkspace(std::min(removedWorkspaceIndex, remainingWorkspaceCount - 1));
-        }
-
-        if (*previousWorkspaceIndex > removedWorkspaceIndex)
-        {
-            return previousNavSelection - _workspaceManagerWorkspaceSelectionStride;
-        }
-
-        return previousNavSelection;
-    }
-
-    int32_t ResolveWorkspaceManagerNavSelectionAfterNodeRemoval(const int32_t previousNavSelection,
-                                                                const std::wstring_view selectedWorkspaceId,
-                                                                const std::wstring_view workspaceId,
-                                                                const size_t selectedWorkspaceIndex,
-                                                                const size_t removedNodeIndex) noexcept
-    {
-        if (selectedWorkspaceId != workspaceId)
-        {
-            return previousNavSelection;
-        }
-
-        const auto selectedWorkspace = ResolveWorkspaceIndexFromManagerNavSelection(previousNavSelection);
-        const auto selectedNode = ResolveWorkspaceNodeIndexFromManagerNavSelection(previousNavSelection);
-        if (!selectedWorkspace.has_value() || !selectedNode.has_value() || *selectedWorkspace != selectedWorkspaceIndex)
-        {
-            return previousNavSelection;
-        }
-
-        if (*selectedNode == removedNodeIndex)
-        {
-            if (removedNodeIndex > 0)
-            {
-                return WorkspaceManagerNavSelectionForWorkspaceNode(selectedWorkspaceIndex, removedNodeIndex - 1);
-            }
-
-            return WorkspaceManagerNavSelectionForWorkspace(selectedWorkspaceIndex);
-        }
-
-        if (*selectedNode > removedNodeIndex)
-        {
-            return previousNavSelection - 1;
-        }
-
-        return previousNavSelection;
-    }
-
-    size_t ResolveWorkspaceEditorSelectedIndex(const WorkspaceManager& manager,
-                                               const std::wstring_view selectedWorkspaceId,
-                                               const std::wstring_view currentWorkspaceId,
-                                               const size_t fallbackIndex) noexcept
-    {
-        const auto& workspaces = manager.Workspaces();
-        if (workspaces.empty())
-        {
-            return 0;
-        }
-
-        if (!selectedWorkspaceId.empty())
-        {
-            if (const auto it = std::find_if(workspaces.begin(), workspaces.end(), [&](const auto& workspace) {
-                    return workspace.Id == selectedWorkspaceId;
-                });
-                it != workspaces.end())
-            {
-                return static_cast<size_t>(std::distance(workspaces.begin(), it));
-            }
-        }
-
-        if (!currentWorkspaceId.empty())
-        {
-            if (const auto it = std::find_if(workspaces.begin(), workspaces.end(), [&](const auto& workspace) {
-                    return workspace.Id == currentWorkspaceId;
-                });
-                it != workspaces.end())
-            {
-                return static_cast<size_t>(std::distance(workspaces.begin(), it));
-            }
-        }
-
-        return std::min(fallbackIndex, workspaces.size() - 1);
-    }
-
-    WorkspaceEditorLoadState LoadWorkspaceEditorState(const std::wstring_view selectedWorkspaceId,
-                                                      const std::wstring_view currentWorkspaceId,
-                                                      const size_t fallbackIndex)
-    {
-        auto manager = WorkspaceManager::Load();
-        return WorkspaceEditorLoadState{
-            .Manager = manager,
-            .SelectedWorkspaceIndex = ResolveWorkspaceEditorSelectedIndex(manager, selectedWorkspaceId, currentWorkspaceId, fallbackIndex),
-        };
-    }
-
-    WorkspaceEditorSavePlan PrepareWorkspaceEditorForSave(WorkspaceManager& editedManager,
-                                                          const WorkspaceManager& persistedManager,
-                                                          const std::wstring_view currentWorkspaceId,
-                                                          const std::wstring_view lastOpenedWorkspaceId,
-                                                          const size_t fallbackSelectedWorkspaceIndex)
-    {
-        WorkspaceEditorSavePlan plan;
-
-        std::optional<size_t> currentWorkspaceIndex;
-        if (!currentWorkspaceId.empty())
-        {
-            const auto& persistedWorkspaces = persistedManager.Workspaces();
-            if (const auto currentIt = std::find_if(persistedWorkspaces.begin(), persistedWorkspaces.end(), [&](const auto& workspace) {
-                    return workspace.Id == currentWorkspaceId;
-                });
-                currentIt != persistedWorkspaces.end())
-            {
-                currentWorkspaceIndex = gsl::narrow_cast<size_t>(std::distance(persistedWorkspaces.begin(), currentIt));
-            }
-        }
-
-        FinalizeWorkspaceManagerNames(editedManager);
-
-        if (currentWorkspaceIndex.has_value() && *currentWorkspaceIndex < editedManager.Workspaces().size())
-        {
-            plan.CurrentWorkspaceExists = true;
-            plan.ResolvedCurrentWorkspaceId = editedManager.Workspaces().at(*currentWorkspaceIndex).Id;
-        }
-        else
-        {
-            plan.CurrentWorkspaceExists = currentWorkspaceId.empty();
-        }
-
-        plan.LastOpenedWorkspaceExists = lastOpenedWorkspaceId.empty() || editedManager.FindById(lastOpenedWorkspaceId) != nullptr;
-        if (!editedManager.Workspaces().empty())
-        {
-            plan.SelectedWorkspaceIndex = std::min(fallbackSelectedWorkspaceIndex, editedManager.Workspaces().size() - 1);
-        }
-        return plan;
-    }
-
-    std::optional<WorkspaceEditorDefinitionRemovalPlan> PrepareWorkspaceDefinitionRemoval(WorkspaceManager& manager,
-                                                                                          const std::wstring_view workspaceId,
-                                                                                          const std::wstring_view selectedWorkspaceId,
-                                                                                          const std::wstring_view currentWorkspaceId,
-                                                                                          const size_t fallbackSelectedWorkspaceIndex,
-                                                                                          const int32_t previousNavSelection,
-                                                                                          const std::wstring_view lastOpenedWorkspaceId)
-    {
-        size_t removedWorkspaceIndex = 0;
-        if (!RemoveWorkspaceDefinition(manager, workspaceId, &removedWorkspaceIndex))
-        {
-            return std::nullopt;
-        }
-
-        WorkspaceEditorDefinitionRemovalPlan plan;
-        plan.RemovedCurrentWorkspace = workspaceId == currentWorkspaceId;
-        plan.LastOpenedWorkspaceExists = lastOpenedWorkspaceId.empty() || manager.FindById(lastOpenedWorkspaceId) != nullptr;
-        plan.NavSelection = ResolveWorkspaceManagerNavSelectionAfterWorkspaceRemoval(previousNavSelection,
-                                                                                    selectedWorkspaceId,
-                                                                                    workspaceId,
-                                                                                    removedWorkspaceIndex,
-                                                                                    manager.Workspaces().size());
-        if (!manager.Workspaces().empty())
-        {
-            plan.SelectedWorkspaceIndex = ResolveWorkspaceEditorSelectedIndex(manager,
-                                                                              selectedWorkspaceId,
-                                                                              currentWorkspaceId,
-                                                                              fallbackSelectedWorkspaceIndex);
-        }
-
-        return plan;
-    }
-
-    WorkspaceEditorNodeRemovalPlan PrepareWorkspaceNodeRemoval(WorkspaceManager& manager,
-                                                               const std::wstring_view workspaceId,
-                                                               const std::wstring_view nodeId,
-                                                               const std::wstring_view selectedWorkspaceId,
-                                                               const std::wstring_view currentWorkspaceId,
-                                                               const size_t fallbackSelectedWorkspaceIndex,
-                                                               const int32_t previousNavSelection,
-                                                               const std::wstring_view lastOpenedWorkspaceId)
-    {
-        const auto mutation = RemoveWorkspaceNode(manager, workspaceId, nodeId);
-
-        WorkspaceEditorNodeRemovalPlan plan;
-        plan.Disposition = mutation.Disposition;
-        if (mutation.Disposition == WorkspaceNodeMutationDisposition::NotFound)
-        {
-            return plan;
-        }
-
-        plan.RemovedCurrentWorkspace = workspaceId == currentWorkspaceId;
-        plan.LastOpenedWorkspaceExists = lastOpenedWorkspaceId.empty() || manager.FindById(lastOpenedWorkspaceId) != nullptr;
-        if (!manager.Workspaces().empty())
-        {
-            plan.SelectedWorkspaceIndex = ResolveWorkspaceEditorSelectedIndex(manager,
-                                                                              selectedWorkspaceId,
-                                                                              currentWorkspaceId,
-                                                                              fallbackSelectedWorkspaceIndex);
-        }
-
-        if (mutation.Disposition == WorkspaceNodeMutationDisposition::RemovedWorkspace)
-        {
-            plan.NavSelection = ResolveWorkspaceManagerNavSelectionAfterWorkspaceRemoval(previousNavSelection,
-                                                                                        selectedWorkspaceId,
-                                                                                        workspaceId,
-                                                                                        mutation.WorkspaceIndex,
-                                                                                        manager.Workspaces().size());
-        }
-        else if (previousNavSelection >= _workspaceManagerWorkspaceSelectionBase)
-        {
-            plan.NavSelection = ResolveWorkspaceManagerNavSelectionAfterNodeRemoval(previousNavSelection,
-                                                                                   selectedWorkspaceId,
-                                                                                   workspaceId,
-                                                                                   plan.SelectedWorkspaceIndex,
-                                                                                   mutation.NodeIndex);
-        }
-        else
-        {
-            plan.NavSelection = previousNavSelection;
-        }
-
-        return plan;
-    }
-
-    WorkspaceCurrentState ResolveWorkspaceCurrentState(const std::wstring_view currentWorkspaceId,
-                                                       const WorkspaceManager& manager,
-                                                       const std::wstring_view defaultDisplayName,
-                                                       const std::wstring_view unsavedTabRowName)
-    {
-        WorkspaceCurrentState state;
-        if (currentWorkspaceId.empty())
-        {
-            state.DisplayName = std::wstring{ defaultDisplayName };
-            state.TabRowName = std::wstring{ unsavedTabRowName };
-            return state;
-        }
-
-        state.DisplayName = std::wstring{ currentWorkspaceId };
-        state.TabRowName = state.DisplayName;
-        if (const auto workspace = manager.FindById(currentWorkspaceId))
-        {
-            state.Exists = true;
-            state.DisplayName = workspace->Name;
-            state.TabRowName = workspace->Name;
-            state.BackgroundColor = workspace->BackgroundColor;
-            state.Locked = workspace->Locked;
-        }
-
-        return state;
-    }
-
-    WorkspaceStartupState PrepareWorkspaceStartupState(const std::wstring_view workspaceId, const WorkspaceManager& manager)
-    {
-        WorkspaceStartupState state;
-        if (const auto workspace = manager.FindById(workspaceId))
-        {
-            state.PendingNodeIds = VisibleWorkspaceNodeIds(*workspace);
-            state.PendingNodeInputVisibility = VisibleWorkspaceNodeInputVisibility(*workspace);
-        }
-        return state;
-    }
-
-    WorkspaceFlyoutState BuildWorkspaceFlyoutState(const std::wstring_view currentWorkspaceId,
-                                                   const WorkspaceManager& manager,
-                                                   const WorkspaceStateManager& stateManager)
-    {
-        WorkspaceFlyoutState state;
-        state.Entries.reserve(manager.Workspaces().size());
-        for (const auto& workspace : manager.Workspaces())
-        {
-            state.Entries.emplace_back(WorkspaceFlyoutEntry{
-                .Definition = workspace,
-                .IsOpen = stateManager.FindOpenWorkspaceWindowId(workspace.Id).has_value(),
-            });
-        }
-        state.CurrentWorkspaceExists = currentWorkspaceId.empty() || manager.FindById(currentWorkspaceId) != nullptr;
-        return state;
-    }
-
-    WorkspaceRuntimeMetadata InferWorkspaceRuntimeMetadataFromProfile(const std::wstring_view source)
-    {
-        WorkspaceRuntimeMetadata metadata;
-        const auto loweredSource = _toLower(source);
-        if (loweredSource == L"windows.terminal.ssh")
-        {
-            metadata.ShellType = L"ssh";
-            return metadata;
-        }
-
-        if (loweredSource == L"windows.terminal.powershellcore")
-        {
-            metadata.ShellType = L"powershell";
-            metadata.OperatingSystem = L"windows";
-            return metadata;
-        }
-
-        if (_isWslProfileSource(loweredSource))
-        {
-            metadata.OperatingSystem = L"linux";
-            metadata.ShellType = L"wsl";
-            return metadata;
-        }
-
-        return metadata;
-    }
-
-    WorkspaceRuntimeMetadata InferWorkspaceRuntimeMetadataFromCommandline(const std::wstring_view value)
-    {
-        WorkspaceRuntimeMetadata metadata;
-        if (value.empty())
-        {
-            return metadata;
-        }
-
-        const auto lowered = _toLower(value);
-        if (lowered.find(L"ssh.exe") != std::wstring::npos ||
-            lowered == L"ssh" ||
-            lowered.starts_with(L"ssh "))
-        {
-            metadata.ShellType = L"ssh";
-            return metadata;
-        }
-
-        if (lowered.find(L"powershell.exe") != std::wstring::npos ||
-            lowered.find(L"pwsh.exe") != std::wstring::npos ||
-            lowered == L"powershell" ||
-            lowered == L"pwsh" ||
-            lowered.starts_with(L"powershell ") ||
-            lowered.starts_with(L"pwsh "))
-        {
-            metadata.ShellType = L"powershell";
-            metadata.OperatingSystem = L"windows";
-            return metadata;
-        }
-
-        if (lowered.find(L"cmd.exe") != std::wstring::npos ||
-            lowered == L"cmd" ||
-            lowered.starts_with(L"cmd "))
-        {
-            metadata.ShellType = L"cmd";
-            metadata.OperatingSystem = L"windows";
-            return metadata;
-        }
-
-        if (_isWslCommandline(lowered))
-        {
-            metadata.OperatingSystem = L"linux";
-            metadata.ShellType = L"wsl";
-            return metadata;
-        }
-
-        if (lowered.find(L"/bin/bash") != std::wstring::npos ||
-            lowered.find(L"/bin/sh") != std::wstring::npos ||
-            lowered.find(L"/bin/zsh") != std::wstring::npos ||
-            lowered.find(L"/bin/fish") != std::wstring::npos)
-        {
-            metadata.OperatingSystem = L"linux";
-        }
-
-        return metadata;
-    }
-
-    bool IsWorkspaceSshCommandline(const std::wstring_view value)
-    {
-        const auto lowered = _toLower(value);
-        return lowered.find(L"ssh.exe") != std::wstring::npos ||
-               lowered == L"ssh" ||
-               lowered.starts_with(L"ssh ");
-    }
-
-    bool HasWorkspaceSshTtyOption(const std::wstring_view commandline)
-    {
-        if (commandline.empty())
-        {
-            return false;
-        }
-
-        const auto argv = _splitCommandlineArguments(commandline);
-        for (size_t index = 1; index < argv.size(); ++index)
-        {
-            const auto arg = _toLower(_trim(argv[index]));
-            if (arg == L"-t" || arg == L"-tt")
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    bool IsWorkspaceSshTransport(const std::wstring_view profileSource,
-                                 const std::wstring_view profileCommandline,
-                                 const std::wstring_view commandline)
-    {
-        if (IsWorkspaceSshCommandline(commandline))
-        {
-            return true;
-        }
-
-        const auto loweredSource = _toLower(profileSource);
-        return loweredSource == L"windows.terminal.ssh" || IsWorkspaceSshCommandline(profileCommandline);
-    }
-
-    WorkspaceRuntimeLaunchState PrepareWorkspaceRuntimeLaunchState(const std::wstring_view /*startingDirectory*/,
-                                                                   const std::wstring_view profileSource,
-                                                                   const std::wstring_view profileCommandline,
-                                                                   const std::wstring_view commandline)
-    {
-        WorkspaceRuntimeLaunchState state;
-        state.IsSshTransport = IsWorkspaceSshTransport(profileSource, profileCommandline, commandline);
-        state.HasSshTtyOption = HasWorkspaceSshTtyOption(commandline);
-        state.StartingDirectory.clear();
-        if (!commandline.empty() && commandline != profileCommandline)
-        {
-            state.ExplicitCommandline = std::wstring{ commandline };
-        }
-
-        auto metadata = InferWorkspaceRuntimeMetadataFromCommandline(commandline.empty() ? profileCommandline : commandline);
-        if (metadata.OperatingSystem.empty() || metadata.ShellType.empty())
-        {
-            const auto profileMetadata = InferWorkspaceRuntimeMetadataFromProfile(profileSource);
-            if (metadata.OperatingSystem.empty())
-            {
-                metadata.OperatingSystem = profileMetadata.OperatingSystem;
-            }
-            if (metadata.ShellType.empty())
-            {
-                metadata.ShellType = profileMetadata.ShellType;
-            }
-        }
-
-        state.OperatingSystem = metadata.OperatingSystem.empty() ? L"linux" : metadata.OperatingSystem;
-        state.ShellType = std::move(metadata.ShellType);
-        return state;
-    }
-
-    WorkspaceNodeLaunchResolution ResolveWorkspaceNodeLaunchResolution(const WorkspaceNodeLaunchResolutionInput& input)
-    {
-        WorkspaceNodeLaunchResolution resolution;
-
-        if (!input.ObservedStartupAction.empty())
-        {
-            resolution.StartupAction = input.ObservedStartupAction;
-        }
-        else if (!input.RuntimeStartupAction.empty())
-        {
-            resolution.StartupAction = input.RuntimeStartupAction;
-        }
-        else if (!input.RuntimeExplicitCommandline.empty())
-        {
-            resolution.StartupAction = input.RuntimeExplicitCommandline;
-        }
-        else if (input.PersistedNode.has_value())
-        {
-            resolution.StartupAction = input.PersistedNode->StartupAction;
-        }
-        else if (!input.TerminalCommandline.empty() && input.TerminalCommandline != input.ProfileCommandline)
-        {
-            resolution.StartupAction = input.TerminalCommandline;
-        }
-
-        if (!input.ObservedWorkingDirectory.empty())
-        {
-            resolution.StartingDirectory = input.ObservedWorkingDirectory;
-        }
-        else if (!input.RuntimeStartingDirectory.empty())
-        {
-            resolution.StartingDirectory = input.RuntimeStartingDirectory;
-        }
-        else if (input.PersistedNode.has_value())
-        {
-            resolution.StartingDirectory = input.PersistedNode->StartupDirectory;
-        }
-        const auto profileMetadata = InferWorkspaceRuntimeMetadataFromProfile(input.ProfileSource);
-        if (profileMetadata.ShellType == L"wsl")
-        {
-            resolution.OperatingSystem = L"linux";
-            resolution.ShellType = L"wsl";
-            return resolution;
-        }
-
-        if (!input.ObservedOperatingSystem.empty())
-        {
-            resolution.OperatingSystem = input.ObservedOperatingSystem;
-        }
-        else if (!input.RuntimeOperatingSystem.empty())
-        {
-            resolution.OperatingSystem = input.RuntimeOperatingSystem;
-        }
-        else
-        {
-            auto metadata = InferWorkspaceRuntimeMetadataFromCommandline(input.TerminalCommandline.empty() ? input.ProfileCommandline : input.TerminalCommandline);
-            if (metadata.OperatingSystem.empty())
-            {
-                metadata = profileMetadata;
-            }
-            if (!metadata.OperatingSystem.empty())
-            {
-                resolution.OperatingSystem = metadata.OperatingSystem;
-            }
-            else if (input.PersistedNode.has_value())
-            {
-                resolution.OperatingSystem = input.PersistedNode->OperatingSystem;
-            }
-            else
-            {
-                resolution.OperatingSystem = L"linux";
-            }
-        }
-
-        if (!input.ObservedShellType.empty())
-        {
-            resolution.ShellType = input.ObservedShellType;
-        }
-        else if (!input.RuntimeShellType.empty())
-        {
-            resolution.ShellType = input.RuntimeShellType;
-        }
-        else
-        {
-            auto metadata = InferWorkspaceRuntimeMetadataFromCommandline(input.TerminalCommandline.empty() ? input.ProfileCommandline : input.TerminalCommandline);
-            if (metadata.ShellType.empty())
-            {
-                metadata = profileMetadata;
-            }
-            if (!metadata.ShellType.empty())
-            {
-                resolution.ShellType = metadata.ShellType;
-            }
-            else if (input.PersistedNode.has_value())
-            {
-                resolution.ShellType = input.PersistedNode->ShellType;
-            }
-        }
-
-        return resolution;
-    }
-
-    std::wstring ResolveTrackedWorkspaceDirectory(const WorkspaceTrackedDirectoryInput& input)
-    {
-        const auto reportedWorkingDirectory = std::wstring{ _trim(input.ReportedWorkingDirectory) };
-        if (input.IsSshTransport ||
-            _toLower(input.RuntimeShellType) == L"ssh" ||
-            _toLower(input.RuntimeOperatingSystem) == L"linux")
-        {
-            return reportedWorkingDirectory;
-        }
-
-        const auto processWorkingDirectory = std::wstring{ _trim(input.ProcessWorkingDirectory) };
-        if (!processWorkingDirectory.empty())
-        {
-            return processWorkingDirectory;
-        }
-
-        if (!reportedWorkingDirectory.empty())
-        {
-            return reportedWorkingDirectory;
-        }
-
-        return std::wstring{ _trim(input.RuntimeStartingDirectory) };
-    }
-
-    bool IsWorkspaceDirty(const Workspace& capturedWorkspace,
-                          const std::wstring_view currentWorkspaceId,
-                          const std::optional<Workspace>& baselineWorkspace,
-                          const std::optional<Workspace>& persistedWorkspace)
-    {
-        if (currentWorkspaceId.empty())
-        {
-            return true;
-        }
-
-        if (baselineWorkspace.has_value())
-        {
-            return !WorkspaceLayoutEquivalent(*baselineWorkspace, capturedWorkspace);
-        }
-
-        if (persistedWorkspace.has_value())
-        {
-            return !WorkspaceLayoutEquivalent(*persistedWorkspace, capturedWorkspace);
-        }
-
-        return true;
-    }
-
-    bool WorkspaceManager::ReorderWorkspaceNodes(std::wstring_view workspaceId, const std::vector<std::wstring>& orderedNodeIds)
-    {
-        const auto workspaceIt = std::find_if(_workspaces.begin(), _workspaces.end(), [&](const auto& workspace) {
-            return workspace.Id == workspaceId;
-        });
-        if (workspaceIt == _workspaces.end())
-        {
-            return false;
-        }
-
-        auto& workspace = *workspaceIt;
-        const auto visibleNodeCount = static_cast<size_t>(std::count_if(workspace.Nodes.begin(), workspace.Nodes.end(), [](const auto& node) {
-            return node.ShowTab;
-        }));
-        if (orderedNodeIds.size() != visibleNodeCount)
-        {
-            return false;
-        }
-
-        std::vector<WorkspaceNode> orderedVisibleNodes;
-        orderedVisibleNodes.reserve(orderedNodeIds.size());
-        std::vector<std::wstring_view> consumedNodeIds;
-        consumedNodeIds.reserve(orderedNodeIds.size());
-        for (const auto& nodeId : orderedNodeIds)
-        {
-            if (std::find(consumedNodeIds.begin(), consumedNodeIds.end(), std::wstring_view{ nodeId }) != consumedNodeIds.end())
-            {
-                return false;
-            }
-
-            const auto nodeIt = std::find_if(workspace.Nodes.begin(), workspace.Nodes.end(), [&](const auto& node) {
-                return node.Id == nodeId && node.ShowTab;
-            });
-            if (nodeIt == workspace.Nodes.end())
-            {
-                return false;
-            }
-
-            orderedVisibleNodes.emplace_back(*nodeIt);
-            consumedNodeIds.emplace_back(orderedVisibleNodes.back().Id);
-        }
-
-        workspace.TabOrder.assign(orderedNodeIds.begin(), orderedNodeIds.end());
-        // Keep the persisted node list aligned with the tab order as well.
-        // Hidden nodes retain their relative positions; only visible nodes move.
-        size_t visibleCursor = 0;
-        for (auto& node : workspace.Nodes)
-        {
-            if (node.ShowTab)
-            {
-                node = orderedVisibleNodes.at(visibleCursor++);
-            }
-        }
-        return true;
-    }
-
-    std::vector<Workspace>& WorkspaceManager::Workspaces() noexcept
-    {
-        return _workspaces;
-    }
-
-    const std::vector<Workspace>& WorkspaceManager::Workspaces() const noexcept
-    {
-        return _workspaces;
-    }
-
-    void WorkspaceManager::SetWorkspaces(std::vector<Workspace> workspaces)
-    {
-        _workspaces = std::move(workspaces);
-    }
-
-    std::wstring SanitizeWorkspaceDirectoryName(std::wstring_view value, std::wstring_view fallback) noexcept
-    {
-        return terminal::workspacepaths::SanitizeWorkspaceDirectoryName(value, fallback);
-    }
-
-    std::wstring NormalizeWorkspaceColor(const std::wstring_view color) noexcept
-    {
-        if (color.size() != 7 || color[0] != L'#')
-        {
-            return {};
-        }
-
-        std::wstring normalized;
-        normalized.reserve(color.size());
-        normalized.push_back(L'#');
-
-        for (size_t i = 1; i < color.size(); ++i)
-        {
-            if (!_isHexDigit(color[i]))
-            {
-                return {};
-            }
-            normalized.push_back(static_cast<wchar_t>(std::towupper(color[i])));
-        }
-
-        return normalized;
-    }
-
-    std::wstring PickUnusedWorkspaceColor(const std::vector<Workspace>& workspaces)
-    {
-        std::unordered_set<std::wstring> usedColors;
-        usedColors.reserve(workspaces.size());
-        for (const auto& workspace : workspaces)
-        {
-            if (const auto normalized = NormalizeWorkspaceColor(workspace.BackgroundColor); !normalized.empty())
-            {
-                usedColors.emplace(std::move(normalized));
-            }
-        }
-
-        for (const auto color : _workspaceColorPalette)
-        {
-            if (!usedColors.contains(std::wstring{ color }))
-            {
-                return std::wstring{ color };
-            }
-        }
-
-        return std::wstring{ _workspaceColorPalette[workspaces.size() % _workspaceColorPalette.size()] };
-    }
-
-    std::wstring MakeUniquePersistedName(const std::wstring_view baseName, std::unordered_set<std::wstring>& usedNames)
-    {
-        std::wstring candidate{ baseName };
-        auto lowered = _toLower(candidate);
-        for (size_t index = 2; !usedNames.emplace(lowered).second; ++index)
-        {
-            candidate = baseName;
-            candidate += L" (";
-            candidate += std::to_wstring(index);
-            candidate += L")";
-            lowered = _toLower(candidate);
-        }
-        return candidate;
-    }
-
-    void NormalizeWorkspacePersistableNames(Workspace& workspace)
-    {
-        workspace.Name = SanitizeWorkspaceDirectoryName(workspace.Name, L"workspace");
-        workspace.Id = workspace.Name;
-
-        const auto previousTabOrder = workspace.TabOrder;
-        std::vector<std::wstring> originalNodeIds;
-        originalNodeIds.reserve(workspace.Nodes.size());
-        for (const auto& node : workspace.Nodes)
-        {
-            originalNodeIds.emplace_back(node.Id);
-        }
-
-        std::unordered_set<std::wstring> usedNodeNames;
-        for (auto& node : workspace.Nodes)
-        {
-            node.Name = SanitizeWorkspaceDirectoryName(node.Name, L"tab");
-            node.Name = MakeUniquePersistedName(node.Name, usedNodeNames);
-            node.Id = node.Name;
-        }
-
-        std::unordered_map<std::wstring, std::wstring> normalizedNodeIds;
-        for (size_t nodeIndex = 0; nodeIndex < workspace.Nodes.size() && nodeIndex < originalNodeIds.size(); ++nodeIndex)
-        {
-            normalizedNodeIds.emplace(originalNodeIds.at(nodeIndex), workspace.Nodes.at(nodeIndex).Id);
-        }
-
-        std::vector<std::wstring> normalizedTabOrder;
-        normalizedTabOrder.reserve(previousTabOrder.size());
-        for (const auto& nodeId : previousTabOrder)
-        {
-            if (const auto it = normalizedNodeIds.find(nodeId); it != normalizedNodeIds.end() && !it->second.empty())
-            {
-                normalizedTabOrder.emplace_back(it->second);
-            }
-        }
-        workspace.TabOrder = std::move(normalizedTabOrder);
-    }
-
-    bool WorkspaceNodeEquivalent(const WorkspaceNode& lhs, const WorkspaceNode& rhs)
-    {
-        const auto lhsTabColor = NormalizeWorkspaceColor(lhs.TabColor).empty() ? lhs.TabColor : NormalizeWorkspaceColor(lhs.TabColor);
-        const auto rhsTabColor = NormalizeWorkspaceColor(rhs.TabColor).empty() ? rhs.TabColor : NormalizeWorkspaceColor(rhs.TabColor);
-        return lhs.Name == rhs.Name &&
-               lhs.ProfileGuid == rhs.ProfileGuid &&
-               lhs.ProfileName == rhs.ProfileName &&
-               lhs.Icon == rhs.Icon &&
-               lhsTabColor == rhsTabColor &&
-               lhs.ShowTab == rhs.ShowTab &&
-               lhs.StartupDirectory == rhs.StartupDirectory &&
-               lhs.StartupAction == rhs.StartupAction &&
-               lhs.OperatingSystem == rhs.OperatingSystem &&
-               lhs.ShellType == rhs.ShellType &&
-               lhs.ShowInputPanel == rhs.ShowInputPanel &&
-               lhs.UseNodeNameAsTabTitle == rhs.UseNodeNameAsTabTitle &&
-               (lhs.ConnectionRef.empty() || rhs.ConnectionRef.empty() || lhs.ConnectionRef == rhs.ConnectionRef);
-    }
-
-    bool WorkspaceLayoutEquivalent(const Workspace& lhs, const Workspace& rhs)
-    {
-        if (lhs.TabOrder != rhs.TabOrder)
-        {
-            return false;
-        }
-
-        if (lhs.Nodes.size() != rhs.Nodes.size())
-        {
-            return false;
-        }
-
-        for (size_t i = 0; i < lhs.Nodes.size(); ++i)
-        {
-            if (!WorkspaceNodeEquivalent(lhs.Nodes[i], rhs.Nodes[i]))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    WorkspaceSavePlan PrepareWorkspaceForSave(const Workspace& capturedWorkspace,
-                                              const std::vector<Workspace>& existingWorkspaces,
-                                              const std::wstring_view targetWorkspaceId,
-                                              const std::wstring_view explicitWorkspaceName,
-                                              const std::wstring_view fallbackWindowName,
-                                              const std::wstring_view fallbackTargetName,
-                                              const std::wstring_view fallbackSingleTabTitle,
-                                              const std::wstring_view generatedFallbackName)
-    {
-        WorkspaceSavePlan plan;
-        plan.Workspaces = existingWorkspaces;
-
-        auto workspace = capturedWorkspace;
-        const auto existingWorkspaceIt = !targetWorkspaceId.empty() ?
-                                             std::find_if(plan.Workspaces.begin(), plan.Workspaces.end(), [&](const auto& existingWorkspace) {
-                                                 return existingWorkspace.Id == targetWorkspaceId;
-                                             }) :
-                                             plan.Workspaces.end();
-
-        if (existingWorkspaceIt != plan.Workspaces.end())
-        {
-            workspace.Name = existingWorkspaceIt->Name;
-            workspace.Description = existingWorkspaceIt->Description;
-            workspace.BackgroundColor = existingWorkspaceIt->BackgroundColor;
-            workspace.Locked = true;
-
-            for (auto& node : workspace.Nodes)
-            {
-                if (node.ConnectionRef.empty() || node.Id.empty())
-                {
-                    const auto existingNodeIt = std::find_if(existingWorkspaceIt->Nodes.begin(), existingWorkspaceIt->Nodes.end(), [&](const auto& existingNode) {
-                        return existingNode.Id == node.Id && !existingNode.ConnectionRef.empty();
-                    });
-                    if (existingNodeIt != existingWorkspaceIt->Nodes.end())
-                    {
-                        node.ConnectionRef = existingNodeIt->ConnectionRef;
-                    }
-                }
-            }
-
-            *existingWorkspaceIt = workspace;
-            plan.SavedWorkspaceIndex = static_cast<size_t>(std::distance(plan.Workspaces.begin(), existingWorkspaceIt));
-        }
-        else
-        {
-            if (!explicitWorkspaceName.empty())
-            {
-                workspace.Name = explicitWorkspaceName;
-            }
-            else if (!fallbackWindowName.empty())
-            {
-                workspace.Name = fallbackWindowName;
-            }
-            else if (!fallbackTargetName.empty())
-            {
-                workspace.Name = fallbackTargetName;
-            }
-            else if (!fallbackSingleTabTitle.empty())
-            {
-                workspace.Name = fallbackSingleTabTitle;
-            }
-
-            if (workspace.Name.empty())
-            {
-                workspace.Name = generatedFallbackName;
-            }
-
-            workspace.BackgroundColor = PickUnusedWorkspaceColor(plan.Workspaces);
-            workspace.Locked = true;
-            plan.Workspaces.emplace_back(workspace);
-            plan.SavedWorkspaceIndex = plan.Workspaces.size() - 1;
-        }
-
-        std::unordered_set<std::wstring> usedWorkspaceNames;
-        for (auto& candidate : plan.Workspaces)
-        {
-            const auto previousTabOrder = candidate.TabOrder;
-            std::vector<std::wstring> originalNodeIds;
-            originalNodeIds.reserve(candidate.Nodes.size());
-            for (const auto& node : candidate.Nodes)
-            {
-                originalNodeIds.emplace_back(node.Id);
-            }
-
-            NormalizeWorkspacePersistableNames(candidate);
-
-            std::unordered_map<std::wstring, std::wstring> normalizedNodeIds;
-            for (size_t nodeIndex = 0; nodeIndex < candidate.Nodes.size() && nodeIndex < originalNodeIds.size(); ++nodeIndex)
-            {
-                normalizedNodeIds.emplace(originalNodeIds.at(nodeIndex), candidate.Nodes.at(nodeIndex).Id);
-            }
-
-            std::vector<std::wstring> normalizedTabOrder;
-            normalizedTabOrder.reserve(previousTabOrder.size());
-            for (const auto& nodeId : previousTabOrder)
-            {
-                if (const auto it = normalizedNodeIds.find(nodeId); it != normalizedNodeIds.end() && !it->second.empty())
-                {
-                    normalizedTabOrder.emplace_back(it->second);
-                }
-            }
-            candidate.TabOrder = std::move(normalizedTabOrder);
-
-            candidate.Name = MakeUniquePersistedName(candidate.Name, usedWorkspaceNames);
-            candidate.Id = candidate.Name;
-        }
-
-        plan.SavedWorkspace = plan.Workspaces.at(plan.SavedWorkspaceIndex);
-        return plan;
-    }
-
-    WorkspaceOpenPlan PrepareWorkspaceForOpen(const std::wstring_view workspaceId,
-                                              const bool openInNewWindow,
-                                              const std::wstring_view currentWorkspaceId,
-                                              const bool currentWorkspaceNeedsSave,
-                                              const WorkspaceManager& manager,
-                                              const WorkspaceStateManager& stateManager)
-    {
-        WorkspaceOpenPlan plan;
-        if (workspaceId.empty())
-        {
-            return plan;
-        }
-
-        if (const auto existingWindowId = stateManager.FindOpenWorkspaceWindowId(workspaceId))
-        {
-            plan.Disposition = WorkspaceOpenDisposition::SummonExistingWindow;
-            plan.ExistingWindowId = existingWindowId;
-            return plan;
-        }
-
-        const auto workspace = manager.FindById(workspaceId);
-        if (workspace == nullptr)
-        {
-            return plan;
-        }
-
-        plan.TargetWorkspace = *workspace;
-        plan.PendingNodeIds = VisibleWorkspaceNodeIds(*workspace);
-        plan.PendingNodeInputVisibility = VisibleWorkspaceNodeInputVisibility(*workspace);
-        // Workspaces are immutable at runtime and always get their own window.
-        // Retain the legacy parameters for the adapter ABI while intentionally
-        // ignoring the old replace-current/save path.
-        (void)openInNewWindow;
-        (void)currentWorkspaceId;
-        (void)currentWorkspaceNeedsSave;
-        plan.ConfirmSaveCurrentWorkspace = false;
-        plan.Disposition = WorkspaceOpenDisposition::OpenInNewWindow;
-        return plan;
-    }
-
-    WorkspaceOpenExecutionPlan ResolveWorkspaceOpenExecutionPlan(const WorkspaceOpenPlan& openPlan,
-                                                                 const bool hasStartupActions,
-                                                                 const bool hasTabsToReplace)
-    {
-        WorkspaceOpenExecutionPlan plan;
-        plan.ExistingWindowId = openPlan.ExistingWindowId;
-        plan.ConfirmSaveCurrentWorkspace = openPlan.ConfirmSaveCurrentWorkspace;
-
-        switch (openPlan.Disposition)
-        {
-        case WorkspaceOpenDisposition::SummonExistingWindow:
-            plan.Disposition = WorkspaceOpenExecutionDisposition::SummonExistingWindow;
-            return plan;
-        case WorkspaceOpenDisposition::Missing:
-            plan.Disposition = WorkspaceOpenExecutionDisposition::Missing;
-            return plan;
-        case WorkspaceOpenDisposition::OpenInNewWindow:
-            if (!hasStartupActions)
-            {
-                plan.Disposition = WorkspaceOpenExecutionDisposition::NoStartupActions;
-                return plan;
-            }
-            plan.Disposition = WorkspaceOpenExecutionDisposition::OpenInNewWindow;
-            plan.UpdatePendingWorkspaceLaunch = true;
-            return plan;
-        case WorkspaceOpenDisposition::ReplaceCurrentWindow:
-            // Compatibility for callers that still construct the old disposition:
-            // route it to the same new-window behavior rather than replacing tabs.
-            (void)hasTabsToReplace;
-            plan.Disposition = hasStartupActions ? WorkspaceOpenExecutionDisposition::OpenInNewWindow :
-                                                   WorkspaceOpenExecutionDisposition::NoStartupActions;
-            plan.UpdatePendingWorkspaceLaunch = hasStartupActions;
-            return plan;
-        default:
-            plan.Disposition = WorkspaceOpenExecutionDisposition::Missing;
-            return plan;
-        }
-    }
-
-    WorkspaceSshStartupPlan PrepareSshStartupPlan(const std::wstring_view pendingStartupAction,
-                                                  const std::wstring_view startingDirectory,
-                                                  const std::wstring_view operatingSystem,
-                                                  const std::wstring_view shellType,
-                                                  const std::optional<WorkspaceNode>& workspaceNode)
-    {
-        WorkspaceSshStartupPlan plan;
-        plan.StartingDirectory = std::wstring{ startingDirectory };
-        plan.OperatingSystem = std::wstring{ operatingSystem };
-        plan.ShellType = std::wstring{ shellType };
-
-        if (workspaceNode)
-        {
-            if (plan.StartingDirectory.empty())
-            {
-                plan.StartingDirectory = workspaceNode->StartupDirectory;
-            }
-            if (plan.OperatingSystem.empty())
-            {
-                plan.OperatingSystem = workspaceNode->OperatingSystem;
-            }
-            if (plan.ShellType.empty())
-            {
-                plan.ShellType = workspaceNode->ShellType;
-            }
-
-            plan.StartupAction = workspaceNode->StartupAction;
-            plan.DeferredStartupInputs = _buildSshDeferredStartupInputs(*workspaceNode);
-        }
-        else
-        {
-            plan.StartupAction = std::wstring{ pendingStartupAction };
-        }
-
-        if (plan.DeferredStartupInputs.empty() && !pendingStartupAction.empty())
-        {
-            plan.DeferredStartupInputs.emplace_back(pendingStartupAction);
-        }
-
-        plan.StartupInputPending = !plan.DeferredStartupInputs.empty();
-        return plan;
-    }
-
-    WorkspaceNode BuildWorkspaceCapturedNode(const WorkspaceLiveTabCaptureState& state)
-    {
-        WorkspaceNode node = state.PersistedNode.value_or(WorkspaceNode{});
-        if (!state.PersistedNode.has_value())
-        {
-            node.UseNodeNameAsTabTitle = false;
-            node.Name = state.LiveTabTitle.empty() ? state.StartupTabTitle : state.LiveTabTitle;
-            if (node.Name.empty())
-            {
-                node.Name = state.GeneratedNodeName;
-            }
-            node.Id = node.Name;
-        }
-
-        node.ProfileGuid = state.ProfileGuid;
-        if (!state.ProfileName.empty() || !state.PersistedNode.has_value())
-        {
-            node.ProfileName = state.ProfileName;
-        }
-        node.StartupDirectory = state.LaunchResolution.StartingDirectory;
-        node.StartupAction = state.LaunchResolution.StartupAction;
-        node.OperatingSystem = state.LaunchResolution.OperatingSystem;
-        node.ShellType = state.LaunchResolution.ShellType;
-        node.ShowInputPanel = state.ShowInputPanel;
-        node.TabColor = state.TabColor;
-        return node;
-    }
-
-    bool SetWorkspaceLocked(WorkspaceManager& manager, const std::wstring_view workspaceId, const bool locked)
-    {
-        if (const auto workspace = std::find_if(manager.Workspaces().begin(), manager.Workspaces().end(), [&](const auto& candidate) {
-                return candidate.Id == workspaceId;
-            });
-            workspace != manager.Workspaces().end())
-        {
-            // A workspace is permanently locked outside the management tab.
-            (void)locked;
-            workspace->Locked = true;
-            return true;
-        }
-
-        return false;
-    }
-
-    bool SetWorkspaceNodeInputVisibility(WorkspaceManager& manager, const std::wstring_view workspaceId, const size_t nodeIndex, const bool showInputPanel)
-    {
-        if (const auto workspace = std::find_if(manager.Workspaces().begin(), manager.Workspaces().end(), [&](const auto& candidate) {
-                return candidate.Id == workspaceId;
-            });
-            workspace != manager.Workspaces().end() && nodeIndex < workspace->Nodes.size())
-        {
-            workspace->Nodes.at(nodeIndex).ShowInputPanel = showInputPanel;
-            return true;
-        }
-
-        return false;
-    }
-
-    bool RemoveWorkspaceDefinition(WorkspaceManager& manager, const std::wstring_view workspaceId, size_t* removedWorkspaceIndex)
-    {
-        auto& workspaces = manager.Workspaces();
-        const auto workspaceIt = std::find_if(workspaces.begin(), workspaces.end(), [&](const auto& workspace) {
-            return workspace.Id == workspaceId;
-        });
-        if (workspaceIt == workspaces.end())
-        {
-            return false;
-        }
-
-        if (removedWorkspaceIndex)
-        {
-            *removedWorkspaceIndex = static_cast<size_t>(std::distance(workspaces.begin(), workspaceIt));
-        }
-        workspaces.erase(workspaceIt);
-        return true;
-    }
-
-    WorkspaceNodeMutationResult RemoveWorkspaceNode(WorkspaceManager& manager, const std::wstring_view workspaceId, const std::wstring_view nodeId)
-    {
-        auto& workspaces = manager.Workspaces();
-        const auto workspaceIt = std::find_if(workspaces.begin(), workspaces.end(), [&](const auto& workspace) {
-            return workspace.Id == workspaceId;
-        });
-        if (workspaceIt == workspaces.end())
-        {
-            return {};
-        }
-
-        auto& nodes = workspaceIt->Nodes;
-        const auto nodeIt = std::find_if(nodes.begin(), nodes.end(), [&](const auto& node) {
-            return node.Id == nodeId;
-        });
-        if (nodeIt == nodes.end())
-        {
-            return {};
-        }
-
-        WorkspaceNodeMutationResult result;
-        result.WorkspaceIndex = static_cast<size_t>(std::distance(workspaces.begin(), workspaceIt));
-        result.NodeIndex = static_cast<size_t>(std::distance(nodes.begin(), nodeIt));
-        if (nodes.size() == 1)
-        {
-            workspaces.erase(workspaceIt);
-            result.Disposition = WorkspaceNodeMutationDisposition::RemovedWorkspace;
-            return result;
-        }
-
-        nodes.erase(nodeIt);
-        result.Disposition = WorkspaceNodeMutationDisposition::RemovedNode;
-        return result;
-    }
-
-    void FinalizeWorkspaceManagerNames(WorkspaceManager& manager)
-    {
-        std::unordered_set<std::wstring> usedWorkspaceNames;
-        for (auto& workspace : manager.Workspaces())
-        {
-            NormalizeWorkspacePersistableNames(workspace);
-            workspace.Name = MakeUniquePersistedName(workspace.Name, usedWorkspaceNames);
-            workspace.Id = workspace.Name;
-        }
-    }
-
-    std::optional<std::wstring> RenameWorkspace(WorkspaceManager& manager, const std::wstring_view workspaceId, const std::wstring_view newName)
-    {
-        auto& workspaces = manager.Workspaces();
-        const auto workspaceIt = std::find_if(workspaces.begin(), workspaces.end(), [&](const auto& workspace) {
-            return workspace.Id == workspaceId;
-        });
-        if (workspaceIt == workspaces.end())
-        {
-            return std::nullopt;
-        }
-
-        const auto workspaceIndex = static_cast<size_t>(std::distance(workspaces.begin(), workspaceIt));
-        workspaceIt->Name = SanitizeWorkspaceDirectoryName(newName, L"workspace");
-        FinalizeWorkspaceManagerNames(manager);
-        if (workspaceIndex >= workspaces.size())
-        {
-            return std::nullopt;
-        }
-
-        return workspaces.at(workspaceIndex).Name;
-    }
-
-    std::wstring ResolveWorkspaceSaveTargetId(const std::wstring_view currentWorkspaceId, const std::wstring_view lastWorkspaceId, const WorkspaceManager& manager)
-    {
-        if (!currentWorkspaceId.empty())
-        {
-            return std::wstring{ currentWorkspaceId };
-        }
-
-        if (lastWorkspaceId.empty())
-        {
-            return {};
-        }
-
-        return manager.FindById(lastWorkspaceId) ? std::wstring{ lastWorkspaceId } : std::wstring{};
-    }
-
-    std::wstring ResolveWorkspaceSaveTargetName(const std::wstring_view currentWorkspaceId, const std::wstring_view lastWorkspaceId, const WorkspaceManager& manager)
-    {
-        if (const auto targetId = ResolveWorkspaceSaveTargetId(currentWorkspaceId, lastWorkspaceId, manager); !targetId.empty())
-        {
-            if (const auto workspace = manager.FindById(targetId))
-            {
-                return workspace->Name;
-            }
-        }
-
-        return {};
-    }
-
-    std::wstring SuggestWorkspaceSaveName(const std::wstring_view resolvedTargetName,
-                                          const std::wstring_view windowName,
-                                          const std::wstring_view singleTabTitle,
-                                          const size_t workspaceCount,
-                                          const std::wstring_view generatedFallbackName)
-    {
-        std::wstring suggestedName;
-        if (!resolvedTargetName.empty())
-        {
-            suggestedName = resolvedTargetName;
-        }
-        else if (!windowName.empty())
-        {
-            suggestedName = windowName;
-        }
-        else if (!singleTabTitle.empty())
-        {
-            suggestedName = singleTabTitle;
-        }
-        else if (!generatedFallbackName.empty())
-        {
-            suggestedName = generatedFallbackName;
-        }
-        else
-        {
-            suggestedName = L"Workspace " + std::to_wstring(workspaceCount + 1);
-        }
-
-        return SanitizeWorkspaceDirectoryName(suggestedName, L"Workspace");
-    }
-
-    std::filesystem::path WorkspaceStateManager::DefaultPath()
-    {
-        return terminal::workspacepaths::ResolveWorkspaceDefinitionsPath();
-    }
-
-    WorkspaceStateManager WorkspaceStateManager::Load()
-    {
-        return LoadFromPath(DefaultPath());
-    }
-
-    WorkspaceStateManager WorkspaceStateManager::LoadFromPath(const std::filesystem::path& path)
-    {
-        WorkspaceStateManager manager;
-        std::error_code ec;
-        if (!std::filesystem::exists(path, ec) || ec)
-        {
-            return manager;
-        }
-
-        if (std::filesystem::is_regular_file(path, ec) && !ec)
-        {
-            return manager;
-        }
-
-        if (!std::filesystem::is_directory(path, ec) || ec)
-        {
-            return manager;
-        }
-
-        const auto persistedWorkspaces = _enumeratePersistedWorkspaceDirectories(path);
-        if (!persistedWorkspaces.has_value())
-        {
-            return manager;
-        }
-
-        for (const auto& workspace : *persistedWorkspaces)
-        {
-            const auto statePath = workspace.Directory / std::filesystem::path{ terminal::workspacepaths::WorkspaceStateFileName };
-            if (!std::filesystem::exists(statePath, ec) || ec)
-            {
-                ec.clear();
-                continue;
-            }
-
-            _loadWorkspaceStateFile(manager, statePath, workspace.Definition.Id);
-        }
-
-        return manager;
-    }
-
-    bool WorkspaceStateManager::Save() const
-    {
-        return SaveToPath(DefaultPath());
-    }
-
-    bool WorkspaceStateManager::SaveToPath(const std::filesystem::path& path) const
-    {
-        if (path.has_extension())
-        {
-            return false;
-        }
-
-        std::error_code ec;
-        std::filesystem::create_directories(path, ec);
-        if (ec)
-        {
-            return false;
-        }
-
-        const auto persistedWorkspaces = _enumeratePersistedWorkspaceDirectoriesIfPresent(path);
-        if (!persistedWorkspaces.has_value())
-        {
-            return false;
-        }
-
-        std::unordered_set<std::wstring> touchedWorkspaces;
-        for (const auto& window : _windows)
-        {
-            if (window.WorkspaceId.empty())
-            {
-                continue;
-            }
-
-            touchedWorkspaces.emplace(window.WorkspaceId);
-        }
-
-        for (const auto& workspace : *persistedWorkspaces)
-        {
-            std::vector<WorkspaceStateWindow> windows;
-            for (const auto& window : _windows)
-            {
-                if (window.WorkspaceId == workspace.Definition.Id)
-                {
-                    windows.emplace_back(window);
-                }
-            }
-
-            const auto statePath = workspace.Directory / std::filesystem::path{ terminal::workspacepaths::WorkspaceStateFileName };
-            if (windows.empty())
-            {
-                std::filesystem::remove(statePath, ec);
-                if (ec)
-                {
-                    return false;
-                }
-                continue;
-            }
-
-            if (!_writeUtf8TextFile(statePath, _serializeWorkspaceStateFile(windows)))
-            {
-                return false;
-            }
-        }
-
-        for (const auto& workspaceId : touchedWorkspaces)
-        {
-            const auto existingIt = std::find_if(persistedWorkspaces->begin(), persistedWorkspaces->end(), [&](const auto& workspace) {
-                return workspace.Definition.Id == workspaceId;
-            });
-            if (existingIt != persistedWorkspaces->end())
-            {
-                continue;
-            }
-
-            const auto workspaceDir = path / SanitizeWorkspaceDirectoryName(workspaceId, L"workspace");
-            const auto statePath = workspaceDir / std::filesystem::path{ terminal::workspacepaths::WorkspaceStateFileName };
-
-            std::vector<WorkspaceStateWindow> windows;
-            for (const auto& window : _windows)
-            {
-                if (window.WorkspaceId == workspaceId)
-                {
-                    windows.emplace_back(window);
-                }
-            }
-
-            if (windows.empty())
-            {
-                continue;
-            }
-
-            std::filesystem::create_directories(workspaceDir, ec);
-            if (ec)
-            {
-                return false;
-            }
-
-            if (!_writeUtf8TextFile(statePath, _serializeWorkspaceStateFile(windows)))
-            {
-                return false;
-            }
-        }
-
-        if (path == terminal::workspacepaths::ResolveWorkspaceDefinitionsPath())
-        {
-            return _removeLegacyWorkspaceStateFilesIfPresent();
-        }
-
-        return true;
-    }
-
-    const std::vector<WorkspaceStateWindow>& WorkspaceStateManager::Windows() const noexcept
-    {
-        return _windows;
-    }
-
-    void WorkspaceStateManager::SetWindows(std::vector<WorkspaceStateWindow> windows)
-    {
-        _windows = std::move(windows);
-    }
-
-    void WorkspaceStateManager::UpsertWindow(WorkspaceStateWindow window)
-    {
-        const auto it = std::find_if(_windows.begin(), _windows.end(), [&](const auto& candidate) {
-            return candidate.WindowId == window.WindowId;
-        });
-
-        if (it != _windows.end())
-        {
-            *it = std::move(window);
-        }
-        else
-        {
-            _windows.emplace_back(std::move(window));
-        }
-    }
-
-    void WorkspaceStateManager::RemoveWindow(uint64_t windowId) noexcept
-    {
-        _windows.erase(std::remove_if(_windows.begin(), _windows.end(), [&](const auto& window) {
-            return window.WindowId == windowId;
-        }), _windows.end());
-    }
-
-    void WorkspaceStateManager::UpdateWindowState(const uint64_t windowId, const std::wstring_view windowName, const std::wstring_view workspaceId)
-    {
-        if (workspaceId.empty())
-        {
-            RemoveWindow(windowId);
-            return;
-        }
-
-        WorkspaceStateWindow window;
-        window.WindowId = windowId;
-        window.WindowName = std::wstring{ windowName };
-        window.WorkspaceId = std::wstring{ workspaceId };
-        UpsertWindow(std::move(window));
-    }
-
-    std::optional<uint64_t> WorkspaceStateManager::FindOpenWorkspaceWindowId(const std::wstring_view workspaceId) const noexcept
-    {
-        if (workspaceId.empty())
-        {
-            return std::nullopt;
-        }
-
-        const auto found = std::find_if(_windows.begin(), _windows.end(), [&](const auto& window) {
-            return window.WorkspaceId == workspaceId && window.WindowId != 0;
-        });
-        if (found == _windows.end())
-        {
-            return std::nullopt;
-        }
-
-        return found->WindowId;
-    }
+    #include "WorkspaceCoreRuntime.cpp"
 }

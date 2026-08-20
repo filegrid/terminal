@@ -1085,10 +1085,121 @@ std::tuple<std::wstring, std::wstring> Utils::MangleStartingDirectoryForWSL(std:
                     mangledDirectory = std::filesystem::path{ startingDirectory }.make_preferred().wstring();
                 }
 
-                return {
-                    fmt::format(FMT_COMPILE(LR"("{}" --cd "{}" {})"), executablePath.native(), mangledDirectory, arguments),
-                    std::wstring{}
+                const auto skipWhitespace = [&](size_t index) noexcept {
+                    while (index < arguments.size() && til::at(arguments, index) == L' ')
+                    {
+                        ++index;
+                    }
+                    return index;
                 };
+                const auto consumeToken = [&](size_t index) noexcept {
+                    if (index >= arguments.size())
+                    {
+                        return index;
+                    }
+
+                    if (til::at(arguments, index) == L'"')
+                    {
+                        ++index;
+                        while (index < arguments.size() && til::at(arguments, index) != L'"')
+                        {
+                            ++index;
+                        }
+                        return index < arguments.size() ? index + 1 : index;
+                    }
+
+                    while (index < arguments.size() && til::at(arguments, index) != L' ')
+                    {
+                        ++index;
+                    }
+                    return index;
+                };
+                const auto tokenEquals = [](std::wstring_view token, std::wstring_view expected) noexcept {
+                    if (token.size() >= 2 && token.front() == L'"' && token.back() == L'"')
+                    {
+                        token.remove_prefix(1);
+                        token.remove_suffix(1);
+                    }
+                    return til::equals_insensitive_ascii(token, expected);
+                };
+
+                size_t insertPos = 0;
+                for (auto index = skipWhitespace(0); index < arguments.size();)
+                {
+                    const auto tokenStart = index;
+                    const auto tokenEnd = consumeToken(index);
+                    const auto token = arguments.substr(tokenStart, tokenEnd - tokenStart);
+
+                    const auto optionNeedsValue = tokenEquals(token, L"-d") ||
+                                                  tokenEquals(token, L"--distribution") ||
+                                                  tokenEquals(token, L"-u") ||
+                                                  tokenEquals(token, L"--user") ||
+                                                  tokenEquals(token, L"--distribution-id");
+                    const auto optionWithoutValue = tokenEquals(token, L"--system");
+
+                    if (optionNeedsValue)
+                    {
+                        auto valueStart = skipWhitespace(tokenEnd);
+                        if (valueStart >= arguments.size())
+                        {
+                            break;
+                        }
+
+                        insertPos = consumeToken(valueStart);
+                        index = skipWhitespace(insertPos);
+                        continue;
+                    }
+
+                    if (optionWithoutValue)
+                    {
+                        insertPos = tokenEnd;
+                        index = skipWhitespace(insertPos);
+                        continue;
+                    }
+
+                    break;
+                }
+
+                const auto prefixArguments = arguments.substr(0, insertPos);
+                const auto suffixArguments = arguments.substr(insertPos);
+
+                std::wstring rebuiltCommandLine;
+                rebuiltCommandLine.reserve(commandLine.size() + mangledDirectory.size() + 16);
+                rebuiltCommandLine.push_back(L'"');
+                rebuiltCommandLine.append(executablePath.native());
+                rebuiltCommandLine.push_back(L'"');
+
+                if (!prefixArguments.empty())
+                {
+                    if (prefixArguments.front() != L' ')
+                    {
+                        rebuiltCommandLine.push_back(L' ');
+                    }
+                    rebuiltCommandLine.append(prefixArguments);
+                }
+
+                if (rebuiltCommandLine.back() != L' ')
+                {
+                    rebuiltCommandLine.push_back(L' ');
+                }
+                rebuiltCommandLine.append(LR"(--cd ")");
+                rebuiltCommandLine.append(mangledDirectory);
+                rebuiltCommandLine.push_back(L'"');
+
+                if (!suffixArguments.empty())
+                {
+                    if (suffixArguments.front() != L' ')
+                    {
+                        rebuiltCommandLine.push_back(L' ');
+                    }
+                    rebuiltCommandLine.append(suffixArguments);
+                }
+                else
+                {
+                    rebuiltCommandLine.push_back(L' ');
+                }
+
+                return { std::move(rebuiltCommandLine), std::wstring{} };
             }
         }
     } while (false);

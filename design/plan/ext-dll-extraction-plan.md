@@ -35,6 +35,13 @@ There is also a boundary correction on the workspace architecture itself:
 2. That makes `WorkspaceModel` behave like a shared implementation bucket instead of a stable model/API layer.
 3. The next refactor stage must move workspace load/save/startup/runtime logic behind the pure C++ core DLL interfaces so host projects stop depending on that shared implementation path.
 4. The glue layer may still depend on Terminal/Microsoft types, but it must not own the business rules.
+5. This is an enforced workflow rule: every workspace change must first be classified as `core`, `glue`, or host thin-hook work before code is written.
+6. If a change touches persistence, startup planning, runtime state, status inference, or validation, it belongs in `core` by default.
+7. `glue` may temporarily hold diagnostics needed for investigation, but those diagnostics must not turn into long-lived ownership of business rules.
+8. Before considering a change done, the implementation must be checked once for boundary regressions:
+   - business rules accidentally added to `glue`
+   - full implementations accidentally added back into `microsoft\src\...`
+   - temporary `glue` logic not yet pushed down into `core`
 
 ## Implementation steps
 

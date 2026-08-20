@@ -5,6 +5,7 @@
 #include "pch.h"
 #include "AboutDialog.h"
 #include "AboutDialog.g.cpp"
+#include "../../../../ext/generated/ExtBuildVersion.h"
 
 using namespace winrt;
 using namespace winrt::Microsoft::Terminal::Settings::Model;
@@ -24,6 +25,6 @@ namespace winrt::TerminalApp::implementation
 
     winrt::hstring AboutDialog::ApplicationVersion()
     {
-        return CascadiaSettings::ApplicationVersion();
+        return winrt::hstring{ WorkspaceExt::Build::AboutVersion };
     }
 }

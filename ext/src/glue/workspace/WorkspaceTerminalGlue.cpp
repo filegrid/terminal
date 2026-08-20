@@ -84,14 +84,6 @@
         const auto strong = get_strong();
         const auto appState = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
 
-        const auto loadedOpenState = ::terminal::workspace::LoadWorkspaceOpenState(workspaceId.c_str(),
-                                                                                   openInNewWindow,
-                                                                                   _currentWorkspaceId.c_str(),
-                                                                                   _CurrentWorkspaceNeedsSave());
-        auto manager = loadedOpenState.Manager;
-        const auto& openPlan = loadedOpenState.OpenPlan;
-        auto startupActions = manager.BuildStartupActions(openPlan.TargetWorkspace, _settings);
-        const auto startupState = Microsoft::Terminal::Settings::Model::implementation::ResolveWorkspaceStartupState(openPlan.TargetWorkspace, _settings);
         std::vector<winrt::TerminalApp::Tab> tabsToReplace;
         tabsToReplace.reserve(_tabs.Size());
         for (const auto& tab : _tabs)
@@ -99,9 +91,37 @@
             tabsToReplace.emplace_back(tab);
         }
 
-        const auto executionPlan = Microsoft::Terminal::Settings::Model::implementation::ResolveWorkspaceOpenExecutionPlan(openPlan,
-                                                                                                                            !startupState.PendingNodeIds.empty(),
-                                                                                                                            !tabsToReplace.empty());
+        const auto loadedOpenState = ::terminal::workspace::LoadWorkspaceOpenExecutionState(workspaceId.c_str(),
+                                                                                            openInNewWindow,
+                                                                                            _currentWorkspaceId.c_str(),
+                                                                                            _CurrentWorkspaceNeedsSave(),
+                                                                                            !tabsToReplace.empty(),
+                                                                                            _settings);
+        auto manager = loadedOpenState.Manager;
+        const auto& openPlan = loadedOpenState.OpenPlan;
+        const auto& startupState = loadedOpenState.StartupState;
+        const auto& executionPlan = loadedOpenState.ExecutionPlan;
+        auto startupActions = manager.BuildStartupActions(openPlan.TargetWorkspace, _settings);
+        {
+            Json::Value payload{ Json::objectValue };
+            terminal::workspacechat::AddOptionalDiagnosticString(payload, "requestedWorkspaceId", workspaceId.c_str());
+            terminal::workspacechat::AddOptionalDiagnosticString(payload, "currentWorkspaceId", _currentWorkspaceId.c_str());
+            payload["openInNewWindow"] = openInNewWindow;
+            payload["startupActionCount"] = Json::UInt64{ gsl::narrow_cast<uint64_t>(startupActions.size()) };
+            payload["pendingNodeCount"] = Json::UInt64{ gsl::narrow_cast<uint64_t>(startupState.PendingNodeIds.size()) };
+            payload["tabCount"] = Json::UInt64{ gsl::narrow_cast<uint64_t>(_tabs.Size()) };
+            payload["disposition"] = Json::Int{ gsl::narrow_cast<int>(executionPlan.Disposition) };
+            payload["setCurrentWorkspaceBeforeActions"] = executionPlan.SetCurrentWorkspaceBeforeActions;
+            payload["setCurrentWorkspaceAfterActions"] = executionPlan.SetCurrentWorkspaceAfterActions;
+            payload["replacePendingNodeQueues"] = executionPlan.ReplacePendingNodeQueues;
+            payload["confirmSaveCurrentWorkspace"] = executionPlan.ConfirmSaveCurrentWorkspace;
+            payload["removeCapturedTabsAfterActions"] = executionPlan.RemoveCapturedTabsAfterActions;
+            if (executionPlan.ExistingWindowId.has_value())
+            {
+                payload["existingWindowId"] = Json::UInt64{ *executionPlan.ExistingWindowId };
+            }
+            std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_open_plan", payload);
+        }
         if (executionPlan.Disposition == Microsoft::Terminal::Settings::Model::implementation::WorkspaceOpenExecutionDisposition::SummonExistingWindow)
         {
             appState.Flush();
@@ -132,7 +152,14 @@
             // The workspace identity travels only with this one window request.
             // It must never be persisted in ApplicationState: a stale request
             // would otherwise turn a later normal launch into a workspace window.
-            _MoveContent(std::move(startupActions), winrt::hstring{ L"workspace:" } + workspaceId, 0);
+            {
+                Json::Value payload{ Json::objectValue };
+                terminal::workspacechat::AddOptionalDiagnosticString(payload, "workspaceId", workspaceId.c_str());
+                payload["startupActionCount"] = Json::UInt64{ gsl::narrow_cast<uint64_t>(startupActions.size()) };
+                std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_open_move_content", payload);
+            }
+            const auto workspaceWindowName = winrt::hstring{ std::wstring{ L"workspace:" } + std::wstring{ workspaceId.c_str() } };
+            _MoveContent(std::move(startupActions), workspaceWindowName, 0);
             co_return;
         }
 
@@ -169,8 +196,35 @@
 
             if (_ShouldSkipWorkspaceStartupAction(startupActions[i], startupActions, i))
             {
+                Json::Value payload{ Json::objectValue };
+                terminal::workspacechat::AddOptionalDiagnosticString(payload, "workspaceId", workspaceId.c_str());
+                payload["index"] = Json::UInt64{ gsl::narrow_cast<uint64_t>(i) };
+                payload["action"] = Json::Int{ gsl::narrow_cast<int>(startupActions[i].Action()) };
+                std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_startup_action_skipped", payload);
                 suspend = true;
                 continue;
+            }
+
+            {
+                Json::Value payload{ Json::objectValue };
+                terminal::workspacechat::AddOptionalDiagnosticString(payload, "workspaceId", workspaceId.c_str());
+                payload["index"] = Json::UInt64{ gsl::narrow_cast<uint64_t>(i) };
+                payload["action"] = Json::Int{ gsl::narrow_cast<int>(startupActions[i].Action()) };
+                if (const auto newTabArgs = startupActions[i].Args().try_as<Microsoft::Terminal::Settings::Model::NewTabArgs>())
+                {
+                    if (const auto terminalArgs = newTabArgs.ContentArgs().try_as<Microsoft::Terminal::Settings::Model::NewTerminalArgs>())
+                    {
+                        terminal::workspacechat::AddOptionalDiagnosticString(payload, "profile", terminalArgs.Profile().c_str());
+                        terminal::workspacechat::AddOptionalDiagnosticString(payload, "tabTitle", terminalArgs.TabTitle().c_str());
+                        terminal::workspacechat::AddDiagnosticTextFields(payload, "startingDirectory", terminalArgs.StartingDirectory().c_str());
+                        terminal::workspacechat::AddDiagnosticTextFields(payload, "commandline", terminalArgs.Commandline().c_str());
+                    }
+                }
+                else if (const auto sendInputArgs = startupActions[i].Args().try_as<Microsoft::Terminal::Settings::Model::SendInputArgs>())
+                {
+                    terminal::workspacechat::AddDiagnosticTextFields(payload, "input", sendInputArgs.Input().c_str());
+                }
+                std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_startup_action_dispatch", payload);
             }
             _actionDispatch->DoAction(startupActions[i]);
             suspend = true;
@@ -203,8 +257,7 @@
 
     void TerminalPage::WorkspaceDefinitionsChanged()
     {
-        _CreateNewTabFlyout();
-        _UpdateWorkspaceTabRow();
+        _RefreshWorkspaceChrome();
 
         if (_workspaceExtension->WorkspaceEditorEditMode() && _workspaceExtension->WorkspaceDefinitionsDirty())
         {
@@ -273,7 +326,7 @@
     {
         if (const auto workspace = _SelectedWorkspaceForEditing())
         {
-            return workspace->Name;
+            return workspace->Id;
         }
         return {};
     }
@@ -283,37 +336,41 @@
         return workspace.Name;
     }
 
-    std::wstring TerminalPage::_CurrentWorkspaceDisplayName() const
+    Microsoft::Terminal::Settings::Model::implementation::WorkspaceCurrentState TerminalPage::_LoadCurrentWorkspaceStateSnapshot() const
     {
         return ::terminal::workspace::LoadCurrentWorkspaceState(_currentWorkspaceId.c_str(),
                                                                 RS_(L"WorkspaceDefaultUnsaved").c_str(),
-                                                                RS_(L"WorkspaceUnsavedName").c_str()).DisplayName;
+                                                                RS_(L"WorkspaceUnsavedName").c_str());
+    }
+
+    std::wstring TerminalPage::_CurrentWorkspaceDisplayName() const
+    {
+        return _LoadCurrentWorkspaceStateSnapshot().DisplayName;
     }
 
     std::wstring TerminalPage::_CurrentWorkspaceTabRowName() const
     {
-        return ::terminal::workspace::LoadCurrentWorkspaceState(_currentWorkspaceId.c_str(),
-                                                                RS_(L"WorkspaceDefaultUnsaved").c_str(),
-                                                                RS_(L"WorkspaceUnsavedName").c_str()).TabRowName;
+        return _LoadCurrentWorkspaceStateSnapshot().TabRowName;
+    }
+
+    Microsoft::Terminal::Settings::Model::implementation::WorkspaceSaveTargetState TerminalPage::_LoadWorkspaceSaveTargetStateSnapshot() const
+    {
+        return ::terminal::workspace::LoadWorkspaceSaveTargetState(_currentWorkspaceId.c_str(), _lastWorkspaceId);
     }
 
     std::wstring TerminalPage::_ResolvedWorkspaceSaveTargetId() const
     {
-        const auto manager = Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::Load();
-        return Microsoft::Terminal::Settings::Model::implementation::ResolveWorkspaceSaveTargetId(_currentWorkspaceId.c_str(), _lastWorkspaceId, manager);
+        return _LoadWorkspaceSaveTargetStateSnapshot().Id;
     }
 
     std::wstring TerminalPage::_ResolvedWorkspaceSaveTargetName() const
     {
-        const auto manager = Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::Load();
-        return Microsoft::Terminal::Settings::Model::implementation::ResolveWorkspaceSaveTargetName(_currentWorkspaceId.c_str(), _lastWorkspaceId, manager);
+        return _LoadWorkspaceSaveTargetStateSnapshot().Name;
     }
 
     std::optional<winrt::Windows::UI::Color> TerminalPage::_CurrentWorkspaceColor() const
     {
-        const auto state = ::terminal::workspace::LoadCurrentWorkspaceState(_currentWorkspaceId.c_str(),
-                                                                            RS_(L"WorkspaceDefaultUnsaved").c_str(),
-                                                                            RS_(L"WorkspaceUnsavedName").c_str());
+        const auto state = _LoadCurrentWorkspaceStateSnapshot();
         if (!state.BackgroundColor.empty())
         {
             return _parseWorkspaceColor(state.BackgroundColor);
@@ -380,6 +437,12 @@
     std::optional<uint64_t> TerminalPage::_FindOpenWorkspaceWindowId(const std::wstring_view workspaceId) const
     {
         return ::terminal::workspace::FindOpenWorkspaceWindowId(workspaceId);
+    }
+
+    void TerminalPage::_RefreshWorkspaceChrome()
+    {
+        _CreateNewTabFlyout();
+        _UpdateWorkspaceTabRow();
     }
 
     Settings::Model::TabCloseButtonVisibility TerminalPage::_CurrentTabCloseButtonVisibility() const
@@ -464,22 +527,15 @@
         }
 
         const auto isWorkspaceWindow = !_currentWorkspaceId.empty();
-        const auto name = isWorkspaceWindow ? _CurrentWorkspaceTabRowName() : std::wstring{};
+        const auto currentWorkspaceState = _LoadCurrentWorkspaceStateSnapshot();
+        const auto name = isWorkspaceWindow ? currentWorkspaceState.TabRowName : std::wstring{};
         _tabRow.WorkspaceName(winrt::hstring{ name });
         _tabRow.WorkspaceNameVisibility(name.empty() ? WUX::Visibility::Collapsed : WUX::Visibility::Visible);
         _tabRow.WorkspaceMenuVisibility(isWorkspaceWindow ? WUX::Visibility::Collapsed : WUX::Visibility::Visible);
         WUX::Controls::IconElement workspaceIcon{ nullptr };
-        if (isWorkspaceWindow)
+        if (isWorkspaceWindow && !currentWorkspaceState.Icon.empty())
         {
-            const auto manager = Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::Load();
-            for (const auto& workspace : manager.Workspaces())
-            {
-                if (workspace.Id == _currentWorkspaceId.c_str() && !workspace.Icon.empty())
-                {
-                    workspaceIcon = _CreateNewTabFlyoutIcon(winrt::hstring{ workspace.Icon });
-                    break;
-                }
-            }
+            workspaceIcon = _CreateNewTabFlyoutIcon(winrt::hstring{ currentWorkspaceState.Icon });
         }
         if (workspaceIcon)
         {
@@ -498,10 +554,13 @@
         _tabRow.WorkspaceLockGlyph(_CurrentWorkspaceLocked() ? L"\xE72E" : L"\xE785");
         _tabRow.WorkspaceLockVisibility(WUX::Visibility::Collapsed);
 
-        if (const auto color = _CurrentWorkspaceColor())
+        if (!currentWorkspaceState.BackgroundColor.empty())
         {
-            _tabRow.WorkspaceBackgroundBrush(SolidColorBrush{ *color });
-            _tabRow.WorkspaceForegroundBrush(SolidColorBrush{ _workspaceForegroundColor(*color) });
+            if (const auto color = _parseWorkspaceColor(currentWorkspaceState.BackgroundColor))
+            {
+                _tabRow.WorkspaceBackgroundBrush(SolidColorBrush{ *color });
+                _tabRow.WorkspaceForegroundBrush(SolidColorBrush{ _workspaceForegroundColor(*color) });
+            }
         }
         else if (const auto resources = Application::Current().Resources())
         {

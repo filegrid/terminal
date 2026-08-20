@@ -31,7 +31,7 @@
                 <mtu:TextMenuFlyout />
             </TextBlock.ContextFlyout>
             <Run x:Uid="AboutDialog_AuthorLabel" />
-            <Run Text="tommy (tommy.yxd@gmail.com)" />
+            <Run Text="Tommy Yan (tommy.yxd@gmail.com)" />
         </TextBlock>
 
         <StackPanel Margin="-12,12,0,0"
