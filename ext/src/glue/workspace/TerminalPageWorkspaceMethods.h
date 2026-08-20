@@ -67,6 +67,7 @@
         WT_WORKSPACE_EXT_API std::wstring _CurrentWorkspaceTabRowName() const;
         WT_WORKSPACE_EXT_API std::optional<winrt::Windows::UI::Color> _CurrentWorkspaceColor() const;
         WT_WORKSPACE_EXT_API std::optional<uint64_t> _FindOpenWorkspaceWindowId(std::wstring_view workspaceId) const;
+        WT_WORKSPACE_EXT_API void _CloseOpenWorkspaceWindow(std::wstring_view workspaceId);
         WT_WORKSPACE_EXT_API void _RefreshWorkspaceChrome();
         WT_WORKSPACE_EXT_API void _UpdateWorkspaceInteractionState();
         WT_WORKSPACE_EXT_API winrt::Microsoft::Terminal::Settings::Model::TabCloseButtonVisibility _CurrentTabCloseButtonVisibility() const;

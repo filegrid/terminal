@@ -46,6 +46,10 @@
         }
 
         workspace.Nodes = std::move(reorderedNodes);
+        // The visible node vector and the persisted tab order are one logical
+        // ordering. Keep both in sync so every caller (including directory
+        // loading and editor drag/drop) has an order that survives Save().
+        workspace.TabOrder = _captureVisibleWorkspaceNodeOrder(workspace.Nodes);
         return true;
     }
 

@@ -1795,6 +1795,7 @@ namespace winrt::TerminalApp::implementation
             _findMenuItem.Click({ get_weak(), &Tab::_findClicked });
             _findMenuItem.Text(RS_(L"FindText"));
             _findMenuItem.Icon(findSymbol);
+            _findMenuItem.Tag(box_value(true));
 
             const auto findToolTip = RS_(L"FindToolTip");
 
@@ -1816,6 +1817,7 @@ namespace winrt::TerminalApp::implementation
             });
             _restartConnectionMenuItem.Text(RS_(L"RestartConnectionText"));
             _restartConnectionMenuItem.Icon(restartConnectionSymbol);
+            _restartConnectionMenuItem.Tag(box_value(true));
 
             const auto restartConnectionToolTip = RS_(L"RestartConnectionToolTip");
 
@@ -1830,6 +1832,7 @@ namespace winrt::TerminalApp::implementation
 
             _workspaceInputPanelMenuItem.Text(RS_(L"WorkspaceChat_ShowForTab"));
             _workspaceInputPanelMenuItem.Icon(inputPanelSymbol);
+            _workspaceInputPanelMenuItem.Tag(box_value(true));
             _workspaceInputPanelMenuItem.IsChecked(ShowWorkspaceInputPanel());
             _workspaceInputPanelMenuItem.Click([weakThis](auto&& sender, auto&&) {
                 if (auto tab{ weakThis.get() })
@@ -1866,6 +1869,18 @@ namespace winrt::TerminalApp::implementation
                 {
                     tab->_workspaceInputPanelMenuItem.IsChecked(tab->ShowWorkspaceInputPanel());
                     tab->_UpdateMenuItemStates();
+
+                    // An opened workspace owns the lifecycle and presentation
+                    // of its node tabs. Keep their context menu intentionally
+                    // small, while leaving ordinary terminal tabs untouched.
+                    if (tab->IsWorkspaceNodeTab())
+                    {
+                        for (const auto& item : flyout.Items())
+                        {
+                            const auto keepForWorkspaceNode = winrt::unbox_value_or<bool>(item.Tag(), false);
+                            item.Visibility(keepForWorkspaceNode ? Visibility::Visible : Visibility::Collapsed);
+                        }
+                    }
                 }
             }
         });

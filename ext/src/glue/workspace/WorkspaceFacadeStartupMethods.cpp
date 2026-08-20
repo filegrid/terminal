@@ -285,7 +285,10 @@
             if (isSshTransport)
             {
                 terminalArgs.Commandline(profile.Commandline());
-                terminalArgs.StartingDirectory(profile.StartingDirectory());
+                // SSH itself is a local Windows process. Use the profile's
+                // evaluated directory so values such as %USERPROFILE% are not
+                // passed literally to CreateProcess as the working directory.
+                terminalArgs.StartingDirectory(profile.EvaluatedStartingDirectory());
             }
             else if (!isWslTransport && !node.StartupDirectory.empty())
             {

@@ -305,7 +305,23 @@ namespace terminal::workspace
         {
             using TResult = decltype(callback(std::declval<RuntimeWorkspaceStateBlock&>(), uint64_t{}));
 
+            // A named page-file mapping only exists while at least one handle to it is
+            // open. Keep one handle alive for the lifetime of this process; otherwise
+            // every call below closes the last handle and the next caller observes a
+            // newly zeroed block instead of shared runtime state.
+            static const HANDLE processLifetimeMapping = CreateFileMappingW(INVALID_HANDLE_VALUE,
+                                                                             nullptr,
+                                                                             PAGE_READWRITE,
+                                                                             0,
+                                                                             sizeof(RuntimeWorkspaceStateBlock),
+                                                                             _workspaceWindowStateMappingName.data());
+
             auto result = TResult{};
+            if (processLifetimeMapping == nullptr)
+            {
+                return result;
+            }
+
             const auto mutex = CreateMutexW(nullptr, FALSE, _workspaceWindowStateMutexName.data());
             if (mutex == nullptr)
             {
@@ -319,27 +335,13 @@ namespace terminal::workspace
                 return result;
             }
 
-            const auto mapping = CreateFileMappingW(INVALID_HANDLE_VALUE,
-                                                    nullptr,
-                                                    PAGE_READWRITE,
-                                                    0,
-                                                    sizeof(RuntimeWorkspaceStateBlock),
-                                                    _workspaceWindowStateMappingName.data());
-            if (mapping == nullptr)
-            {
-                ReleaseMutex(mutex);
-                CloseHandle(mutex);
-                return result;
-            }
-
-            auto* block = static_cast<RuntimeWorkspaceStateBlock*>(MapViewOfFile(mapping,
-                                                                                 FILE_MAP_READ | FILE_MAP_WRITE,
-                                                                                 0,
-                                                                                 0,
-                                                                                 sizeof(RuntimeWorkspaceStateBlock)));
+            auto* block = static_cast<RuntimeWorkspaceStateBlock*>(MapViewOfFile(processLifetimeMapping,
+                                                                                  FILE_MAP_READ | FILE_MAP_WRITE,
+                                                                                  0,
+                                                                                  0,
+                                                                                  sizeof(RuntimeWorkspaceStateBlock)));
             if (block == nullptr)
             {
-                CloseHandle(mapping);
                 ReleaseMutex(mutex);
                 CloseHandle(mutex);
                 return result;
@@ -350,7 +352,6 @@ namespace terminal::workspace
             result = callback(*block, now);
 
             UnmapViewOfFile(block);
-            CloseHandle(mapping);
             ReleaseMutex(mutex);
             CloseHandle(mutex);
             return result;
@@ -413,6 +414,28 @@ namespace terminal::workspace
             }
             result.push_back(L'\'');
             return result;
+        }
+
+        std::wstring _quotePosixShellPath(std::wstring_view value)
+        {
+            std::wstring quoted{ L"\"" };
+            size_t offset = 0;
+            if (value == L"~" || value.starts_with(L"~/"))
+            {
+                quoted.append(L"$HOME");
+                offset = 1;
+            }
+
+            for (const auto ch : value.substr(offset))
+            {
+                if (ch == L'\\' || ch == L'\"' || ch == L'$' || ch == L'`')
+                {
+                    quoted.push_back(L'\\');
+                }
+                quoted.push_back(ch);
+            }
+            quoted.push_back(L'\"');
+            return quoted;
         }
 
         std::wstring _toLower(std::wstring_view value)
@@ -618,9 +641,9 @@ namespace terminal::workspace
                 }
                 else
                 {
-                    std::wstring input{ L"cd \"" };
-                    input.append(startupDirectory);
-                    input.append(L"\"\r");
+                    std::wstring input{ L"cd -- " };
+                    input.append(_quotePosixShellPath(startupDirectory));
+                    input.push_back(L'\r');
                     inputs.emplace_back(std::move(input));
                 }
             }
@@ -1157,10 +1180,27 @@ namespace terminal::workspace
             }
             // New definitions have no unlock state.
             stream << L"locked: true\n";
-            if (!workspace.TabOrder.empty())
+            // Always persist the effective visible-node order. A workspace can
+            // be assembled or edited by changing Nodes directly, in which case
+            // TabOrder may be empty or stale even though the UI has a definite
+            // order. Without this field, the directory loader falls back to
+            // alphabetical node-directory order on the next launch.
+            const auto effectiveTabOrder = [&]() {
+                std::vector<std::wstring> order;
+                for (const auto nodeIndex : _orderedVisibleWorkspaceNodeIndices(workspace))
+                {
+                    const auto& nodeId = workspace.Nodes.at(nodeIndex).Id;
+                    if (!nodeId.empty())
+                    {
+                        order.emplace_back(nodeId);
+                    }
+                }
+                return order;
+            }();
+            if (!effectiveTabOrder.empty())
             {
                 std::wstring serializedOrder;
-                for (const auto& nodeId : workspace.TabOrder)
+                for (const auto& nodeId : effectiveTabOrder)
                 {
                     if (nodeId.empty())
                     {

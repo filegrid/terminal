@@ -134,6 +134,9 @@ namespace winrt::TerminalApp::implementation
         WINRT_OBSERVABLE_PROPERTY(winrt::hstring, Icon, PropertyChanged.raise);
         WINRT_OBSERVABLE_PROPERTY(bool, ReadOnly, PropertyChanged.raise, false);
         WINRT_OBSERVABLE_PROPERTY(bool, ShowWorkspaceInputPanel, PropertyChanged.raise, false);
+        // Internal-only marker used to specialize the tab context menu for
+        // tabs that represent nodes in an opened workspace.
+        WINRT_PROPERTY(bool, IsWorkspaceNodeTab, false);
         WINRT_PROPERTY(winrt::Microsoft::UI::Xaml::Controls::TabViewItem, TabViewItem, nullptr);
 
         WINRT_OBSERVABLE_PROPERTY(winrt::Windows::UI::Xaml::FrameworkElement, Content, PropertyChanged.raise, nullptr);

@@ -96,8 +96,9 @@
             deleteWorkspaceButton.VerticalAlignment(VerticalAlignment::Center);
             ToolTipService::SetToolTip(deleteWorkspaceButton, box_value(RS_(L"WorkspaceEditor_DeleteWorkspaceButton")));
             Automation::AutomationProperties::SetName(deleteWorkspaceButton, RS_(L"WorkspaceEditor_DeleteWorkspaceButton"));
-            deleteWorkspaceButton.Click([weakThis{ get_weak() }](auto&&, auto&&) {
-                [weakThis]() -> safe_void_coroutine {
+            const auto workspaceId = workspace->Id;
+            deleteWorkspaceButton.Click([weakThis{ get_weak() }, workspaceId](auto&&, auto&&) {
+                [](auto weakThis, std::wstring workspaceId) -> safe_void_coroutine {
                     if (auto self{ weakThis.get() })
                     {
                         auto dialog = ContentDialog{};
@@ -110,12 +111,11 @@
                             const auto result = co_await presenter.ShowDialog(dialog);
                             if (auto strong{ weakThis.get() }; strong && result == ContentDialogResult::Primary)
                             {
-                                strong->_DeleteSelectedWorkspaceDefinition();
-                                strong->_RebuildWorkspaceManagerTab();
+                                strong->_RemoveWorkspaceDefinitionById(workspaceId);
                             }
                         }
                     }
-                }();
+                }(weakThis, workspaceId);
             });
             workspaceNamePanel.Children().Append(deleteWorkspaceButton);
         }
@@ -606,8 +606,10 @@
             deleteNodeButton.VerticalAlignment(VerticalAlignment::Center);
             ToolTipService::SetToolTip(deleteNodeButton, box_value(RS_(L"WorkspaceEditor_DeleteNodeButton")));
             Automation::AutomationProperties::SetName(deleteNodeButton, RS_(L"WorkspaceEditor_DeleteNodeButton"));
-            deleteNodeButton.Click([weakThis{ get_weak() }, nodeIndex](auto&&, auto&&) {
-                [weakThis, nodeIndex]() -> safe_void_coroutine {
+            const auto workspaceId = workspace->Id;
+            const auto nodeId = node.Id;
+            deleteNodeButton.Click([weakThis{ get_weak() }, workspaceId, nodeId](auto&&, auto&&) {
+                [](auto weakThis, std::wstring workspaceId, std::wstring nodeId) -> safe_void_coroutine {
                     if (auto self{ weakThis.get() })
                     {
                         auto dialog = ContentDialog{};
@@ -620,12 +622,11 @@
                             const auto result = co_await presenter.ShowDialog(dialog);
                             if (auto strong{ weakThis.get() }; strong && result == ContentDialogResult::Primary)
                             {
-                                strong->_DeleteWorkspaceNode(nodeIndex);
-                                strong->_RebuildWorkspaceManagerTab();
+                                strong->_RemoveWorkspaceNodeById(workspaceId, nodeId);
                             }
                         }
                     }
-                }();
+                }(weakThis, workspaceId, nodeId);
             });
             nodeNamePanel.Children().Append(deleteNodeButton);
         }
@@ -795,26 +796,68 @@
         }
         nodeRoot.Children().Append(makeWorkspaceSetting(L"图标", iconPanel));
 
-        addNodeTextBox(RS_(L"WorkspaceEditor_StartupDirectory").c_str(), node.StartupDirectory, [weakThis{ get_weak() }, nodeIndex](auto&& sender, auto&&) {
-            if (auto self{ weakThis.get() })
+        const auto addNodePathPicker = [&](const wchar_t* label, const std::wstring& initialValue, const bool pickFolder) {
+            auto panel = StackPanel{};
+            panel.Orientation(Orientation::Horizontal);
+            panel.Spacing(8);
+
+            auto pathBox = TextBox{};
+            applyWorkspaceStyle(pathBox, L"WorkspaceTextBoxSettingStyle");
+            pathBox.Text(initialValue);
+            pathBox.IsReadOnly(!_workspaceEditorEditMode);
+            if (_workspaceEditorEditMode)
             {
-                if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
-                {
-                    current->Nodes.at(nodeIndex).StartupDirectory = sender.as<TextBox>().Text().c_str();
-                    self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
-                }
+                pathBox.TextChanged([weakThis{ get_weak() }, nodeIndex, pickFolder](auto&& sender, auto&&) {
+                    if (auto self{ weakThis.get() })
+                    {
+                        if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
+                        {
+                            auto& value = pickFolder ? current->Nodes.at(nodeIndex).StartupDirectory : current->Nodes.at(nodeIndex).StartupAction;
+                            value = sender.as<TextBox>().Text().c_str();
+                            self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
+                        }
+                    }
+                });
             }
-        });
-        addNodeTextBox(L"启动命令", node.StartupAction, [weakThis{ get_weak() }, nodeIndex](auto&& sender, auto&&) {
-            if (auto self{ weakThis.get() })
-            {
-                if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
-                {
-                    current->Nodes.at(nodeIndex).StartupAction = sender.as<TextBox>().Text().c_str();
-                    self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
-                }
-            }
-        });
+            panel.Children().Append(pathBox);
+
+            auto browseButton = Button{};
+            auto browseIcon = SymbolIcon{};
+            browseIcon.Symbol(pickFolder ? Symbol::Folder : Symbol::OpenFile);
+            browseButton.Content(browseIcon);
+            browseButton.IsEnabled(_workspaceEditorEditMode);
+            ToolTipService::SetToolTip(browseButton, box_value(pickFolder ? L"选择文件夹" : L"选择文件"));
+            Automation::AutomationProperties::SetName(browseButton, pickFolder ? L"选择文件夹" : L"选择文件");
+            browseButton.Click([weakThis{ get_weak() }, nodeIndex, pickFolder, pathBox](auto&&, auto&&) {
+                [](auto weakThis, size_t nodeIndex, bool pickFolder, TextBox pathBox) -> safe_void_coroutine {
+                    if (auto self{ weakThis.get() })
+                    {
+                        const auto path = co_await OpenFilePicker(self->_hostingHwnd.value_or(nullptr), [pickFolder](auto&& dialog) {
+                            if (pickFolder)
+                            {
+                                DWORD flags{};
+                                THROW_IF_FAILED(dialog->GetOptions(&flags));
+                                THROW_IF_FAILED(dialog->SetOptions(flags | FOS_PICKFOLDERS));
+                            }
+                        });
+                        if (!path.empty())
+                        {
+                            if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
+                            {
+                                auto& value = pickFolder ? current->Nodes.at(nodeIndex).StartupDirectory : current->Nodes.at(nodeIndex).StartupAction;
+                                value = path.c_str();
+                                pathBox.Text(path);
+                                self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
+                            }
+                        }
+                    }
+                }(weakThis, nodeIndex, pickFolder, pathBox);
+            });
+            panel.Children().Append(browseButton);
+            nodeRoot.Children().Append(makeWorkspaceSetting(label, panel));
+        };
+        addNodePathPicker(RS_(L"WorkspaceEditor_StartupDirectory").c_str(), node.StartupDirectory, true);
+        addNodePathPicker(L"启动命令", node.StartupAction, false);
 
         auto tabColorPanel = StackPanel{};
         tabColorPanel.Orientation(Orientation::Horizontal);

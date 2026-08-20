@@ -1129,6 +1129,15 @@ namespace winrt::TerminalApp::implementation
         if (const auto& connection{ _duplicateConnectionForRestart(paneContent) })
         {
             const auto& termControl = paneContent.GetTermControl();
+            if (auto state = _workspaceExtension->FindWorkspaceNodeRuntimeState(termControl.ContentId());
+                state && (!state->DeferredStartupInputs.empty() || !state->DeferredStartupInput.empty()))
+            {
+                // Startup input is one-shot during the initial connection.
+                // Re-arm it so a workspace-node restart repeats its configured
+                // directory change and startup command after reconnecting.
+                state->StartupInputPending = true;
+                state->StartupInputDispatched = false;
+            }
             termControl.HardResetWithoutErase();
             termControl.Connection(connection);
             connection.Start();
@@ -4129,11 +4138,23 @@ namespace winrt::TerminalApp::implementation
             profile = GetClosestProfileForDuplicationOfProfile(profile);
             controlSettings = Settings::TerminalSettings::CreateWithProfile(_settings, profile);
 
-            // Replace the Starting directory with the CWD, if given
-            const auto workingDirectory = control.WorkingDirectory();
-            if (Utils::IsValidDirectory(workingDirectory.c_str()))
+            // Workspace-node restarts must use the configured startup
+            // directory again, not whatever directory the session happened to
+            // be in when it stopped. SSH directories are replayed remotely as
+            // terminal input and must not be used as a local process path.
+            const auto workspaceState = _workspaceExtension->FindWorkspaceNodeRuntimeState(control.ContentId());
+            if (workspaceState && !workspaceState->IsSshTransport && !workspaceState->StartingDirectory.empty())
             {
-                controlSettings.DefaultSettings()->StartingDirectory(workingDirectory);
+                controlSettings.DefaultSettings()->StartingDirectory(winrt::hstring{ workspaceState->StartingDirectory });
+            }
+            else
+            {
+                // Replace the Starting directory with the CWD, if given
+                const auto workingDirectory = control.WorkingDirectory();
+                if (Utils::IsValidDirectory(workingDirectory.c_str()))
+                {
+                    controlSettings.DefaultSettings()->StartingDirectory(workingDirectory);
+                }
             }
 
             // To facilitate restarting defterm connections: grab the original

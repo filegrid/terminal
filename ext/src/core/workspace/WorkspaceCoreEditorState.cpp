@@ -156,6 +156,7 @@
             state.DisplayName = workspace->Name;
             state.TabRowName = workspace->Name;
             state.BackgroundColor = workspace->BackgroundColor;
+            state.Icon = workspace->Icon;
             state.Locked = workspace->Locked;
         }
 

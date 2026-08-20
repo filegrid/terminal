@@ -439,6 +439,32 @@
         return ::terminal::workspace::FindOpenWorkspaceWindowId(workspaceId);
     }
 
+    void TerminalPage::_CloseOpenWorkspaceWindow(const std::wstring_view workspaceId)
+    {
+        // The local deletion path is finalized below by raising
+        // CloseWindowRequested directly. Only route a close action when the
+        // workspace belongs to another open window.
+        if (workspaceId.empty() || workspaceId == _currentWorkspaceId.c_str())
+        {
+            return;
+        }
+
+        const auto windowId = _FindOpenWorkspaceWindowId(workspaceId);
+        if (!windowId.has_value() || *windowId == _WindowProperties.WindowId())
+        {
+            return;
+        }
+
+        std::vector<Microsoft::Terminal::Settings::Model::ActionAndArgs> closeActions;
+        closeActions.emplace_back(Microsoft::Terminal::Settings::Model::ShortcutAction::CloseWindow, nullptr);
+        _MoveContent(std::move(closeActions), winrt::to_hstring(*windowId), std::numeric_limits<uint32_t>::max());
+
+        Json::Value payload{ Json::objectValue };
+        payload["windowId"] = Json::UInt64{ *windowId };
+        terminal::workspacechat::AddOptionalDiagnosticString(payload, "workspaceId", workspaceId);
+        std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_deleted_window_close_requested", payload);
+    }
+
     void TerminalPage::_RefreshWorkspaceChrome()
     {
         _CreateNewTabFlyout();

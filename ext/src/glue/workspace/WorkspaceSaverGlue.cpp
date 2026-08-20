@@ -87,9 +87,43 @@
 
     winrt::Windows::Foundation::IAsyncOperation<bool> TerminalPage::_ConfirmWorkspaceCloseWindowIfNeeded()
     {
-        // Runtime windows never write workspace definitions. Closing them is
-        // therefore the same as closing an ordinary Terminal window.
-        co_return true;
+        const auto workspaceState = _LoadCurrentWorkspaceStateSnapshot();
+        if (_currentWorkspaceId.empty() || !workspaceState.Exists)
+        {
+            co_return true;
+        }
+
+        // CloseWindow() will show the standard confirmation after this hook
+        // whenever the ordinary Terminal policy already requires it. Force the
+        // same confirmation for a workspace window that would otherwise close
+        // without asking, while avoiding two consecutive dialogs.
+        if (_ShouldWarnOnClose())
+        {
+            co_return true;
+        }
+
+        if (_displayingCloseDialog)
+        {
+            co_return false;
+        }
+
+        if (_newTabButton && _newTabButton.Flyout())
+        {
+            _newTabButton.Flyout().Hide();
+        }
+        _DismissTabContextMenus();
+        _displayingCloseDialog = true;
+
+        const auto weak = get_weak();
+        const auto result = co_await _ShowConfirmCloseDialog(ConfirmCloseDialogKind::Window);
+        const auto strong = weak.get();
+        if (!strong)
+        {
+            co_return false;
+        }
+
+        strong->_displayingCloseDialog = false;
+        co_return result == ContentDialogResult::Primary;
     }
 
     void TerminalPage::_WorkspaceSaverActionClick(const IInspectable& /*sender*/,

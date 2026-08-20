@@ -50,9 +50,15 @@
 
     WorkspaceStateManager WorkspaceStateManager::LoadRuntime()
     {
-        return _withRuntimeWorkspaceStateBlock([](RuntimeWorkspaceStateBlock& block, uint64_t) {
+        auto manager = _withRuntimeWorkspaceStateBlock([](RuntimeWorkspaceStateBlock& block, uint64_t) {
             return _loadRuntimeWorkspaceStateManagerFromBlock(block);
         });
+
+        Json::Value payload{ Json::objectValue };
+        payload["processId"] = Json::UInt64{ GetCurrentProcessId() };
+        payload["recordCount"] = Json::UInt64{ manager.Windows().size() };
+        std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_shared_state_loaded", payload);
+        return manager;
     }
 
     uint64_t WorkspaceStateManager::RuntimeHeartbeatIntervalMs() noexcept
@@ -67,14 +73,26 @@
             return false;
         }
 
-        return _withRuntimeWorkspaceStateBlock([&](RuntimeWorkspaceStateBlock& block, const uint64_t now) {
+        size_t recordCountBefore = 0;
+        size_t recordCountAfter = 0;
+        const auto removed = _withRuntimeWorkspaceStateBlock([&](RuntimeWorkspaceStateBlock& block, const uint64_t now) {
             auto manager = _loadRuntimeWorkspaceStateManagerFromBlock(block);
-            const auto previousCount = manager.Windows().size();
+            recordCountBefore = manager.Windows().size();
             manager.RemoveWindow(windowId);
-            const auto changed = manager.Windows().size() != previousCount;
+            recordCountAfter = manager.Windows().size();
+            const auto changed = recordCountAfter != recordCountBefore;
             _saveRuntimeWorkspaceStateManagerToBlock(manager, block, now);
             return changed;
         });
+
+        Json::Value payload{ Json::objectValue };
+        payload["processId"] = Json::UInt64{ GetCurrentProcessId() };
+        payload["windowId"] = Json::UInt64{ windowId };
+        payload["recordCountBefore"] = Json::UInt64{ recordCountBefore };
+        payload["recordCountAfter"] = Json::UInt64{ recordCountAfter };
+        payload["removed"] = removed;
+        std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_shared_state_removed", payload);
+        return removed;
     }
 
     bool WorkspaceStateManager::RefreshRuntimeWindowState(const uint64_t windowId,
@@ -86,12 +104,26 @@
             return false;
         }
 
-        return _withRuntimeWorkspaceStateBlock([&](RuntimeWorkspaceStateBlock& block, const uint64_t now) {
+        size_t recordCountBefore = 0;
+        size_t recordCountAfter = 0;
+        const auto refreshed = _withRuntimeWorkspaceStateBlock([&](RuntimeWorkspaceStateBlock& block, const uint64_t now) {
             auto manager = _loadRuntimeWorkspaceStateManagerFromBlock(block);
+            recordCountBefore = manager.Windows().size();
             manager.UpdateWindowState(windowId, windowName, workspaceId);
+            recordCountAfter = manager.Windows().size();
             _saveRuntimeWorkspaceStateManagerToBlock(manager, block, now);
             return true;
         });
+
+        Json::Value payload{ Json::objectValue };
+        payload["processId"] = Json::UInt64{ GetCurrentProcessId() };
+        payload["windowId"] = Json::UInt64{ windowId };
+        payload["recordCountBefore"] = Json::UInt64{ recordCountBefore };
+        payload["recordCountAfter"] = Json::UInt64{ recordCountAfter };
+        payload["refreshed"] = refreshed;
+        terminal::workspacechat::AddOptionalDiagnosticString(payload, "workspaceId", workspaceId);
+        std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_shared_state_written", payload);
+        return refreshed;
     }
 
     bool WorkspaceStateManager::Save() const

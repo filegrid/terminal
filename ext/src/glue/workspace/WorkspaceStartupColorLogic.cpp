@@ -136,6 +136,27 @@
             return quoted;
         }
 
+        std::wstring _quotePosixShellPath(std::wstring_view value)
+        {
+            std::wstring quoted{ L"\"" };
+            size_t offset = 0;
+            if (value == L"~" || value.starts_with(L"~/"))
+            {
+                quoted.append(L"$HOME");
+                offset = 1;
+            }
+            for (const auto ch : value.substr(offset))
+            {
+                if (ch == L'\\' || ch == L'\"' || ch == L'$' || ch == L'`')
+                {
+                    quoted.push_back(L'\\');
+                }
+                quoted.push_back(ch);
+            }
+            quoted.push_back(L'\"');
+            return quoted;
+        }
+
         std::wstring _appendStartupCommand(std::wstring input, std::wstring_view command)
         {
             const auto trimmed = _trim(command);
@@ -261,9 +282,9 @@
                 return _buildWindowsSshStartupDirectoryInput(startupDirectory);
             }
 
-            std::wstring input{ L"cd \"" };
-            input.append(startupDirectory);
-            input.append(L"\"\r");
+            std::wstring input{ L"cd -- " };
+            input.append(_quotePosixShellPath(startupDirectory));
+            input.push_back(L'\r');
             return input;
         }
 
@@ -275,8 +296,8 @@
                 return {};
             }
 
-            std::wstring input{ L"cd \"" };
-            input.append(startupDirectory);
-            input.append(L"\"\r");
+            std::wstring input{ L"cd -- " };
+            input.append(_quotePosixShellPath(startupDirectory));
+            input.push_back(L'\r');
             return input;
         }

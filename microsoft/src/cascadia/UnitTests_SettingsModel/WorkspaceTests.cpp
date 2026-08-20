@@ -48,11 +48,13 @@ namespace SettingsModelUnitTests
         TEST_METHOD(PrepareWorkspaceEditorForSavePreservesSelectedIndex);
         TEST_METHOD(PrepareWorkspaceDefinitionRemovalResolvesEditorState);
         TEST_METHOD(ResolveWorkspaceOpenExecutionPlanMapsRuntimeSteps);
+        TEST_METHOD(ResolveWorkspaceCurrentStateIncludesWorkspaceIcon);
         TEST_METHOD(WorkspaceLiveTabHelpersCaptureAndResolveSnapshots);
         TEST_METHOD(BuildWorkspaceStartupActionsAssignsDistinctColorsForDuplicateProfiles);
         TEST_METHOD(BuildWorkspaceStartupActionsSkipsHiddenNodes);
         TEST_METHOD(ResolveWorkspaceStartupStateSkipsInvalidProfileNodes);
         TEST_METHOD(SaveWorkspaceYamlRoundTrip);
+        TEST_METHOD(SaveWorkspaceYamlPersistsImplicitVisibleNodeOrder);
         TEST_METHOD(SaveUnlockedWorkspaceYamlRoundTrip);
         TEST_METHOD(ApplyVisibleWorkspaceNodeOrderPreservesNodeIdentity);
         TEST_METHOD(ReorderWorkspaceNodesPreservesNodeContent);
@@ -286,7 +288,8 @@ namespace SettingsModelUnitTests
                     "name": "profile0",
                     "guid": "{6239a42c-0000-49a3-80bd-e8fdd045185c}",
                     "historySize": 1,
-                    "commandline": "ssh dev@box"
+                    "commandline": "ssh dev@box",
+                    "startingDirectory": "%USERPROFILE%"
                 }
             ] }
         })" };
@@ -395,7 +398,7 @@ namespace SettingsModelUnitTests
         node.Id = L"node-1";
         node.Name = L"Ubuntu";
         node.ProfileGuid = Utils::GuidToString(profile.Guid());
-        node.StartupDirectory = L"/app";
+        node.StartupDirectory = L"~/app";
         node.StartupAction = L"pwd";
         node.OperatingSystem = L"linux";
         node.ShellType = L"ssh";
@@ -412,11 +415,12 @@ namespace SettingsModelUnitTests
         const auto terminalArgs = newTabArgs.ContentArgs().try_as<NewTerminalArgs>();
         VERIFY_IS_NOT_NULL(terminalArgs);
         VERIFY_IS_TRUE(std::wstring{ terminalArgs.Profile() } == Utils::GuidToString(profile.Guid()));
-        VERIFY_IS_TRUE(std::wstring{ terminalArgs.StartingDirectory() }.empty());
+        VERIFY_IS_TRUE(std::wstring{ terminalArgs.StartingDirectory() } == profile.EvaluatedStartingDirectory().c_str());
+        VERIFY_IS_TRUE(std::wstring{ terminalArgs.StartingDirectory() } != L"%USERPROFILE%");
 
         const auto sendInputArgs = actions.at(1).Args().try_as<SendInputArgs>();
         VERIFY_IS_NOT_NULL(sendInputArgs);
-        VERIFY_IS_TRUE(std::wstring{ sendInputArgs.Input() } == L"cd \"/app\"\rpwd\r");
+        VERIFY_IS_TRUE(std::wstring{ sendInputArgs.Input() } == L"cd -- \"$HOME/app\"\rpwd\r");
     }
 
     void WorkspaceTests::BuildWorkspaceStartupActionsForWindowsPwshAliasNode()
@@ -1091,6 +1095,21 @@ namespace SettingsModelUnitTests
         }
     }
 
+    void WorkspaceTests::ResolveWorkspaceCurrentStateIncludesWorkspaceIcon()
+    {
+        Workspace workspace;
+        workspace.Id = L"workspace-id";
+        workspace.Name = L"Workspace Name";
+        workspace.Icon = L"\xE7C3";
+
+        WorkspaceManager manager;
+        manager.SetWorkspaces({ workspace });
+
+        const auto state = ResolveWorkspaceCurrentState(L"workspace-id", manager, L"Default", L"Unsaved");
+        VERIFY_IS_TRUE(state.Exists);
+        VERIFY_IS_TRUE(state.Icon == workspace.Icon);
+    }
+
     void WorkspaceTests::SaveWorkspaceYamlRoundTrip()
     {
         TempPath temp;
@@ -1178,6 +1197,42 @@ namespace SettingsModelUnitTests
         VERIFY_IS_FALSE(loadedNode.UseNodeNameAsTabTitle);
     }
 
+    void WorkspaceTests::SaveWorkspaceYamlPersistsImplicitVisibleNodeOrder()
+    {
+        TempPath temp;
+
+        Workspace workspace;
+        workspace.Id = L"ws-dev";
+        workspace.Name = L"Dev Workspace";
+
+        WorkspaceNode secondAlphabetically;
+        secondAlphabetically.Id = L"B Tab";
+        secondAlphabetically.Name = L"B Tab";
+        secondAlphabetically.ProfileGuid = L"{00000000-0000-0000-0000-000000000101}";
+
+        WorkspaceNode firstAlphabetically;
+        firstAlphabetically.Id = L"A Tab";
+        firstAlphabetically.Name = L"A Tab";
+        firstAlphabetically.ProfileGuid = L"{00000000-0000-0000-0000-000000000202}";
+
+        workspace.Nodes = { secondAlphabetically, firstAlphabetically };
+        VERIFY_IS_TRUE(workspace.TabOrder.empty());
+
+        WorkspaceManager manager;
+        manager.SetWorkspaces({ workspace });
+        VERIFY_IS_TRUE(manager.SaveToPath(temp.path));
+
+        const auto loaded = WorkspaceManager::LoadFromPath(temp.path);
+        VERIFY_ARE_EQUAL(1u, gsl::narrow_cast<unsigned int>(loaded.Workspaces().size()));
+        const auto& loadedWorkspace = loaded.Workspaces().front();
+        VERIFY_ARE_EQUAL(2u, gsl::narrow_cast<unsigned int>(loadedWorkspace.Nodes.size()));
+        VERIFY_IS_TRUE(loadedWorkspace.Nodes.at(0).Id == L"B Tab");
+        VERIFY_IS_TRUE(loadedWorkspace.Nodes.at(1).Id == L"A Tab");
+        VERIFY_ARE_EQUAL(2u, gsl::narrow_cast<unsigned int>(loadedWorkspace.TabOrder.size()));
+        VERIFY_IS_TRUE(loadedWorkspace.TabOrder.at(0) == L"B Tab");
+        VERIFY_IS_TRUE(loadedWorkspace.TabOrder.at(1) == L"A Tab");
+    }
+
     void WorkspaceTests::SaveUnlockedWorkspaceYamlRoundTrip()
     {
         TempPath temp;
@@ -1257,6 +1312,9 @@ namespace SettingsModelUnitTests
         VERIFY_IS_TRUE(workspace.Nodes.at(2).Name == L"App 1 Updated");
         VERIFY_IS_TRUE(workspace.Nodes.at(2).ConnectionRef == L"peer-app-1");
         VERIFY_IS_TRUE(workspace.Nodes.at(2).StartupDirectory == L"E:\\tools\\app1");
+        VERIFY_ARE_EQUAL(2u, gsl::narrow_cast<unsigned int>(workspace.TabOrder.size()));
+        VERIFY_IS_TRUE(workspace.TabOrder.at(0) == L"node-2");
+        VERIFY_IS_TRUE(workspace.TabOrder.at(1) == L"node-1");
     }
 
     void WorkspaceTests::ReorderWorkspaceNodesPreservesNodeContent()

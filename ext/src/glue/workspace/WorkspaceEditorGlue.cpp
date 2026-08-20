@@ -226,6 +226,7 @@
             return false;
         }
 
+        _CloseOpenWorkspaceWindow(workspaceId);
         _ApplyWorkspaceEditorState(manager, removalPlan->SelectedWorkspaceIndex, removalPlan->NavSelection);
         _FinalizeWorkspaceEditorMutationUi(removalPlan->RemovedCurrentWorkspace);
         return true;
@@ -288,6 +289,10 @@
             return WorkspaceNodeRemoveResult::SaveFailed;
         }
 
+        if (removalPlan.Disposition == Microsoft::Terminal::Settings::Model::implementation::WorkspaceNodeMutationDisposition::RemovedWorkspace)
+        {
+            _CloseOpenWorkspaceWindow(workspaceId);
+        }
         _ApplyWorkspaceEditorState(manager, removalPlan.SelectedWorkspaceIndex, removalPlan.NavSelection);
         _FinalizeWorkspaceEditorMutationUi(removalPlan.RemovedCurrentWorkspace);
 

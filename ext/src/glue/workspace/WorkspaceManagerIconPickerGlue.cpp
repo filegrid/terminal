@@ -279,7 +279,7 @@
             chooseFileButton.Padding(WUX::ThicknessHelper::FromLengths(4, 2, 4, 2));
             chooseFileButton.Margin(WUX::ThicknessHelper::FromLengths(8, 0, 0, 0));
             chooseFileButton.Click([weakThis = page.get_weak(), dialog, selectedIcon](auto&&, auto&&) {
-                [weakThis, dialog, selectedIcon]() -> safe_void_coroutine {
+                [](auto weakThis, ContentDialog dialog, std::shared_ptr<std::wstring> selectedIcon) -> safe_void_coroutine {
                     if (auto self{ weakThis.get() })
                     {
                         const auto selectedPath = co_await OpenImagePicker(nullptr);
@@ -289,7 +289,7 @@
                             dialog.Hide();
                         }
                     }
-                }();
+                }(weakThis, dialog, selectedIcon);
             });
             Controls::Grid::SetColumn(chooseFileButton, 2);
             headerPanel.Children().Append(chooseFileButton);
