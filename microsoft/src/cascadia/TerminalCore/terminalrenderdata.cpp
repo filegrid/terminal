@@ -97,7 +97,6 @@ std::vector<size_t> Terminal::GetPatternId(const til::point viewportPos) const
         }
         return result;
     }
-    return {};
 }
 
 std::pair<COLORREF, COLORREF> Terminal::GetAttributeColors(const TextAttribute& attr) const noexcept

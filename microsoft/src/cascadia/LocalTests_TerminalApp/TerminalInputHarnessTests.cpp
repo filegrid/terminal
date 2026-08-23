@@ -4,8 +4,8 @@
 #include "pch.h"
 #include <WexTestClass.h>
 
-#include "..\..\..\..\ext\src\glue\chat\TerminalInputHarness.h"
-#include "..\..\..\..\ext\src\glue\chat\WorkspaceChatStateHelpers.h"
+#include "..\..\..\..\src\glue\chat\TerminalInputHarness.h"
+#include "..\..\..\..\src\glue\chat\WorkspaceChatStateHelpers.h"
 
 using namespace WEX::Logging;
 using namespace WEX::TestExecution;

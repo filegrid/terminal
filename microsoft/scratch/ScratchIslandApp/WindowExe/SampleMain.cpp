@@ -65,15 +65,6 @@ static void EnsureNativeArchitecture()
     }
 }
 
-static bool _messageIsF7Keypress(const MSG& message)
-{
-    return (message.message == WM_KEYDOWN || message.message == WM_SYSKEYDOWN) && message.wParam == VK_F7;
-}
-static bool _messageIsAltKeyup(const MSG& message)
-{
-    return (message.message == WM_KEYUP || message.message == WM_SYSKEYUP) && message.wParam == VK_MENU;
-}
-
 int __stdcall wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 {
     // If Terminal is spawned by a shortcut that requests that it run in a new process group

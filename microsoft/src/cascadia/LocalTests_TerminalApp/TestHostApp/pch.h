@@ -5,4 +5,8 @@
 
 #pragma once
 
-#include "UnitTestApp.xaml.h"
+#include <windows.h>
+#ifdef GetCurrentTime
+#undef GetCurrentTime
+#endif
+#include "UnitTestApp.h"

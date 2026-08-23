@@ -57,99 +57,21 @@ function Import-LocalModule
     }
 }
 
-function Get-VSWherePath
-{
-    $installerVsWhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-    if (Test-Path $installerVsWhere)
-    {
-        return $installerVsWhere
-    }
-
-    $command = Get-Command vswhere.exe -ErrorAction SilentlyContinue
-    if ($null -ne $command)
-    {
-        return $command.Source
-    }
-
-    throw "Could not find vswhere.exe."
-}
-
 #.SYNOPSIS
-# Grabs all environment variable set after vcvarsall.bat is called and pulls
-# them into the Powershell environment.
-function Set-MsbuildDevEnvironment
+# Sets the repository variables used by the native CMake/Ninja build.
+function Set-NativeBuildEnvironment
 {
     [CmdletBinding()]
     param(
-        [switch]$Prerelease
+        [ValidateSet('x64', 'x86', 'arm64')]
+        [string]$Platform = 'x64'
     )
 
-    $ErrorActionPreference = 'Stop'
-    $vswhere = Get-VSWherePath
-    $vswhereArgs = @(
-        '-latest'
-        '-products', '*'
-        '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64'
-        '-property', 'installationPath'
-    )
-    if ($Prerelease)
-    {
-        $vswhereArgs = @('-latest', '-prerelease', '-products', '*', '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', '-property', 'installationPath')
-    }
-
-    Write-Verbose 'Searching for VC++ instances'
-    $vspath = (& $vswhere @vswhereArgs | Select-Object -First 1).Trim()
-    if ([string]::IsNullOrWhiteSpace($vspath))
-    {
-        Import-LocalModule -Name 'VSSetup'
-        $vsinfo = `
-            Get-VSSetupInstance  -All -Prerelease:$Prerelease `
-            | Select-VSSetupInstance `
-                -Latest -Product * `
-                -Require 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64'
-
-        $vspath = $vsinfo.InstallationPath
-    }
-
-    if ([string]::IsNullOrWhiteSpace($vspath))
-    {
-        throw 'Could not find a Visual Studio installation with VC tools.'
-    }
-
-    switch ($env:PROCESSOR_ARCHITECTURE) {
-        "amd64" { $arch = "x64" }
-        "x86" { $arch = "x86" }
-        "arm64" { $arch = "arm64" }
-        default { throw "Unknown architecture: $switch" }
-    }
-
-    $devShellModule = "$vspath\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
-
-    Import-Module -Global -Name $devShellModule
-
-    Write-Verbose 'Setting up environment variables'
-    Enter-VsDevShell -VsInstallPath $vspath -SkipAutomaticLocation `
-        -devCmdArguments "-arch=$arch" | Out-Null
-
-    Set-Item -Force -path "Env:\Platform" -Value $arch
-    Set-Item -Force -Path 'Env:\VsInstallRoot' -Value ("{0}\" -f $vspath)
-
-    $vcTargets180 = Join-Path $vspath 'MSBuild\Microsoft\VC\v180'
-    $vcTargets170 = Join-Path $vspath 'MSBuild\Microsoft\VC\v170'
-    if (Test-Path (Join-Path $vcTargets180 'Microsoft.Cpp.Default.props'))
-    {
-        Set-Item -Force -Path 'Env:\VisualStudioVersion' -Value '18.0'
-        Set-Item -Force -Path 'Env:\VCTargetsPath' -Value ("{0}\" -f $vcTargets180)
-        Set-Item -Force -Path 'Env:\VCPKG_PLATFORM_TOOLSET' -Value 'v145'
-    }
-    elseif (Test-Path (Join-Path $vcTargets170 'Microsoft.Cpp.Default.props'))
-    {
-        Set-Item -Force -Path 'Env:\VisualStudioVersion' -Value '17.0'
-        Set-Item -Force -Path 'Env:\VCTargetsPath' -Value ("{0}\" -f $vcTargets170)
-        Set-Item -Force -Path 'Env:\VCPKG_PLATFORM_TOOLSET' -Value 'v143'
-    }
-
-    Write-Host "Dev environment variables set" -ForegroundColor Green
+    $root = Find-OpenConsoleRoot
+    Set-Item -Force -Path 'Env:\OPENCON_ROOT' -Value $root
+    Set-Item -Force -Path 'Env:\PORTABLE_PLATFORM' -Value $Platform
+    Set-Item -Force -Path 'Env:\Platform' -Value $Platform
+    Write-Host "Native CMake/Ninja environment variables set" -ForegroundColor Green
 }
 
 #.SYNOPSIS
@@ -316,13 +238,31 @@ function Invoke-OpenConsoleTests()
 
 
 #.SYNOPSIS
-# Builds OpenConsole.slnx using msbuild. Any arguments get passed on to msbuild.
+# Builds the native CMake/Ninja product graph.
 function Invoke-OpenConsoleBuild()
 {
+    [CmdletBinding()]
+    Param (
+        [ValidateSet('Debug', 'Release', 'RelWithDebInfo')]
+        [string]$Configuration = 'Debug',
+
+        [ValidateSet('x64', 'x86', 'arm64')]
+        [string]$Platform = 'x64',
+
+        [ValidateSet('Dev', 'Canary', 'Preview', 'Release')]
+        [string]$Branding = 'Dev'
+    )
+
     $root = Find-OpenConsoleRoot
-    & "$root\dep\nuget\nuget.exe" restore "$root\OpenConsole.slnx"
-    & "$root\dep\nuget\nuget.exe" restore "$root\dep\nuget\packages.config"
-    msbuild.exe "$root\OpenConsole.slnx" @args
+    & cmake -S $root -B (Join-Path $root 'build') "-DPORTABLE_PLATFORM=$Platform" "-DPORTABLE_BRANDING=$Branding"
+    if ($LASTEXITCODE -ne 0) {
+        throw "CMake configuration failed with code $LASTEXITCODE."
+    }
+
+    & cmake --build (Join-Path $root 'build') --config $Configuration --target full
+    if ($LASTEXITCODE -ne 0) {
+        throw "CMake full build failed with code $LASTEXITCODE."
+    }
 }
 
 #.SYNOPSIS
@@ -483,4 +423,4 @@ function Invoke-CodeFormat() {
     }
 }
 
-Export-ModuleMember -Function Set-MsbuildDevEnvironment,Invoke-OpenConsoleTests,Invoke-OpenConsoleBuild,Start-OpenConsole,Debug-OpenConsole,Invoke-CodeFormat,Invoke-XamlFormat,Test-XamlFormat
+Export-ModuleMember -Function Set-NativeBuildEnvironment,Invoke-OpenConsoleTests,Invoke-OpenConsoleBuild,Start-OpenConsole,Debug-OpenConsole,Invoke-CodeFormat,Invoke-XamlFormat,Test-XamlFormat

@@ -11,7 +11,7 @@
 #include "VirtualDesktopUtils.h"
 #include "WindowEmperor.h"
 #include "../types/inc/utils.hpp"
-#include "../../../../ext/src/glue/chat/WorkspaceDiagnosticLog.h"
+#include "../../../../src/glue/chat/WorkspaceDiagnosticLog.h"
 
 using namespace winrt::Windows::UI;
 using namespace winrt::Windows::UI::Composition;

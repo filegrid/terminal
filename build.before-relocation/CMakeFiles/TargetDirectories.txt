@@ -1,5 +1,0 @@
-D:/github/tools/terminal/build/CMakeFiles/WorkspaceExtension.dir
-D:/github/tools/terminal/build/CMakeFiles/full.dir
-D:/github/tools/terminal/build/CMakeFiles/ext.dir
-D:/github/tools/terminal/build/CMakeFiles/edit_cache.dir
-D:/github/tools/terminal/build/CMakeFiles/rebuild_cache.dir

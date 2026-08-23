@@ -368,14 +368,14 @@ winget configure .config\configuration.winget
 
 ## Building the Code
 
-OpenConsole.slnx may be built from within Visual Studio or from the command-line
-using a set of convenience scripts & tools in the **/tools** directory:
+The supported command-line build uses CMake and Ninja. Visual Studio remains
+available for IDE debugging.
 
 ### Building in PowerShell
 
 ```powershell
 Import-Module .\tools\OpenConsole.psm1
-Set-MsBuildDevEnvironment
+Set-NativeBuildEnvironment
 Invoke-OpenConsoleBuild
 ```
 

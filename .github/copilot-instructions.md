@@ -5,9 +5,9 @@
 ## 入口
 
 - 后续新增内容入口：
-  - 新增文档放 `ext\docs` 目录
-  - 新增代码放 `ext\src` 目录
-  - 所有变更的功能记录到 ext\READ
+  - 新增文档放 `docs` 目录
+  - 新增代码放 `src` 目录
+  - 所有变更的功能记录到 README
 - 所有的脚本，备份，需要当前项目的 `microsoft\tmp` 目录下进行 
 - portable 默认构建使用真正的 CMake 入口：
 
@@ -21,8 +21,6 @@
   ```powershell
   cmake --build .\build --target full
   ```
-
-- `.\microsoft\build\scripts\Build-PortableTerminalDistribution.ps1` 仅作为 legacy/兼容入口，只有在明确要验证旧链路或排查 CMake 入口问题时才使用。
 
 ## 能做
 

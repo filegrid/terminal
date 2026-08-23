@@ -12,10 +12,12 @@
 #include "../../renderer/atlas/AtlasEngine.h"
 #include "../../renderer/base/renderer.hpp"
 #include "../../renderer/uia/UiaRenderer.hpp"
-#include "../../types/viewport.cpp"
+#include "../../types/inc/Viewport.hpp"
+#include <UIAutomationCoreApi.h>
 
 using namespace ::Microsoft::Console::VirtualTerminal;
 using namespace ::Microsoft::Terminal::Core;
+using ::Microsoft::Console::Types::Viewport;
 
 static LPCWSTR term_window_class = L"HwndTerminalClass";
 

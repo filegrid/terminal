@@ -7,12 +7,13 @@ This repository uses [git submodules](https://git-scm.com/book/en/v2/Git-Tools-S
 git submodule update --init --recursive
 ```
 
-OpenConsole.slnx may be built from within Visual Studio or from the command-line using a set of convenience scripts & tools in the **/tools** directory:
+The supported command-line build uses CMake and Ninja. Visual Studio remains
+available for IDE debugging.
 
 When using Visual Studio, be sure to set up the path for code formatting. To download the required clang-format.exe file, follow one of the building instructions below and run:
 ```powershell
 Import-Module .\tools\OpenConsole.psm1
-Set-MsBuildDevEnvironment
+Set-NativeBuildEnvironment
 Get-Format
 ```
 After, go to Tools > Options > Text Editor > C++ > Formatting and check "Use custom clang-format.exe file" in Visual Studio and choose the clang-format.exe in the repository at /packages/clang-format.win-x86.10.0.0/tools/clang-format.exe by clicking "browse" right under the check box.
@@ -21,13 +22,13 @@ After, go to Tools > Options > Text Editor > C++ > Formatting and check "Use cus
 
 ```powershell
 Import-Module .\tools\OpenConsole.psm1
-Set-MsBuildDevEnvironment
+Set-NativeBuildEnvironment
 Invoke-OpenConsoleBuild
 ```
 
 There are a few additional exported functions (look at their documentation for further details):
 
-- `Invoke-OpenConsoleBuild` - builds the solution. Can be passed msbuild arguments.
+- `Invoke-OpenConsoleBuild` - configures and builds the CMake `full` target.
 - `Invoke-OpenConsoleTests` - runs the various tests. Will run the unit tests by default.
 - `Start-OpenConsole` - starts Openconsole.exe from the output directory. x64 is run by default.
 - `Debug-OpenConsole` - starts Openconsole.exe and attaches it to the default debugger. x64 is run by default.
@@ -100,21 +101,22 @@ If you want to use .nupkg files instead of the downloaded Nuget package, you can
 
 ## Building the Terminal package from the commandline
 
-The Terminal is bundled as an `.msix`, which is produced by the `CascadiaPackage.wapproj` project. To build that project from the commandline, you can run the following (from a window you've already run `tools\razzle.cmd` in):
+The supported full build produces the Terminal `.msix` directly with MakePri and MakeAppx, then produces the portable distribution:
 
-```cmd
-"%msbuild%" "%OPENCON%\OpenConsole.slnx" /p:Configuration=%_LAST_BUILD_CONF% /p:Platform=%ARCH% /p:AppxSymbolPackageEnabled=false /t:Terminal\CascadiaPackage /m
+```powershell
+cmake --build .\build --target full
 ```
 
-This takes quite some time, and only generates an `msix`. It does not install the msix. To deploy the package:
+The `.msix` is written to `bin\msix`. It is not installed automatically. To deploy the package:
 
 ```powershell
 # If you haven't already:
 Import-Module .\tools\OpenConsole.psm1;
-Set-MsBuildDevEnvironment;
+Set-NativeBuildEnvironment;
 
-# The Set-MsBuildDevEnvironment call is needed for finding the path to
-# makeappx. It also takes a little longer to run. If you're sticking in powershell, best to do that.
+# Set-NativeBuildEnvironment records the selected native build platform. Ensure
+# the Windows SDK MakeAppx tools are available on PATH before using this legacy
+# manual deployment snippet.
 
 Set-Location -Path src\cascadia\CascadiaPackage\AppPackages\CascadiaPackage_0.0.1.0_x64_Debug_Test;
 if ((Get-AppxPackage -Name 'WindowsTerminalDev*') -ne $null) {
@@ -140,22 +142,6 @@ powershell -Command Set-Location -Path %OPENCON%\src\cascadia\CascadiaPackage\Ap
 
 Building the package from VS generates the loose layout to begin with, and then registers the loose manifest, skipping the msix stop. It's a lot faster than the commandline inner loop here, unfortunately.
 
-### Visual Studio update
-
-The following command can be used to build the terminal package, and then deploy it.
-
-```cmd
-pushd %OPENCON%\src\cascadia\CascadiaPackage
-bx
-for /f "usebackq tokens=*" %I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -prerelease -products * -requires Microsoft.Component.MSBuild -property installationPath`) do set VSINSTALLROOT=%I
-"%VSINSTALLROOT%\Common7\IDE\DeployAppRecipe.exe" bin\%ARCH%\%_LAST_BUILD_CONF%\CascadiaPackage.build.appxrecipe
-popd
-```
-
-The `bx` will build just the Terminal package, critically, populating the `CascadiaPackage.build.appxrecipe` file. Once that's been built, then the `DeployAppRecipe.exe` command can be used to deploy a loose layout in the same way that Visual Studio does.
-
-Notably, this method of building the Terminal package can't leverage the FastUpToDate check in Visual Studio, so the builds end up being considerably slower for the whole package, as cppwinrt does a lot of work before confirming that it's up to date and doing nothing.
-
 ### Portable distribution (single-file portable launcher)
 
 If you want an unpackaged build that can be extracted to any directory instead of
@@ -176,13 +162,6 @@ If you need the explicit full rebuild path, use:
 cmake --build .\build --target full
 ```
 
-The older PowerShell script-based entrypoint is still available for legacy
-compatibility and targeted troubleshooting:
-
-```pwsh
-.\build\scripts\Build-PortableTerminalDistribution.ps1
-```
-
 The primary acceptance artifact is:
 
 - `bin\WindowsTerminalPortableGeekEdition_System_0.0.1.0_x64.exe`
@@ -191,25 +170,13 @@ This single-file launcher is the main portable output and follows the OS/UI
 language as usual. You run it directly; there is no install step for the
 normal portable flow.
 
-If you also want sparse identity validation assets for a regular non-SID-500
-desktop session, use:
-
-```pwsh
-.\build\scripts\Build-PortableTerminalDistribution.ps1 -GenerateSparseIdentityPackage
-```
-
-That emits:
-
-- `bin\msix\portable-identity\WindowsTerminalSparseDev_0.0.1.0.msix`
-- `bin\msix\portable-identity\WindowsTerminal.exe.manifest`
-
 The sparse identity path below is optional and is only for runtime diagnostics
 that need package identity. It is not required for normal portable usage.
 
 To install those sparse assets against an extracted portable payload, use:
 
 ```pwsh
-.\ext\src\portable\scripts\Install-PortableIdentityPackage.ps1 `
+.\src\glue\portable\scripts\Install-PortableIdentityPackage.ps1 `
     -IdentityPackagePath .\bin\msix\portable-identity\WindowsTerminalSparseDev_0.0.1.0.msix `
     -ExternalLocation "$env:LOCALAPPDATA\WTP\<hash>\p\terminal-0.0.1.0" `
     -AllowUnsigned

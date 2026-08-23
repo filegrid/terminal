@@ -1052,14 +1052,16 @@ namespace SettingsModelUnitTests
         workspace.Nodes.emplace_back(std::move(node));
         workspace.TabOrder = { L"bad:name" };
 
-        WorkspaceEditorState editor;
-        editor.Workspace = workspace;
+        WorkspaceManager editedManager;
+        editedManager.SetWorkspaces({ workspace });
+        WorkspaceManager persistedManager;
 
-        const auto prepared = PrepareWorkspaceEditorForSave(editor);
-        VERIFY_ARE_EQUAL(1u, gsl::narrow_cast<unsigned int>(prepared.Workspace.TabOrder.size()));
-        VERIFY_IS_TRUE(prepared.Workspace.TabOrder.front() == L"bad_name");
-        VERIFY_IS_TRUE(prepared.Workspace.Nodes.front().Name == L"bad_name");
-        VERIFY_IS_TRUE(prepared.Workspace.Nodes.front().Id == L"bad_name");
+        PrepareWorkspaceEditorForSave(editedManager, persistedManager, L"", L"", 0);
+        const auto& prepared = editedManager.Workspaces().front();
+        VERIFY_ARE_EQUAL(1u, gsl::narrow_cast<unsigned int>(prepared.TabOrder.size()));
+        VERIFY_IS_TRUE(prepared.TabOrder.front() == L"bad_name");
+        VERIFY_IS_TRUE(prepared.Nodes.front().Name == L"bad_name");
+        VERIFY_IS_TRUE(prepared.Nodes.front().Id == L"bad_name");
     }
 
     void WorkspaceTests::SaveWorkspaceYamlRoundTripPersistsRenamedWorkspaceOrder()

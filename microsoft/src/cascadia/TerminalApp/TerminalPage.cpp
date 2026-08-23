@@ -24,7 +24,7 @@
 #include "SnippetsPaneContent.h"
 #include "TabRowControl.h"
 #include "TerminalSettingsCache.h"
-#include "..\..\..\..\ext\src\glue\workspace\WorkspaceHostInterfaces.h"
+#include "..\..\..\..\src\glue\workspace\WorkspaceHostInterfaces.h"
 
 #include "LaunchPositionRequest.g.cpp"
 #include "RenameWindowRequestedArgs.g.cpp"

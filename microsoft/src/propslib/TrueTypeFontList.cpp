@@ -11,6 +11,25 @@
 
 #define DEFAULT_NON_DBCS_FONTFACE L"Consolas"
 
+PSINGLE_LIST_ENTRY PopEntryList(_Inout_ PSINGLE_LIST_ENTRY listHead)
+{
+    const auto firstEntry = listHead->Next;
+    if (firstEntry != nullptr)
+    {
+        listHead->Next = firstEntry->Next;
+    }
+
+    return firstEntry;
+}
+
+void PushEntryList(
+    _Inout_ PSINGLE_LIST_ENTRY listHead,
+    _Inout_ __drv_aliasesMem PSINGLE_LIST_ENTRY entry)
+{
+    entry->Next = listHead->Next;
+    listHead->Next = entry;
+}
+
 SINGLE_LIST_ENTRY TrueTypeFontList::s_ttFontList;
 
 WORD ConvertStringToDec(

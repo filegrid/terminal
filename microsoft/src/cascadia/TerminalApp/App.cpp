@@ -4,7 +4,7 @@
 #include "pch.h"
 #include "App.h"
 #include "App.g.cpp"
-#include "..\..\..\..\ext\src\glue\chat\WorkspaceDiagnosticLog.h"
+#include "..\..\..\..\src\glue\chat\WorkspaceDiagnosticLog.h"
 
 using namespace winrt;
 using namespace winrt::Windows::ApplicationModel::Activation;

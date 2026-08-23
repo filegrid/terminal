@@ -9,7 +9,7 @@ tools that we used to use when developing inside the Windows build system.
 This is a script that quickly sets up your environment variables so that these
 tools can run easily. It's named after another script used by Windows developers
 to similar effect.
- - It adds msbuild to your path.
+ - It prepares repository and platform variables for CMake/Ninja commands.
  - It adds the tools directory to your path as well, so all these scripts are
  easily available.
  - It executes `\tools\.razzlerc.cmd` to add any other personal configuration to
@@ -25,6 +25,8 @@ the `%DEFAULT_CONFIGURATION%` configuration, which is `Debug` if you use `razzle
 
  - `bcz dbg` can be used to manually build the Debug configuration.
  - `bcz rel` can be used to manually build the Release configuration.
+ - `bcz audit` runs the AuditMode CppCoreCheck configuration.
+ - `bcz fuzz` builds the Fuzzing configuration.
 
 
 ## opencon (and openbash, openps)

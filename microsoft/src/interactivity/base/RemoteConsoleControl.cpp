@@ -16,12 +16,12 @@ RemoteConsoleControl::RemoteConsoleControl(HANDLE signalPipe) :
 
 void RemoteConsoleControl::Control(ControlType, PVOID, DWORD) noexcept
 {
-    WI_ASSERT_FAIL();
+    WI_ASSERT_FAIL("Remote console control does not support Control");
 }
 
 void RemoteConsoleControl::NotifyWinEvent(DWORD, HWND, LONG, LONG) noexcept
 {
-    WI_ASSERT_FAIL();
+    WI_ASSERT_FAIL("Remote console control does not support NotifyWinEvent");
 }
 
 #pragma region IConsoleControl Members

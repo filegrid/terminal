@@ -5,8 +5,8 @@
 #include "TerminalWindow.h"
 
 #include "AppLogic.h"
-#include "..\..\..\..\ext\src\glue\workspace\WorkspaceHostBridge.h"
-#include "..\..\..\..\ext\src\glue\chat\WorkspaceDiagnosticLog.h"
+#include "..\..\..\..\src\glue\workspace\WorkspaceHostBridge.h"
+#include "..\..\..\..\src\glue\chat\WorkspaceDiagnosticLog.h"
 
 #include <til/env.h>
 

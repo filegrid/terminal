@@ -575,7 +575,7 @@ namespace TerminalAppLocalTests
             const auto originalControl = tab->GetActiveTerminalControl();
             VERIFY_IS_TRUE(static_cast<bool>(originalControl));
 
-            TerminalPage::WorkspaceNodeRuntimeState runtimeState;
+            winrt::TerminalApp::implementation::WorkspaceNodeRuntimeState runtimeState;
             runtimeState.WorkspaceNodeId = L"node-1";
             page->_workspaceExtension->UpsertWorkspaceNodeRuntimeState(originalControl.ContentId(), runtimeState);
 
@@ -602,11 +602,11 @@ namespace TerminalAppLocalTests
             const auto control = tab->GetActiveTerminalControl();
             VERIFY_IS_TRUE(static_cast<bool>(control));
 
-            Workspace workspace;
+            winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace workspace;
             workspace.Id = L"ws-dev";
             workspace.Name = L"Dev";
 
-            WorkspaceNode node;
+            winrt::Microsoft::Terminal::Settings::Model::implementation::WorkspaceNode node;
             node.Id = L"node-1";
             node.Name = L"Saved node";
             node.ProfileGuid = L"{6239a42c-1111-49a3-80bd-e8fdd045185c}";
@@ -620,7 +620,7 @@ namespace TerminalAppLocalTests
             page->_workspaceExtension->WorkspaceEditorSelectedIndex() = 0;
             page->CurrentWorkspaceId(L"ws-dev");
 
-            TerminalPage::WorkspaceNodeRuntimeState runtimeState;
+            winrt::TerminalApp::implementation::WorkspaceNodeRuntimeState runtimeState;
             runtimeState.WorkspaceNodeId = L"node-1";
             page->_workspaceExtension->UpsertWorkspaceNodeRuntimeState(control.ContentId(), runtimeState);
 
@@ -633,7 +633,7 @@ namespace TerminalAppLocalTests
 
             tab->ShowWorkspaceInputPanel(true);
 
-            Workspace captured;
+            winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace captured;
             VERIFY_IS_TRUE(page->_TryCaptureCurrentWorkspace(captured));
             VERIFY_ARE_EQUAL(1u, gsl::narrow_cast<unsigned int>(captured.Nodes.size()));
 
@@ -662,11 +662,11 @@ namespace TerminalAppLocalTests
             const auto control = tab->GetActiveTerminalControl();
             VERIFY_IS_TRUE(static_cast<bool>(control));
 
-            Workspace workspace;
+            winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace workspace;
             workspace.Id = L"ws-dev";
             workspace.Name = L"Dev";
 
-            WorkspaceNode node;
+            winrt::Microsoft::Terminal::Settings::Model::implementation::WorkspaceNode node;
             node.Id = L"node-1";
             node.Name = L"Saved node";
             node.ProfileGuid = L"{6239a42c-1111-49a3-80bd-e8fdd045185c}";
@@ -680,7 +680,7 @@ namespace TerminalAppLocalTests
             page->_workspaceExtension->WorkspaceEditorSelectedIndex() = 0;
             page->CurrentWorkspaceId(L"ws-dev");
 
-            TerminalPage::WorkspaceNodeRuntimeState runtimeState;
+            winrt::TerminalApp::implementation::WorkspaceNodeRuntimeState runtimeState;
             runtimeState.WorkspaceNodeId = L"node-1";
             page->_workspaceExtension->UpsertWorkspaceNodeRuntimeState(control.ContentId(), runtimeState);
 

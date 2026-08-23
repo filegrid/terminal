@@ -34,32 +34,3 @@
 #include <pathcch.h>
 
 #include "conpropsp.hpp"
-
-#pragma region Definitions from DDK(wdm.h)
-FORCEINLINE
-PSINGLE_LIST_ENTRY
-PopEntryList(
-    _Inout_ PSINGLE_LIST_ENTRY ListHead)
-{
-    PSINGLE_LIST_ENTRY FirstEntry;
-
-    FirstEntry = ListHead->Next;
-    if (FirstEntry != nullptr)
-    {
-        ListHead->Next = FirstEntry->Next;
-    }
-
-    return FirstEntry;
-}
-
-FORCEINLINE
-VOID PushEntryList(
-    _Inout_ PSINGLE_LIST_ENTRY ListHead,
-    _Inout_ __drv_aliasesMem PSINGLE_LIST_ENTRY Entry)
-
-{
-    Entry->Next = ListHead->Next;
-    ListHead->Next = Entry;
-    return;
-}
-#pragma endregion

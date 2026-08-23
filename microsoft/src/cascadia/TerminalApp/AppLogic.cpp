@@ -5,8 +5,8 @@
 #include "AppLogic.h"
 #include "AppLogic.g.cpp"
 #include "SettingsLoadEventArgs.h"
-#include "..\..\..\..\ext\src\glue\chat\WorkspaceDiagnosticLog.h"
-#include "..\..\..\..\ext\src\glue\workspace\WorkspaceHostBridge.h"
+#include "..\..\..\..\src\glue\chat\WorkspaceDiagnosticLog.h"
+#include "..\..\..\..\src\glue\workspace\WorkspaceHostBridge.h"
 
 #include <WtExeUtils.h>
 #include <wil/token_helpers.h>

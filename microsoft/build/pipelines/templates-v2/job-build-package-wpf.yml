@@ -77,26 +77,28 @@ jobs:
         - $(BuildConfiguration)
       artifactStem: ${{ parameters.artifactStem }}
 
-  - template: .\steps-restore-nuget.yml
-
-  - task: VSBuild@1
-    displayName: Build solution OpenConsole.slnx for WPF Control (Pack)
+  - task: PowerShell@2
+    displayName: Build and pack WPF Control with CMake/Ninja
     inputs:
-      solution: 'OpenConsole.slnx'
-      msbuildArgs: >-
-        /p:WindowsTerminalReleaseBuild=true;Version=$(XES_PACKAGEVERSIONNUMBER)
-        /p:NoBuild=true
-        /p:IncludeSymbols=true
-        /t:Terminal\wpf\WpfTerminalControl:Pack
-      platform: Any CPU
-      configuration: $(BuildConfiguration)
-      maximumCpuCount: true
-      clean: false
+      targetType: inline
+      pwsh: true
+      script: |
+        $ErrorActionPreference = 'Stop'
+        # CMake owns the enclosing portable repository; this job runs from
+        # the checked-out OpenConsole subtree.
+        cmake -S .. -B ..\build -G 'Ninja Multi-Config' `
+          -DPORTABLE_PLATFORM=x64 `
+          -DPORTABLE_WPF_PACKAGE_VERSION="$(XES_PACKAGEVERSIONNUMBER)"
+        if ($LASTEXITCODE) { throw 'CMake configuration failed.' }
+
+        cmake --build ..\build --config "$(BuildConfiguration)" --target WpfTerminalControlPack -- -j 1
+        if ($LASTEXITCODE) { throw 'CMake/Ninja WPF package build failed.' }
 
   - task: CopyFiles@2
     displayName: Copy *.nupkg to Artifacts
     inputs:
-      Contents: 'bin/**/*Wpf*.nupkg'
+      SourceFolder: $(Build.SourcesDirectory)\..\build\nupkg
+      Contents: '*.nupkg'
       TargetFolder: $(Build.ArtifactStagingDirectory)/nupkg
       OverWrite: true
       flattenFolders: true

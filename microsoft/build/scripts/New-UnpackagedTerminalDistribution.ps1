@@ -175,14 +175,14 @@ If ($PSCmdlet.ParameterSetName -Eq "AppX") {
     if ($SingleFileOutput) {
         $launcherSourcePath = Join-Path $PSScriptRoot "..\..\src\tools\PortableTerminalLauncher\Program.cs"
         $launcherIconPath = Join-Path $PSScriptRoot "..\..\res\terminal.ico"
-        $roslynCsc = "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\Roslyn\csc.exe"
-        if (Test-Path $roslynCsc -PathType Leaf) {
-            $cscPath = $roslynCsc
-        } else {
-            $cscPath = (Get-Command csc.exe -ErrorAction SilentlyContinue).Source
+        $dotnetPath = "C:\Program Files\dotnet\dotnet.exe"
+        $roslynCsc = "C:\Program Files\dotnet\sdk\8.0.421\Roslyn\bincore\csc.dll"
+        $net472ReferenceRoot = Join-Path $PSScriptRoot "..\..\packages-ref\Microsoft.NETFramework.ReferenceAssemblies.net472.1.0.3\build\.NETFramework\v4.7.2"
+        if (-not (Test-Path $dotnetPath -PathType Leaf) -or -not (Test-Path $roslynCsc -PathType Leaf)) {
+            throw "Could not find the pinned .NET SDK 8.0.421 Roslyn compiler."
         }
-        if ([string]::IsNullOrWhiteSpace($cscPath)) {
-            throw "Could not find csc.exe to build the single-file portable launcher."
+        if (-not (Test-Path $net472ReferenceRoot -PathType Container)) {
+            throw "Could not find .NET Framework 4.7.2 reference assemblies at `"$net472ReferenceRoot`"."
         }
         if (-not (Test-Path $launcherIconPath -PathType Leaf)) {
             throw "Could not find the portable launcher icon at `"$launcherIconPath`"."
@@ -215,21 +215,21 @@ using System.Reflection;
         }
 
         $launcherPath = Join-Path $publishDir "PortableTerminalLauncher.exe"
-        $compileArgs = @(
-            "/nologo",
+        $compilerResponsePath = Join-Path $publishDir "PortableTerminalLauncher.rsp"
+        $compilerArguments = @(
             "/target:winexe",
             "/optimize+",
             "/platform:$cscPlatform",
             "/win32icon:$launcherIconPath",
-            "/r:System.IO.Compression.dll",
-            "/r:System.IO.Compression.FileSystem.dll",
-            "/r:System.Windows.Forms.dll",
-            "/out:$launcherPath",
-            $assemblyInfoPath,
-            $launcherSourcePath
+            "/out:$launcherPath"
         )
+        Get-ChildItem $net472ReferenceRoot -Filter "*.dll" -File |
+            Where-Object { $_.Name -notin "System.EnterpriseServices.Wrapper.dll", "System.EnterpriseServices.Thunk.dll" } |
+            ForEach-Object { $compilerArguments += "/reference:$($_.FullName)" }
+        $compilerArguments += $assemblyInfoPath, $launcherSourcePath
+        Set-Content -Path $compilerResponsePath -Value $compilerArguments -Encoding Ascii
 
-        & $cscPath @compileArgs
+        & $dotnetPath $roslynCsc /noconfig "@$compilerResponsePath"
         if ($LASTEXITCODE -ne 0) {
             throw "Building the single-file portable launcher failed with code $LASTEXITCODE"
         }

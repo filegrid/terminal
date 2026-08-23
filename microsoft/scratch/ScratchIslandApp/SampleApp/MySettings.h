@@ -29,6 +29,11 @@ namespace winrt::SampleApp::implementation
 #undef SETTINGS_GEN
 
     public:
+        void GetColorTable(winrt::com_array<winrt::Microsoft::Terminal::Core::Color>& table) noexcept
+        {
+            table = { _ColorTable.begin(), _ColorTable.end() };
+        }
+
         winrt::Microsoft::Terminal::Core::Color GetColorTableEntry(int32_t index) noexcept { return _ColorTable.at(index); }
         std::array<winrt::Microsoft::Terminal::Core::Color, 16> ColorTable() { return _ColorTable; }
         void ColorTable(std::array<winrt::Microsoft::Terminal::Core::Color, 16> /*colors*/) {}

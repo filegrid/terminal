@@ -60,11 +60,15 @@ jobs:
       restoreSolution: build/packages.config
       restoreDirectory: '$(Build.SourcesDirectory)\packages'
 
-  - task: MSBuild@1
-    displayName: 'Create PGO Nuget'
-    inputs:
-      solution: $(pgoToolsPath)\PGO.DB.proj
-      msbuildArguments: '/t:CreatePGONuGet /p:PGOBuildMode=Instrument /p:PGDPathForAllArch=$(artifactsPath) /p:PGOOutputPath=$(Build.ArtifactStagingDirectory)'
+  - pwsh: |-
+      [xml]$VersionProps = Get-Content '.\custom.props'
+      $Version = "$($VersionProps.Project.PropertyGroup.VersionMajor).$($VersionProps.Project.PropertyGroup.VersionMinor).0"
+      & nuget pack '.\build\PGO\Terminal.PGO.DB.nuspec' `
+        -BasePath "$(artifactsPath)" `
+        -OutputDirectory "$(Build.ArtifactStagingDirectory)" `
+        -Version $Version
+      if ($LASTEXITCODE) { throw 'NuGet pack failed.' }
+    displayName: Create PGO NuGet
 
   - publish: $(Build.ArtifactStagingDirectory)
     artifact: pgo-nupkg-${{ parameters.buildConfiguration }}${{ parameters.artifactStem }}

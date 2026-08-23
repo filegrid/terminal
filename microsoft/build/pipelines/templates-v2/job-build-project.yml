@@ -90,9 +90,7 @@ jobs:
           ${{ config }}_${{ platform }}:
             BuildConfiguration: ${{ config }}
             BuildPlatform: ${{ platform }}
-            ${{ if eq(platform, 'x86') }}:
-              OutputBuildPlatform: Win32
-            ${{ elseif eq(platform, 'Any CPU') }}:
+            ${{ if eq(platform, 'Any CPU') }}:
               OutputBuildPlatform: AnyCPU
             ${{ else }}:
               OutputBuildPlatform: ${{ platform }}
@@ -103,9 +101,7 @@ jobs:
     # If these are blank, expansion will fail later on... which will result in direct substitution of the variable *names*
     # later on. We'll just... set them to a single space and if we need to, check IsNullOrWhiteSpace.
     # Yup.
-    BuildTargetParameter: ' '
     SelectedSigningFragments: ' '
-    MSBuildCacheParameters: ' '
     # When building the unpackaged distribution, build it in portable mode if it's Canary-branded
     ${{ if eq(parameters.branding, 'Canary') }}:
       UnpackagedBuildArguments: -PortableMode -SingleFileOutput
@@ -120,47 +116,30 @@ jobs:
   steps:
   - checkout: self
     clean: true
+    fetchDepth: 0
     submodules: true
     persistCredentials: True
 
-  # This generates either nothing for BuildTargetParameter, or /t:X;Y;Z, to control targets later.
+  # Select signing fragments independently from the CMake target graph.
   - pwsh: |-
       If (-Not [bool]::Parse("${{ parameters.buildEverything }}")) {
-        $BuildTargets = @()
         $SignFragments = @()
         If ([bool]::Parse("${{ parameters.buildTerminal }}")) {
-          $BuildTargets += "Terminal\CascadiaPackage"
           $SignFragments += "terminal_constituents"
         }
         If ([bool]::Parse("${{ parameters.buildWPFDotNetComponents }}")) {
-          $BuildTargets += "Terminal\wpf\WpfTerminalControl"
           $SignFragments += "wpfdotnet"
         }
         If ([bool]::Parse("${{ parameters.buildWPF }}")) {
-          $BuildTargets += "Terminal\Control\TerminalControl"
           $SignFragments += "wpf"
         }
         If ([bool]::Parse("${{ parameters.buildConPTY }}")) {
-          $BuildTargets += "Conhost\Host_EXE;Conhost\winconptydll"
           $SignFragments += "conpty"
         }
-        Write-Host "Targets: $($BuildTargets -Join ";")"
         Write-Host "Sign targets: $($SignFragments -Join ";")"
-        Write-Host "##vso[task.setvariable variable=BuildTargetParameter]/t:$($BuildTargets -Join ";")"
         Write-Host "##vso[task.setvariable variable=SelectedSigningFragments]$($SignFragments -Join ";")"
       }
     displayName: Prepare Build and Sign Targets
-
-  - ${{ if eq(parameters.enableCaching, true) }}:
-    - pwsh: |-
-        $MSBuildCacheParameters = ""
-        $MSBuildCacheParameters += " -graph"
-        $MSBuildCacheParameters += " -reportfileaccesses"
-        $MSBuildCacheParameters += " -p:MSBuildCacheEnabled=true"
-        $MSBuildCacheParameters += " -p:MSBuildCacheLogDirectory=$(Build.SourcesDirectory)\MSBuildCacheLogs"
-        Write-Host "MSBuildCacheParameters: $MSBuildCacheParameters"
-        Write-Host "##vso[task.setvariable variable=MSBuildCacheParameters]$MSBuildCacheParameters"
-      displayName: Prepare MSBuildCache variables
 
   - pwsh: |-
       .\build\scripts\Generate-ThirdPartyNotices.ps1 -MarkdownNoticePath .\microsoft\NOTICE.md -OutputPath .\src\cascadia\CascadiaPackage\NOTICE.html
@@ -168,54 +147,76 @@ jobs:
 
   - template: .\steps-install-vcpkg.yml
 
-  - template: .\steps-restore-nuget.yml
+  - ${{ if eq(parameters.pgoBuildMode, 'Optimize') }}:
+    - task: NuGetAuthenticate@1
+      displayName: Authenticate PGO database restore
 
-  - pwsh: |-
-      .\build\scripts\Set-LatestVCToolsVersion.ps1
-    displayName: Work around DD-1541167 (VCToolsVersion)
+    - pwsh: |-
+        $ErrorActionPreference = 'Stop'
+        [xml]$versionProps = Get-Content '.\custom.props'
+        $major = $versionProps.Project.PropertyGroup.VersionMajor
+        $minor = $versionProps.Project.PropertyGroup.VersionMinor
+        $gitBranch = '$(Build.SourceBranch)' -replace '^refs/heads/', ''
+        if ([string]::IsNullOrWhiteSpace($gitBranch)) { $gitBranch = 'main' }
+        $packageBranch = $gitBranch -replace '/', '-'
+
+        $fork = & git merge-base "origin/$gitBranch" HEAD
+        if ($LASTEXITCODE -or [string]::IsNullOrWhiteSpace($fork)) { $fork = 'HEAD' }
+        $forkUtc = [DateTimeOffset]::FromUnixTimeSeconds([int64](& git show -s --format=%ct $fork)).UtcDateTime
+
+        $package = 'Microsoft.Internal.Windows.Terminal.PGODatabase'
+        $source = 'https://pkgs.dev.azure.com/shine-oss/terminal/_packaging/TerminalDependencies%40Local/nuget/v3/index.json'
+        $versions = & .\dep\nuget\nuget.exe list $package -AllVersions -Prerelease -Source $source
+        if ($LASTEXITCODE) { throw 'Could not list PGO database packages.' }
+
+        $pattern = "^$([regex]::Escape($package))\s+$([regex]::Escape("$major.$minor.0"))-(?<stamp>\d{10})-$([regex]::Escape($packageBranch))$"
+        $selected = $versions | ForEach-Object {
+          if ($_ -match $pattern) {
+            [pscustomobject]@{ Version = ($_.Split() | Select-Object -Last 1); PublishedUtc = [DateTime]::ParseExact($Matches.stamp, 'yyMMddHHmm', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AssumeUniversal) }
+          }
+        } | Where-Object PublishedUtc -le $forkUtc | Sort-Object PublishedUtc -Descending | Select-Object -First 1
+        if ($null -eq $selected) { throw "No PGO database matches $major.$minor.0, branch $gitBranch, and fork $forkUtc." }
+
+        & .\dep\nuget\nuget.exe install $package -Version $selected.Version -OutputDirectory .\packages -Source $source -NonInteractive
+        if ($LASTEXITCODE) { throw "Could not restore PGO database $($selected.Version)." }
+        $root = Join-Path $PWD "packages\$package.$($selected.Version)"
+        if (-not (Test-Path $root)) { throw "Restored PGO database is missing: $root" }
+        Write-Host "##vso[task.setvariable variable=PgoDatabaseRoot]$root"
+      displayName: Restore branch-matched PGO database
 
   - ${{ parameters.beforeBuildSteps }}
 
-  - task: VSBuild@1
-    displayName: Build OpenConsole.slnx
+  - task: PowerShell@2
+    displayName: Build product with CMake/Ninja
     inputs:
-      solution: 'OpenConsole.slnx'
-      msbuildArgs: >-
-        /p:WindowsTerminalOfficialBuild=true;WindowsTerminalBranding=${{ parameters.branding }};PGOBuildMode=${{ parameters.pgoBuildMode }}
-        ${{ parameters.additionalBuildOptions }}
-        /bl:$(Build.SourcesDirectory)\msbuild.binlog
-        $(BuildTargetParameter)
-        $(MSBuildCacheParameters)
-      platform: $(BuildPlatform)
-      configuration: $(BuildConfiguration)
-      msbuildArchitecture: x64
-      maximumCpuCount: true
-    ${{ if eq(parameters.enableCaching, true) }}:
-      env:
-        SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+      targetType: inline
+      pwsh: true
+      script: |
+        $ErrorActionPreference = 'Stop'
+        # The checked-out OpenConsole source remains in this directory; the
+        # portable CMake entrypoint is its repository parent.
+        & cmake -S .. -B ..\build -G 'Ninja Multi-Config' `
+          -DPORTABLE_PLATFORM="$(BuildPlatform)" `
+          -DPORTABLE_BRANDING="${{ parameters.branding }}" `
+          -DPORTABLE_PGO_BUILD_MODE="${{ parameters.pgoBuildMode }}" `
+          -DPORTABLE_PGO_DATABASE_ROOT="$(PgoDatabaseRoot)"
+        if ($LASTEXITCODE) { throw 'CMake configuration failed.' }
+
+        & cmake --build ..\build --config "$(BuildConfiguration)" --target full WpfTerminalControl -- -j 1 2>&1 |
+          Tee-Object -FilePath "$(Build.SourcesDirectory)\cmake-build.log"
+        if ($LASTEXITCODE) { throw 'CMake/Ninja product build failed.' }
 
   - ${{ if eq(parameters.publishArtifacts, true) }}:
-    - publish: $(Build.SourcesDirectory)/msbuild.binlog
+    - publish: $(Build.SourcesDirectory)/cmake-build.log
       artifact: logs-$(BuildPlatform)-$(BuildConfiguration)${{ parameters.artifactStem }}
       condition: always()
       displayName: Publish Build Log
-    - ${{ if eq(parameters.enableCaching, true) }}:
-      - publish: $(Build.SourcesDirectory)\MSBuildCacheLogs
-        artifact: logs-msbuildcache-$(BuildPlatform)-$(BuildConfiguration)${{ parameters.artifactStem }}
-        condition: always()
-        displayName: Publish MSBuildCache Logs
   - ${{ else }}:
     - task: CopyFiles@2
       displayName: Copy Build Log
       inputs:
-        contents: $(Build.SourcesDirectory)/msbuild.binlog
+        contents: $(Build.SourcesDirectory)/cmake-build.log
         TargetFolder: $(Terminal.BinDir)
-    - ${{ if eq(parameters.enableCaching, true) }}:
-      - task: CopyFiles@2
-        displayName: Copy MSBuildCache Logs
-        inputs:
-          contents: $(Build.SourcesDirectory)/MSBuildCacheLogs/**
-          TargetFolder: $(Terminal.BinDir)/MSBuildCacheLogs
 
   - ${{ parameters.afterBuildSteps }}
 
@@ -258,7 +259,8 @@ jobs:
 
   - ${{ if or(parameters.buildTerminal, parameters.buildEverything) }}:
     - pwsh: |-
-        $Package = (Get-ChildItem -Recurse -Filter "CascadiaPackage*.msix" | Select -First 1)
+        $Package = (Get-ChildItem "..\bin\msix" -Filter "CascadiaPackage*.msix" | Select -First 1)
+        if ($null -eq $Package) { throw 'CMake did not produce the expected MSIX under ../bin/msix.' }
         $PackageFilename = $Package.FullName
         Write-Host "##vso[task.setvariable variable=WindowsTerminalPackagePath]${PackageFilename}"
       displayName: Locate the MSIX
@@ -323,7 +325,7 @@ jobs:
 
   - ${{ if or(parameters.buildTerminal, parameters.buildEverything) }}:
     - pwsh: |-
-        $XamlAppxPath = (Get-Item "src\cascadia\CascadiaPackage\AppPackages\*\Dependencies\$(BuildPlatform)\Microsoft.UI.Xaml*.appx").FullName
+        $XamlAppxPath = (Get-Item "packages\Microsoft.UI.Xaml.2.8.4\tools\AppX\$(BuildPlatform)\Release\Microsoft.UI.Xaml*.appx").FullName
         $outDir = New-Item -Type Directory "$(Terminal.BinDir)/_unpackaged" -ErrorAction:Ignore
         & .\build\scripts\New-UnpackagedTerminalDistribution.ps1 $(UnpackagedBuildArguments) -TerminalAppX $(WindowsTerminalPackagePath) -XamlAppX $XamlAppxPath -Destination $outDir.FullName
       displayName: Build Unpackaged Distribution (from MSIX)
