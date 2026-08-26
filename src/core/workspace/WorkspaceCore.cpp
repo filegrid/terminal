@@ -75,7 +75,8 @@ namespace terminal::workspace
         WorkspaceStateManager _loadRuntimeWorkspaceStateManagerFromBlock(const RuntimeWorkspaceStateBlock& block);
         void _saveRuntimeWorkspaceStateManagerToBlock(const WorkspaceStateManager& manager,
                                                       RuntimeWorkspaceStateBlock& block,
-                                                      uint64_t now) noexcept;
+                                                      uint64_t now,
+                                                      uint64_t refreshedWindowId = 0) noexcept;
         template<typename TCallback>
         auto _withRuntimeWorkspaceStateBlock(TCallback&& callback);
     }
@@ -276,8 +277,10 @@ namespace terminal::workspace
 
         void _saveRuntimeWorkspaceStateManagerToBlock(const WorkspaceStateManager& manager,
                                                       RuntimeWorkspaceStateBlock& block,
-                                                      const uint64_t now) noexcept
+                                                      const uint64_t now,
+                                                      const uint64_t refreshedWindowId) noexcept
         {
+            const auto previousBlock = block;
             _initializeWorkspaceStateBlock(block);
 
             size_t index = 0;
@@ -291,7 +294,10 @@ namespace terminal::workspace
                 auto& record = block.Records[index++];
                 record.WindowId = window.WindowId;
                 record.ProcessId = window.ProcessId;
-                record.LastSeenTick = now;
+                const auto previous = std::find_if(std::begin(previousBlock.Records), std::end(previousBlock.Records), [&](const auto& candidate) {
+                    return candidate.WindowId == window.WindowId;
+                });
+                record.LastSeenTick = window.WindowId == refreshedWindowId || previous == std::end(previousBlock.Records) ? now : previous->LastSeenTick;
                 _copyWorkspaceStateString(window.WorkspaceId, record.WorkspaceId);
                 _copyWorkspaceStateString(window.ProcessName, record.ProcessName);
                 _copyWorkspaceStateString(_resolveWorkspaceName(window.WorkspaceId), record.WorkspaceName);

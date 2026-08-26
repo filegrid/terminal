@@ -92,7 +92,7 @@
         const auto refreshed = _withRuntimeWorkspaceStateBlock([&](RuntimeWorkspaceStateBlock& block, const uint64_t now) {
             auto manager = _loadRuntimeWorkspaceStateManagerFromBlock(block);
             manager.UpdateWindowState(windowId, windowName, workspaceId);
-            _saveRuntimeWorkspaceStateManagerToBlock(manager, block, now);
+            _saveRuntimeWorkspaceStateManagerToBlock(manager, block, now, windowId);
             return true;
         });
         return refreshed;

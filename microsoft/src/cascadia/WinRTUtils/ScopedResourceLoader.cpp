@@ -33,7 +33,21 @@ ResourceMap ScopedResourceLoader::GetResourceMap() const noexcept
 // - The final localized string for the given key.
 winrt::hstring ScopedResourceLoader::GetLocalizedString(const std::wstring_view resourceName) const
 {
-    return _resourceMap.GetValue(resourceName, _resourceContext).ValueAsString();
+    // Portable hosts can still provide a resource map. Prefer it whenever it
+    // is usable; only fall back to the key when the map is genuinely absent or
+    // cannot resolve this resource.
+    if (!_resourceMap || !_resourceContext)
+    {
+        return winrt::hstring{ resourceName };
+    }
+    try
+    {
+        return _resourceMap.GetValue(resourceName, _resourceContext).ValueAsString();
+    }
+    catch (...)
+    {
+        return winrt::hstring{ resourceName };
+    }
 }
 
 // Method Description:
@@ -44,7 +58,19 @@ winrt::hstring ScopedResourceLoader::GetLocalizedString(const std::wstring_view 
 // - A boolean indicating whether the resource was found
 bool ScopedResourceLoader::HasResourceWithName(const std::wstring_view resourceName) const
 {
-    return _resourceMap.HasKey(resourceName);
+    if (!_resourceMap || !_resourceContext)
+    {
+        // Keep default command definitions loadable in the portable fallback.
+        return true;
+    }
+    try
+    {
+        return _resourceMap.HasKey(resourceName);
+    }
+    catch (...)
+    {
+        return true;
+    }
 }
 
 ScopedResourceLoader::ScopedResourceLoader(winrt::Windows::ApplicationModel::Resources::Core::ResourceMap map, winrt::Windows::ApplicationModel::Resources::Core::ResourceContext context) noexcept :

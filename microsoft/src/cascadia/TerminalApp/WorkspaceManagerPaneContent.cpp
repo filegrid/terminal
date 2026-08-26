@@ -11,9 +11,9 @@
 #include "WorkspaceManagerPaneContent.h"
 #include "Utils.h"
 
-// This implementation is compiled into Glue.dll. Keep its resource lookup
-// scope local to Glue instead of relying on TerminalApp's link environment.
-UTILS_DEFINE_LIBRARY_RESOURCE_SCOPE(L"Microsoft.Terminal.UI")
+// Glue hosts TerminalPage's workspace-management UI, whose strings live in
+// TerminalApp's resource group.
+UTILS_DEFINE_LIBRARY_RESOURCE_SCOPE(L"TerminalApp/Resources")
 
 using namespace winrt::Windows::Foundation;
 using namespace winrt::Windows::UI::Xaml;
@@ -61,6 +61,10 @@ namespace winrt::TerminalApp::implementation
 
     void WorkspaceManagerPaneContent::Close()
     {
+        // The manager builds a dynamic XAML tree with callbacks into the page.
+        // Pane::Shutdown calls this before the owning Tab is removed, so release
+        // that tree while its page and dispatcher are still valid.
+        _root.Content(nullptr);
     }
 
     INewContentArgs WorkspaceManagerPaneContent::GetNewTerminalArgs(const BuildStartupKind /*kind*/) const
