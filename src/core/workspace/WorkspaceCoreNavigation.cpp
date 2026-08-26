@@ -53,6 +53,45 @@
         return true;
     }
 
+    bool MoveWorkspaceManagerVisibleNode(Workspace& workspace, const size_t nodeIndex, const int offset)
+    {
+        if (offset != -1 && offset != 1 || nodeIndex >= workspace.Nodes.size())
+        {
+            return false;
+        }
+
+        const auto targetIndex = static_cast<int64_t>(nodeIndex) + offset;
+        if (targetIndex < 0 || targetIndex >= static_cast<int64_t>(workspace.Nodes.size()))
+        {
+            return false;
+        }
+
+        const auto target = static_cast<size_t>(targetIndex);
+        if (!workspace.Nodes.at(nodeIndex).ShowTab || !workspace.Nodes.at(target).ShowTab)
+        {
+            return false;
+        }
+
+        std::swap(workspace.Nodes.at(nodeIndex), workspace.Nodes.at(target));
+        workspace.TabOrder = _captureVisibleWorkspaceNodeOrder(workspace.Nodes);
+        return true;
+    }
+
+    bool ApplyWorkspaceManagerNodeTemplate(Workspace& workspace, const size_t templateIndex, const size_t newNodeIndex)
+    {
+        if (templateIndex >= workspace.Nodes.size() || newNodeIndex >= workspace.Nodes.size() || templateIndex == newNodeIndex)
+        {
+            return false;
+        }
+
+        const auto generatedId = workspace.Nodes.at(newNodeIndex).Id;
+        const auto generatedName = workspace.Nodes.at(newNodeIndex).Name;
+        workspace.Nodes.at(newNodeIndex) = workspace.Nodes.at(templateIndex);
+        workspace.Nodes.at(newNodeIndex).Id = generatedId;
+        workspace.Nodes.at(newNodeIndex).Name = generatedName;
+        return true;
+    }
+
     std::vector<std::wstring> VisibleWorkspaceNodeIds(const Workspace& workspace)
     {
         std::vector<std::wstring> values;

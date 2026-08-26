@@ -2,6 +2,8 @@
 #include "ResourceString.h"
 #include "ResourceString.g.cpp"
 
+#include <winrt/Windows.ApplicationModel.Resources.Core.h>
+
 namespace winrt::Microsoft::Terminal::UI::implementation
 {
     winrt::Windows::Foundation::IInspectable ResourceString::ProvideValue()

@@ -3,7 +3,7 @@
 
 #include "pch.h"
 #include "TerminalPage.h"
-#include "WorkspaceHostInterfaces.h"
+#include "../../contracts/GluePageHostContract.h"
 
 #include <TerminalCore/ControlKeyStates.hpp>
 #include <TerminalThemeHelpers.h>
@@ -24,7 +24,7 @@
 #include "TabRowControl.h"
 #include "TerminalSettingsCache.h"
 
-#include "TerminalPageWorkspaceCppIncludes.h"
+#include "../../../../microsoft/src/cascadia/TerminalApp/WorkspacePageLegacyCppIncludes.h"
 
 using namespace winrt;
 using namespace winrt::Microsoft::Management::Deployment;
@@ -56,7 +56,7 @@ namespace winrt
 
 namespace
 {
-    #include "TerminalPageWorkspacePrelude.cpp"
+    #include "../../../../microsoft/src/cascadia/TerminalApp/WorkspacePageLegacyPrelude.inc"
 }
 
 namespace winrt::TerminalApp::implementation
@@ -77,7 +77,7 @@ namespace winrt::TerminalApp::implementation
     #define _workspaceManagerNavSelection (_workspaceExtension->WorkspaceManagerNavSelection())
     #define _workspaceEditorEditMode (_workspaceExtension->WorkspaceEditorEditMode())
     #define _workspaceDefinitionsDirty (_workspaceExtension->WorkspaceDefinitionsDirty())
-    #include "TerminalPageWorkspaceGlue.cpp"
+    #include "../../../../microsoft/src/cascadia/TerminalApp/WorkspacePageLegacyGlue.inc"
     #undef _workspaceChatOutputCaptureTimer
     #undef _workspaceSaverPressedEnter
     #undef _workspaceSaverLayoutCount

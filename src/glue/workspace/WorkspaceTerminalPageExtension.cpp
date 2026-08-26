@@ -2,12 +2,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 #include "pch.h"
-#include "WorkspaceHostInterfaces.h"
+#include "../../contracts/GluePageHostContract.h"
 #include "WorkspaceApi.h"
+#include "WorkspaceExtLoader.h"
+#include "WorkspaceManagerPaneContent.h"
+#include "WorkspaceManagerIconPickerDialog.h"
+#include "WorkspaceManagerDeleteConfirmationDialog.h"
+#include "WorkspaceManagerColorPickerDialog.h"
+#include "WorkspaceManagerPathPicker.h"
+#include "WorkspaceManagerProfilePicker.h"
 #include "..\chat\TerminalInputHarness.h"
-#include "TerminalPageWorkspaceTypes.h"
 #include "..\chat\WorkspaceChatController.h"
-#include "..\chat\WorkspaceDiagnosticLog.h"
+#include "../../core/chat/WorkspaceDiagnosticLog.h"
 #include "../TerminalSettingsAppAdapterLib/TerminalSettings.h"
 #include "../TerminalSettingsModel/Workspace.h"
 
@@ -36,8 +42,9 @@ namespace terminal::workspace
     class WorkspaceTerminalPageExtension final : public IWorkspaceTerminalPageExtension
     {
     public:
-        explicit WorkspaceTerminalPageExtension(TerminalPageBase& host) noexcept :
-            _host{ host }
+        explicit WorkspaceTerminalPageExtension(TerminalPageBase& host) :
+            _host{ host },
+            _extCore{}
         {
             _workspaceChatController.SetSubmitDiagnosticHook(&_logWorkspaceChatControllerSubmit);
         }
@@ -55,6 +62,59 @@ namespace terminal::workspace
         void OnSettingsReloaded() override
         {
             _host.RefreshWorkspaceUiAfterSettingsReload();
+        }
+
+        void SetCurrentWorkspaceId(const winrt::hstring& value) override
+        {
+            if (_currentWorkspaceId == value)
+            {
+                return;
+            }
+
+            Json::Value payload{ Json::objectValue };
+            terminal::workspacechat::AddOptionalDiagnosticString(payload, "previousWorkspaceId", _currentWorkspaceId.c_str());
+            terminal::workspacechat::AddOptionalDiagnosticString(payload, "nextWorkspaceId", value.c_str());
+            payload["windowId"] = Json::UInt64{ _host.WorkspaceWindowId() };
+            std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_current_id_changed", payload);
+
+            const auto currentBaselineWorkspaceId = _currentWorkspaceSaveBaseline ?
+                                                        _currentWorkspaceSaveBaseline->Id :
+                                                        std::wstring{};
+            const auto changePlan = _extCore.PrepareWorkspaceCurrentIdChange(_currentWorkspaceId.c_str(),
+                                                                              value.c_str(),
+                                                                              _lastWorkspaceId,
+                                                                              currentBaselineWorkspaceId);
+            _lastWorkspaceId = changePlan.LastWorkspaceId;
+            if (changePlan.ResetSaveBaseline)
+            {
+                _currentWorkspaceSaveBaseline.reset();
+            }
+
+            _currentWorkspaceId = value;
+            _host.ConfigureWorkspaceStateHeartbeat(changePlan.StartHeartbeat);
+            _host.ApplyWorkspaceCurrentIdChange();
+            RefreshWorkspaceWindowState();
+        }
+
+        void RefreshWorkspaceWindowState() override
+        {
+            const auto refreshPlan = _extCore.RefreshWorkspaceWindowState(_host.WorkspaceWindowId(),
+                                                                           _host.CurrentWorkspaceId().c_str());
+            if (refreshPlan.SkipRefresh)
+            {
+                Json::Value payload{ Json::objectValue };
+                terminal::workspacechat::AddOptionalDiagnosticString(payload, "workspaceId", _host.CurrentWorkspaceId().c_str());
+                std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_window_state_refresh_skipped_missing_window", payload);
+                return;
+            }
+
+            _host.CommitWorkspaceWindowRefresh(refreshPlan.ClearPendingWorkspaceLaunch,
+                                               winrt::hstring{ refreshPlan.WorkspaceId });
+            Json::Value payload{ Json::objectValue };
+            payload["processId"] = Json::UInt64{ refreshPlan.ProcessId };
+            payload["refreshed"] = true;
+            terminal::workspacechat::AddOptionalDiagnosticString(payload, "workspaceId", refreshPlan.WorkspaceId);
+            std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_window_state_refreshed", payload);
         }
 
         void OnConnectionStateChanged(const winrt::Microsoft::Terminal::Control::TermControl& control,
@@ -91,12 +151,21 @@ namespace terminal::workspace
 
         void OnPreparingStartupActions() override
         {
-            _host.PrepareStartupWorkspaceState();
+            if (_startupWorkspaceId.empty())
+            {
+                return;
+            }
+
+            SetCurrentWorkspaceId(_startupWorkspaceId);
+            const auto startupPlan = _extCore.PrepareWorkspaceStartup(_startupWorkspaceId.c_str());
+            ReplacePendingWorkspaceNodeInputVisibility(startupPlan.PendingNodeInputVisibility);
+            ReplacePendingWorkspaceNodeIds(startupPlan.PendingNodeIds);
+            _startupWorkspaceId.clear();
         }
 
         void OnStartupActionsCompleted() override
         {
-            _host.ClearPendingWorkspaceStartupState();
+            ClearPendingWorkspaceNodeQueues();
         }
 
         void ReplacePendingWorkspaceNodeInputVisibility(std::vector<bool> values) override
@@ -152,37 +221,37 @@ namespace terminal::workspace
             _pendingWorkspaceNodeIds.clear();
         }
 
-        winrt::TerminalApp::implementation::WorkspaceChatUiState& WorkspaceChatUiState() override
+        terminal::workspace::WorkspaceChatUiState& WorkspaceChatUiState() override
         {
             return _workspaceChatUiState;
         }
 
-        const winrt::TerminalApp::implementation::WorkspaceChatUiState& WorkspaceChatUiState() const override
+        const terminal::workspace::WorkspaceChatUiState& WorkspaceChatUiState() const override
         {
             return _workspaceChatUiState;
         }
 
-        winrt::TerminalApp::implementation::TerminalCaptureState& GetOrCreateWorkspaceChatTerminalState(const std::wstring_view stateKey) override
+        terminal::workspace::TerminalCaptureState& GetOrCreateWorkspaceChatTerminalState(const std::wstring_view stateKey) override
         {
             return terminal::workspacechat::GetOrCreateTerminalCaptureState(_workspaceChatTerminalStates, stateKey);
         }
 
-        winrt::TerminalApp::implementation::TerminalCaptureState* FindWorkspaceChatTerminalState(const std::wstring_view stateKey) override
+        terminal::workspace::TerminalCaptureState* FindWorkspaceChatTerminalState(const std::wstring_view stateKey) override
         {
             return terminal::workspacechat::FindTerminalCaptureState(_workspaceChatTerminalStates, stateKey);
         }
 
-        const winrt::TerminalApp::implementation::TerminalCaptureState* FindWorkspaceChatTerminalState(const std::wstring_view stateKey) const override
+        const terminal::workspace::TerminalCaptureState* FindWorkspaceChatTerminalState(const std::wstring_view stateKey) const override
         {
             return terminal::workspacechat::FindTerminalCaptureState(_workspaceChatTerminalStates, stateKey);
         }
 
-        void UpsertWorkspaceChatPendingOutputCapture(winrt::TerminalApp::implementation::PendingTerminalOutputCapture pendingCapture) override
+        void UpsertWorkspaceChatPendingOutputCapture(terminal::workspace::PendingTerminalOutputCapture pendingCapture) override
         {
             terminal::workspacechat::UpsertPendingTerminalOutputCapture(_workspaceChatPendingOutputCaptures, std::move(pendingCapture));
         }
 
-        std::vector<winrt::TerminalApp::implementation::PendingTerminalOutputCapture> TakeReadyWorkspaceChatPendingOutputCaptures(const uint64_t now) override
+        std::vector<terminal::workspace::PendingTerminalOutputCapture> TakeReadyWorkspaceChatPendingOutputCaptures(const uint64_t now) override
         {
             return terminal::workspacechat::TakeReadyPendingTerminalOutputCaptures(_workspaceChatPendingOutputCaptures, now);
         }
@@ -202,12 +271,12 @@ namespace terminal::workspace
             return _workspaceChatController;
         }
 
-        winrt::TerminalApp::implementation::WorkspaceChatSubmitTransport WorkspaceChatSubmitTransport() const override
+        terminal::workspace::WorkspaceChatSubmitTransport WorkspaceChatSubmitTransport() const override
         {
             return _workspaceChatSubmitTransport;
         }
 
-        void SetWorkspaceChatSubmitTransport(const winrt::TerminalApp::implementation::WorkspaceChatSubmitTransport transport) override
+        void SetWorkspaceChatSubmitTransport(const terminal::workspace::WorkspaceChatSubmitTransport transport) override
         {
             _workspaceChatSubmitTransport = transport;
         }
@@ -317,6 +386,138 @@ namespace terminal::workspace
             return _workspaceManagerNavSelection;
         }
 
+        int32_t WorkspaceManagerWorkspaceNavSelection(const size_t workspaceIndex) const override
+        {
+            return _extCore.PrepareWorkspaceManagerNavigation(workspaceIndex, 0, 0, 0, _workspaceManagerNavSelection).WorkspaceSelection;
+        }
+
+        int32_t WorkspaceManagerWorkspaceNodeNavSelection(const size_t workspaceIndex, const size_t nodeIndex) const override
+        {
+            return _extCore.PrepareWorkspaceManagerNavigation(workspaceIndex, nodeIndex, 0, 0, _workspaceManagerNavSelection).WorkspaceNodeSelection;
+        }
+
+        int32_t WorkspaceManagerEditorNavSelection(const size_t workspaceCount, const size_t selectedWorkspaceIndex) const override
+        {
+            return _extCore.PrepareWorkspaceManagerNavigation(0, 0, workspaceCount, selectedWorkspaceIndex, _workspaceManagerNavSelection).EditorSelection;
+        }
+
+        std::optional<size_t> ApplyWorkspaceManagerNavSelection(const int32_t navSelection,
+                                                                 const size_t workspaceCount,
+                                                                 const size_t selectedWorkspaceIndex) override
+        {
+            const auto plan = _extCore.PrepareWorkspaceManagerNavigation(0, 0, workspaceCount, selectedWorkspaceIndex, navSelection);
+            _workspaceManagerNavSelection = navSelection;
+            return plan.ResolvedWorkspaceIndex;
+        }
+
+        void NavigateWorkspaceManager(const int32_t navSelection,
+                                      const size_t workspaceCount,
+                                      const size_t selectedWorkspaceIndex,
+                                      const bool rebuild) override
+        {
+            if (const auto workspaceIndex = ApplyWorkspaceManagerNavSelection(navSelection, workspaceCount, selectedWorkspaceIndex))
+            {
+                _host.SelectWorkspaceManagerWorkspace(*workspaceIndex);
+            }
+            if (rebuild)
+            {
+                _host.RefreshWorkspaceManagerContent();
+            }
+        }
+
+        bool SaveWorkspaceManagerEdits() override
+        {
+            return _host.SaveWorkspaceManagerEdits();
+        }
+
+        void ResetWorkspaceManagerEdits() override
+        {
+            _workspaceDefinitionsDirty = false;
+            _workspaceEditorEditMode = true;
+            const auto view = _host.ReloadWorkspaceManagerEdits(false);
+            NavigateWorkspaceManager(WorkspaceManagerEditorNavSelection(view.WorkspaceCount, view.SelectedWorkspaceIndex),
+                                     view.WorkspaceCount,
+                                     view.SelectedWorkspaceIndex,
+                                     true);
+        }
+
+        WorkspaceManagerMutationView AddWorkspaceManagerDefinition(const std::optional<size_t> templateIndex) override
+        {
+            return _host.AddWorkspaceManagerDefinition(templateIndex);
+        }
+
+        WorkspaceManagerMutationView AddWorkspaceManagerNode(const size_t workspaceIndex) override
+        {
+            return _host.AddWorkspaceManagerNode(workspaceIndex);
+        }
+
+        bool UpdateWorkspaceManagerWorkspaceText(const WorkspaceManagerWorkspaceTextField field, const winrt::hstring& value) override
+        {
+            return _host.UpdateWorkspaceManagerWorkspaceText(field, value);
+        }
+
+        bool UpdateWorkspaceManagerWorkspaceBool(const WorkspaceManagerWorkspaceBoolField field, const bool value) override
+        {
+            return _host.UpdateWorkspaceManagerWorkspaceBool(field, value);
+        }
+
+        bool UpdateWorkspaceManagerDefaultProfile(const winrt::hstring& guid, const winrt::hstring& name) override
+        {
+            return _host.UpdateWorkspaceManagerDefaultProfile(guid, name);
+        }
+
+        winrt::hstring WorkspaceManagerWorkspaceBackgroundColor() const override
+        {
+            return _host.WorkspaceManagerWorkspaceBackgroundColor();
+        }
+
+        winrt::hstring WorkspaceManagerWorkspaceIconForEditing() const override
+        {
+            return _host.WorkspaceManagerWorkspaceIconForEditing();
+        }
+
+        winrt::hstring WorkspaceManagerNodeIconPreviewForEditing(const size_t nodeIndex) const override
+        {
+            return _host.WorkspaceManagerNodeIconPreviewForEditing(nodeIndex);
+        }
+
+        bool ApplyWorkspaceManagerWorkspaceBackgroundColor(const winrt::hstring& color) override
+        {
+            return _host.ApplyWorkspaceManagerWorkspaceBackgroundColor(color);
+        }
+
+        winrt::hstring RotateWorkspaceManagerWorkspaceBackgroundColor() override
+        {
+            return _host.RotateWorkspaceManagerWorkspaceBackgroundColor();
+        }
+
+        bool UpdateWorkspaceManagerNodeText(const size_t nodeIndex, const WorkspaceManagerNodeTextField field, const winrt::hstring& value) override
+        {
+            return _host.UpdateWorkspaceManagerNodeText(nodeIndex, field, value);
+        }
+
+        bool UpdateWorkspaceManagerNodeBool(const size_t nodeIndex, const WorkspaceManagerNodeBoolField field, const bool value) override { return _host.UpdateWorkspaceManagerNodeBool(nodeIndex, field, value); }
+        bool UpdateWorkspaceManagerNodeProfile(const size_t nodeIndex, const winrt::hstring& guid, const winrt::hstring& name) override { return _host.UpdateWorkspaceManagerNodeProfile(nodeIndex, guid, name); }
+        bool ReorderWorkspaceManagerVisibleNodes(const std::vector<winrt::hstring>& orderedNodeIds) override { return _host.ReorderWorkspaceManagerVisibleNodes(orderedNodeIds); }
+        std::vector<WorkspaceProfileOption> WorkspaceManagerProfileOptionsForEditing(const winrt::hstring& currentGuid, const winrt::hstring& currentName) const override
+        {
+            return _host.WorkspaceManagerProfileOptionsForEditing(currentGuid, currentName);
+        }
+        winrt::hstring WorkspaceManagerNodeTabColor(const size_t nodeIndex) const override { return _host.WorkspaceManagerNodeTabColor(nodeIndex); }
+        winrt::hstring WorkspaceManagerNodeTabColorPreview(const size_t nodeIndex) const override { return _host.WorkspaceManagerNodeTabColorPreview(nodeIndex); }
+        bool ApplyWorkspaceManagerNodeTabColor(const size_t nodeIndex, const winrt::hstring& color) override { return _host.ApplyWorkspaceManagerNodeTabColor(nodeIndex, color); }
+        bool RotateWorkspaceManagerNodeTabColor(const size_t nodeIndex) override { return _host.RotateWorkspaceManagerNodeTabColor(nodeIndex); }
+
+        std::optional<size_t> ResolveWorkspaceManagerWorkspaceIndex(const int32_t navSelection) const override
+        {
+            return _extCore.PrepareWorkspaceManagerNavigation(0, 0, 0, 0, navSelection).ResolvedWorkspaceIndex;
+        }
+
+        std::optional<size_t> ResolveWorkspaceManagerNodeIndex(const int32_t navSelection) const override
+        {
+            return _extCore.PrepareWorkspaceManagerNavigation(0, 0, 0, 0, navSelection).ResolvedNodeIndex;
+        }
+
         bool& WorkspaceEditorEditMode() override
         {
             return _workspaceEditorEditMode;
@@ -337,7 +538,12 @@ namespace terminal::workspace
             return _workspaceDefinitionsDirty;
         }
 
-        void UpsertWorkspaceNodeRuntimeState(const uint64_t contentId, const winrt::TerminalApp::implementation::WorkspaceNodeRuntimeState& state) override
+        winrt::Microsoft::Terminal::Settings::Model::CascadiaSettings WorkspaceSettings() const override
+        {
+            return _host.WorkspaceSettings();
+        }
+
+        void UpsertWorkspaceNodeRuntimeState(const uint64_t contentId, const terminal::workspace::WorkspaceNodeRuntimeState& state) override
         {
             _workspaceNodeRuntimeStates[contentId] = state;
         }
@@ -347,7 +553,7 @@ namespace terminal::workspace
             _workspaceNodeRuntimeStates.erase(contentId);
         }
 
-        winrt::TerminalApp::implementation::WorkspaceNodeRuntimeState* FindWorkspaceNodeRuntimeState(const uint64_t contentId) override
+        terminal::workspace::WorkspaceNodeRuntimeState* FindWorkspaceNodeRuntimeState(const uint64_t contentId) override
         {
             if (const auto it = _workspaceNodeRuntimeStates.find(contentId); it != _workspaceNodeRuntimeStates.end())
             {
@@ -356,7 +562,7 @@ namespace terminal::workspace
             return nullptr;
         }
 
-        const winrt::TerminalApp::implementation::WorkspaceNodeRuntimeState* FindWorkspaceNodeRuntimeState(const uint64_t contentId) const override
+        const terminal::workspace::WorkspaceNodeRuntimeState* FindWorkspaceNodeRuntimeState(const uint64_t contentId) const override
         {
             if (const auto it = _workspaceNodeRuntimeStates.find(contentId); it != _workspaceNodeRuntimeStates.end())
             {
@@ -462,15 +668,116 @@ namespace terminal::workspace
             _host.RegisterWorkspaceNodeRuntimeStateIfNeeded(control, newTerminalArgs);
         }
 
+        winrt::TerminalApp::IPaneContent CreateWorkspaceManagerPaneContent(
+            const winrt::Windows::UI::Xaml::UIElement& content,
+            const winrt::Microsoft::Terminal::Settings::Model::CascadiaSettings& settings) override
+        {
+            auto pane = winrt::make_self<winrt::TerminalApp::implementation::WorkspaceManagerPaneContent>(content, settings);
+            return pane.as<winrt::TerminalApp::IPaneContent>();
+        }
+
+        void UpdateWorkspaceManagerPaneContent(
+            const winrt::TerminalApp::IPaneContent& paneContent,
+            const winrt::Windows::UI::Xaml::UIElement& content) override
+        {
+            winrt::get_self<winrt::TerminalApp::implementation::WorkspaceManagerPaneContent>(paneContent)->UpdateContent(content);
+        }
+
+        void UpdateWorkspaceManagerPaneSettings(
+            const winrt::TerminalApp::IPaneContent& paneContent,
+            const winrt::Microsoft::Terminal::Settings::Model::CascadiaSettings& settings) override
+        {
+            winrt::get_self<winrt::TerminalApp::implementation::WorkspaceManagerPaneContent>(paneContent)->UpdateSettings(settings);
+        }
+
+        winrt::Windows::Foundation::IAsyncOperation<winrt::hstring> PickWorkspaceManagerIcon(
+            std::wstring initialIcon,
+            const std::optional<size_t> nodeIndex) override
+        {
+            co_return co_await terminal::workspace::PickWorkspaceManagerIcon(_host, std::move(initialIcon), nodeIndex);
+        }
+
+        winrt::Windows::Foundation::IAsyncAction ShowWorkspaceManagerWorkspaceIconPicker() override
+        {
+            const auto selected = co_await PickWorkspaceManagerIcon(_host.WorkspaceManagerWorkspaceIconForEditing().c_str(), std::nullopt);
+            if (!selected.empty())
+            {
+                _host.ApplyWorkspaceManagerWorkspaceIcon(selected);
+            }
+        }
+
+        winrt::Windows::Foundation::IAsyncAction ShowWorkspaceManagerNodeIconPicker(const size_t nodeIndex) override
+        {
+            Json::Value startPayload{ Json::objectValue };
+            startPayload["nodeIndex"] = nodeIndex;
+            std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_icon_picker_click", startPayload);
+
+            const auto previous = _host.WorkspaceManagerNodeIconForEditing(nodeIndex);
+            const auto selected = co_await PickWorkspaceManagerIcon(previous.c_str(), nodeIndex);
+            Json::Value payload{ Json::objectValue };
+            payload["nodeIndex"] = nodeIndex;
+            terminal::workspacechat::AddDiagnosticTextFields(payload, "selectedIcon", selected.c_str());
+            terminal::workspacechat::AddDiagnosticTextFields(payload, "previousIcon", previous.c_str());
+            std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_icon_picker_selected", payload);
+            if (selected == previous)
+            {
+                std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_icon_picker_noop_same_icon", payload);
+            }
+            else if (!selected.empty())
+            {
+                _host.ApplyWorkspaceManagerNodeIcon(nodeIndex, selected);
+            }
+        }
+
+        winrt::Windows::Foundation::IAsyncAction DeleteWorkspaceManagerWorkspace(winrt::hstring workspaceId) override
+        {
+            if (co_await ConfirmWorkspaceManagerDeletion(false))
+            {
+                _host.RemoveWorkspaceManagerWorkspace(workspaceId);
+            }
+        }
+
+        winrt::Windows::Foundation::IAsyncAction DeleteWorkspaceManagerNode(winrt::hstring workspaceId, winrt::hstring nodeId) override
+        {
+            if (co_await ConfirmWorkspaceManagerDeletion(true))
+            {
+                _host.RemoveWorkspaceManagerNode(workspaceId, nodeId);
+            }
+        }
+
+        winrt::Windows::Foundation::IAsyncOperation<bool> ConfirmWorkspaceManagerDeletion(const bool deletingNode) override
+        {
+            co_return co_await terminal::workspace::ConfirmWorkspaceManagerDeletion(_host, deletingNode);
+        }
+
+        winrt::Windows::Foundation::IAsyncOperation<winrt::hstring> PickWorkspaceManagerPath(const bool pickFolder) override
+        {
+            co_return co_await terminal::workspace::PickWorkspaceManagerPath(_host, pickFolder);
+        }
+
+        winrt::Windows::Foundation::IAsyncOperation<winrt::hstring> PickWorkspaceManagerColor(std::wstring initialColor) override
+        {
+            co_return co_await terminal::workspace::PickWorkspaceManagerColor(_host, std::move(initialColor));
+        }
+
+        winrt::Windows::UI::Xaml::Controls::ComboBox CreateWorkspaceManagerProfilePicker(
+            const std::vector<WorkspaceProfileOption>& profiles,
+            std::wstring selectedProfileGuid,
+            const bool enabled) override
+        {
+            return terminal::workspace::CreateWorkspaceManagerProfilePicker(profiles, std::move(selectedProfileGuid), enabled);
+        }
+
     private:
         TerminalPageBase& _host;
+        WorkspaceExtLoader _extCore;
         std::deque<bool> _pendingWorkspaceNodeInputVisibility;
         std::deque<std::wstring> _pendingWorkspaceNodeIds;
-        winrt::TerminalApp::implementation::WorkspaceChatUiState _workspaceChatUiState;
-        std::unordered_map<std::wstring, winrt::TerminalApp::implementation::TerminalCaptureState> _workspaceChatTerminalStates;
-        std::vector<winrt::TerminalApp::implementation::PendingTerminalOutputCapture> _workspaceChatPendingOutputCaptures;
+        terminal::workspace::WorkspaceChatUiState _workspaceChatUiState;
+        std::unordered_map<std::wstring, terminal::workspace::TerminalCaptureState> _workspaceChatTerminalStates;
+        std::vector<terminal::workspace::PendingTerminalOutputCapture> _workspaceChatPendingOutputCaptures;
         terminal::workspacechat::WorkspaceChatController _workspaceChatController;
-        winrt::TerminalApp::implementation::WorkspaceChatSubmitTransport _workspaceChatSubmitTransport{ winrt::TerminalApp::implementation::WorkspaceChatSubmitTransport::SendInputInline };
+        terminal::workspace::WorkspaceChatSubmitTransport _workspaceChatSubmitTransport{ terminal::workspace::WorkspaceChatSubmitTransport::SendInputInline };
         winrt::Windows::UI::Xaml::DispatcherTimer _workspaceNameTapTimer{ nullptr };
         bool _workspaceNamePressedEnter{ false };
         winrt::hstring _currentWorkspaceId{};
@@ -486,12 +793,12 @@ namespace terminal::workspace
         int32_t _workspaceManagerNavSelection{ 0 };
         bool _workspaceEditorEditMode{ false };
         bool _workspaceDefinitionsDirty{ false };
-        std::unordered_map<uint64_t, winrt::TerminalApp::implementation::WorkspaceNodeRuntimeState> _workspaceNodeRuntimeStates;
+        std::unordered_map<uint64_t, terminal::workspace::WorkspaceNodeRuntimeState> _workspaceNodeRuntimeStates;
         std::optional<std::wstring> _pendingWorkspaceNodeStartupAction;
         bool _skipNextWorkspaceNodeStartupSendInput{ false };
     };
 
-    extern "C" IWorkspaceTerminalPageExtension* WINAPI CreateWorkspaceTerminalPageExtension(TerminalPageBase* host)
+    extern "C" IGlueTerminalPageExtension* WINAPI CreateGlueTerminalPageExtension(TerminalPageBase* host)
     {
         if (!host)
         {
@@ -501,8 +808,18 @@ namespace terminal::workspace
         return new WorkspaceTerminalPageExtension(*host);
     }
 
-    extern "C" void WINAPI DestroyWorkspaceTerminalPageExtension(IWorkspaceTerminalPageExtension* extension)
+    extern "C" void WINAPI DestroyGlueTerminalPageExtension(IGlueTerminalPageExtension* extension)
     {
         delete extension;
+    }
+
+    extern "C" IWorkspaceTerminalPageExtension* WINAPI CreateWorkspaceTerminalPageExtension(TerminalPageBase* host)
+    {
+        return CreateGlueTerminalPageExtension(host);
+    }
+
+    extern "C" void WINAPI DestroyWorkspaceTerminalPageExtension(IWorkspaceTerminalPageExtension* extension)
+    {
+        DestroyGlueTerminalPageExtension(extension);
     }
 }

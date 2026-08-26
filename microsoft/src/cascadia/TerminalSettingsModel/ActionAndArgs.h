@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <winrt/Windows.ApplicationModel.Resources.Core.h>
+
 #include "ActionAndArgs.g.h"
 #include "ActionArgs.h"
 #include "TerminalWarnings.h"

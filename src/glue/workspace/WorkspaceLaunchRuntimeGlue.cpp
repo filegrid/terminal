@@ -1,57 +1,6 @@
     void TerminalPage::CurrentWorkspaceId(const winrt::hstring& value)
     {
-        if (_currentWorkspaceId == value)
-        {
-            return;
-        }
-
-        {
-            Json::Value payload{ Json::objectValue };
-            terminal::workspacechat::AddOptionalDiagnosticString(payload, "previousWorkspaceId", _currentWorkspaceId.c_str());
-            terminal::workspacechat::AddOptionalDiagnosticString(payload, "nextWorkspaceId", value.c_str());
-            payload["windowId"] = Json::UInt64{ _WindowProperties.WindowId() };
-            std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_current_id_changed", payload);
-        }
-
-        const auto currentIdChangePlan = ::terminal::workspace::PrepareWorkspaceCurrentIdChange(_currentWorkspaceId.c_str(),
-                                                                                                value.c_str(),
-                                                                                                _lastWorkspaceId,
-                                                                                                _currentWorkspaceSaveBaseline.has_value() ?
-                                                                                                    _currentWorkspaceSaveBaseline->Id :
-                                                                                                    std::wstring_view{});
-        _lastWorkspaceId = currentIdChangePlan.LastWorkspaceId;
-        if (currentIdChangePlan.ResetSaveBaseline)
-        {
-            _currentWorkspaceSaveBaseline.reset();
-        }
-
-        _currentWorkspaceId = value;
-        if (!_workspaceStateHeartbeatTimer)
-        {
-            _workspaceStateHeartbeatTimer = Windows::UI::Xaml::DispatcherTimer{};
-            _workspaceStateHeartbeatTimer.Interval(std::chrono::milliseconds{
-                winrt::Microsoft::Terminal::Settings::Model::implementation::WorkspaceStateManager::RuntimeHeartbeatIntervalMs()
-            });
-            _workspaceStateHeartbeatTimer.Tick([weakThis{ get_weak() }](auto&&, auto&&) {
-                if (auto page{ weakThis.get() })
-                {
-                    page->RefreshWorkspaceWindowState();
-                }
-            });
-        }
-        if (!currentIdChangePlan.StartHeartbeat)
-        {
-            _workspaceStateHeartbeatTimer.Stop();
-        }
-        else
-        {
-            _workspaceStateHeartbeatTimer.Start();
-        }
-        _UpdateWorkspaceTabRow();
-        _UpdateWorkspaceInteractionState();
-        _updateAllTabCloseButtons();
-        _ReloadWorkspaceChatState();
-        RefreshWorkspaceWindowState();
+        _workspaceExtension->SetCurrentWorkspaceId(value);
     }
 
     winrt::hstring TerminalPage::CurrentWorkspaceId() const noexcept
@@ -61,42 +10,13 @@
 
     void TerminalPage::RefreshWorkspaceWindowState()
     {
-        const auto windowId = _WindowProperties.WindowId();
-        const auto refreshPlan = ::terminal::workspace::RefreshWorkspaceWindowState(windowId, _currentWorkspaceId.c_str());
-        if (refreshPlan.SkipRefresh)
-        {
-            Json::Value payload{ Json::objectValue };
-            terminal::workspacechat::AddOptionalDiagnosticString(payload, "workspaceId", _currentWorkspaceId.c_str());
-            std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_window_state_refresh_skipped_missing_window", payload);
-            return;
-        }
-
-        const auto appState = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
-        if (refreshPlan.ClearPendingWorkspaceLaunch)
-        {
-            appState.RemovePendingWorkspaceLaunch(winrt::hstring{ refreshPlan.WorkspaceId });
-            appState.Flush();
-        }
-        {
-            Json::Value payload{ Json::objectValue };
-            payload["processId"] = Json::UInt64{ refreshPlan.ProcessId };
-            payload["refreshed"] = refreshPlan.Refreshed;
-            terminal::workspacechat::AddOptionalDiagnosticString(payload, "workspaceId", refreshPlan.WorkspaceId);
-            std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_window_state_refreshed", payload);
-        }
+        _workspaceExtension->RefreshWorkspaceWindowState();
     }
 
     void TerminalPage::SetStartupActions(std::vector<ActionAndArgs> actions, const winrt::hstring& workspaceId)
     {
         _startupActions = std::move(actions);
         _startupWorkspaceId = workspaceId;
-    }
-
-    void TerminalPage::_PreparePendingWorkspaceNodeStartupAction(const ActionAndArgs& action,
-                                                                 const std::vector<ActionAndArgs>& actions,
-                                                                 const size_t index)
-    {
-        _workspaceExtension->TrackWorkspaceNodeStartupAction(action, actions, index);
     }
 
     void TerminalPage::_RegisterWorkspaceNodeRuntimeState(const TermControl& control, const NewTerminalArgs& newTerminalArgs)
@@ -112,7 +32,7 @@
         const auto profileSource = profile ? std::wstring{ profile.Source().c_str() } : std::wstring{};
         const auto commandline = std::wstring{ newTerminalArgs.Commandline().c_str() };
         const auto profileCommandline = profile ? std::wstring{ profile.Commandline().c_str() } : std::wstring{};
-        const auto workspaceNodeId = _ConsumePendingWorkspaceNodeId();
+        const auto workspaceNodeId = _workspaceExtension->ConsumePendingWorkspaceNodeId();
         const auto pendingStartupActionValue = _workspaceExtension->TakePendingWorkspaceNodeStartupAction();
         const auto selectedWorkspace = [&]() -> std::optional<Workspace> {
             if (const auto workspace = _SelectedWorkspaceForEditing();

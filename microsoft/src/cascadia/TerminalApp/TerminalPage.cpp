@@ -24,7 +24,7 @@
 #include "SnippetsPaneContent.h"
 #include "TabRowControl.h"
 #include "TerminalSettingsCache.h"
-#include "..\..\..\..\src\glue\workspace\WorkspaceHostInterfaces.h"
+#include "..\..\..\..\src\contracts\GluePageHostContract.h"
 
 #include "LaunchPositionRequest.g.cpp"
 #include "RenameWindowRequestedArgs.g.cpp"
@@ -267,32 +267,28 @@ namespace winrt::TerminalApp::implementation
     void TerminalPage::_LoadWorkspaceExtension()
     {
         std::filesystem::path modulePath = wil::GetModuleFileNameW<std::wstring>(nullptr);
-        modulePath.replace_filename(L"WorkspaceExtension.dll");
+        modulePath.replace_filename(L"Glue.dll");
 
         const auto module = LoadLibraryExW(modulePath.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
         THROW_LAST_ERROR_IF_NULL(module);
-
-        const auto createExtension = reinterpret_cast<terminal::workspace::CreateWorkspaceTerminalPageExtensionFn>(
-            GetProcAddress(module, terminal::workspace::CreateWorkspaceTerminalPageExtensionSymbol));
-        const auto destroyExtension = reinterpret_cast<terminal::workspace::DestroyWorkspaceTerminalPageExtensionFn>(
-            GetProcAddress(module, terminal::workspace::DestroyWorkspaceTerminalPageExtensionSymbol));
-
+        const auto createExtension = reinterpret_cast<terminal::workspace::CreateGlueTerminalPageExtensionFn>(
+            GetProcAddress(module, terminal::workspace::CreateGlueTerminalPageExtensionSymbol));
+        const auto destroyExtension = reinterpret_cast<terminal::workspace::DestroyGlueTerminalPageExtensionFn>(
+            GetProcAddress(module, terminal::workspace::DestroyGlueTerminalPageExtensionSymbol));
         if (!createExtension || !destroyExtension)
         {
             FreeLibrary(module);
             THROW_HR(E_NOINTERFACE);
         }
 
-        const auto extension = createExtension(this);
-        if (!extension)
+        _workspaceExtension = createExtension(this);
+        if (!_workspaceExtension)
         {
             FreeLibrary(module);
             THROW_HR(E_FAIL);
         }
-
         _workspaceExtensionModule = module;
         _destroyWorkspaceExtension = destroyExtension;
-        _workspaceExtension = extension;
     }
 
     void TerminalPage::_UnloadWorkspaceExtension() noexcept
@@ -302,9 +298,7 @@ namespace winrt::TerminalApp::implementation
             _destroyWorkspaceExtension(_workspaceExtension);
             _workspaceExtension = nullptr;
         }
-
         _destroyWorkspaceExtension = nullptr;
-
         if (_workspaceExtensionModule)
         {
             FreeLibrary(_workspaceExtensionModule);
@@ -350,14 +344,442 @@ namespace winrt::TerminalApp::implementation
         _FocusActiveTabSurface();
     }
 
-    void TerminalPage::PrepareStartupWorkspaceState()
+    winrt::Windows::Foundation::IAsyncOperation<ContentDialogResult> TerminalPage::ShowWorkspaceDialog(ContentDialog dialog)
     {
-        _PrepareStartupWorkspaceState();
+        const auto presenter = DialogPresenter();
+        if (!presenter)
+        {
+            co_return ContentDialogResult::None;
+        }
+
+        co_return co_await presenter.ShowDialog(dialog);
     }
 
-    void TerminalPage::ClearPendingWorkspaceStartupState()
+    winrt::Windows::Foundation::IAsyncOperation<winrt::hstring> TerminalPage::PickWorkspacePath(const bool pickFolder)
     {
-        _ClearPendingWorkspaceStartupState();
+        co_return co_await OpenFilePicker(_hostingHwnd.value_or(nullptr), [pickFolder](auto&& dialog) {
+            if (pickFolder)
+            {
+                DWORD flags{};
+                THROW_IF_FAILED(dialog->GetOptions(&flags));
+                THROW_IF_FAILED(dialog->SetOptions(flags | FOS_PICKFOLDERS));
+            }
+        });
+    }
+
+    winrt::hstring TerminalPage::WorkspaceManagerWorkspaceIconForEditing() const
+    {
+        if (const auto* current = _SelectedWorkspaceForEditing())
+        {
+            return winrt::hstring{ current->Icon };
+        }
+        return {};
+    }
+
+    winrt::hstring TerminalPage::WorkspaceManagerNodeIconForEditing(const size_t nodeIndex) const
+    {
+        if (const auto* current = _SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
+        {
+            return winrt::hstring{ current->Nodes.at(nodeIndex).Icon };
+        }
+        return {};
+    }
+
+    winrt::hstring TerminalPage::WorkspaceManagerNodeIconPreviewForEditing(const size_t nodeIndex) const
+    {
+        const auto explicitIcon = WorkspaceManagerNodeIconForEditing(nodeIndex);
+        if (!explicitIcon.empty())
+        {
+            return explicitIcon;
+        }
+
+        if (const auto* current = _SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
+        {
+            try
+            {
+                const auto guid = winrt::guid{ current->Nodes.at(nodeIndex).ProfileGuid };
+                if (const auto profile = _settings.FindProfile(guid))
+                {
+                    return profile.Icon().Resolved();
+                }
+            }
+            catch (const winrt::hresult_error&)
+            {
+                // A stale or malformed profile id simply has no preview fallback.
+            }
+        }
+        return {};
+    }
+
+    void TerminalPage::ApplyWorkspaceManagerWorkspaceIcon(const winrt::hstring& icon)
+    {
+        _ApplyWorkspaceManagerWorkspaceIconSelection(icon.c_str());
+    }
+
+    void TerminalPage::ApplyWorkspaceManagerNodeIcon(const size_t nodeIndex, const winrt::hstring& icon)
+    {
+        _ApplyWorkspaceManagerNodeIconSelection(nodeIndex, icon.c_str());
+    }
+
+    bool TerminalPage::RemoveWorkspaceManagerWorkspace(const winrt::hstring& workspaceId)
+    {
+        return _RemoveWorkspaceDefinitionById(workspaceId.c_str());
+    }
+
+    bool TerminalPage::RemoveWorkspaceManagerNode(const winrt::hstring& workspaceId, const winrt::hstring& nodeId)
+    {
+        return _RemoveWorkspaceNodeById(workspaceId.c_str(), nodeId.c_str()) != WorkspaceNodeRemoveResult::NotFound;
+    }
+
+    void TerminalPage::SelectWorkspaceManagerWorkspace(const size_t index)
+    {
+        _SetSelectedWorkspaceIndex(index);
+    }
+
+    void TerminalPage::RefreshWorkspaceManagerContent()
+    {
+        _RebuildWorkspaceManagerTab();
+    }
+
+    bool TerminalPage::SaveWorkspaceManagerEdits()
+    {
+        return _SaveWorkspaceEditorState();
+    }
+
+    terminal::workspace::WorkspaceManagerEditorView TerminalPage::ReloadWorkspaceManagerEdits(const bool preserveSelection)
+    {
+        _LoadWorkspaceEditorState(preserveSelection);
+        return { _workspaceExtension->WorkspaceEditorManager().Workspaces().size(), _workspaceExtension->WorkspaceEditorSelectedIndex() };
+    }
+
+    terminal::workspace::WorkspaceManagerMutationView TerminalPage::AddWorkspaceManagerDefinition(const std::optional<size_t> templateIndex)
+    {
+        const auto before = _workspaceExtension->WorkspaceEditorManager().Workspaces().size();
+        _AddWorkspaceDefinition(templateIndex);
+        const auto& workspaces = _workspaceExtension->WorkspaceEditorManager().Workspaces();
+        return { workspaces.size() != before, workspaces.size(), _workspaceExtension->WorkspaceEditorSelectedIndex(), 0 };
+    }
+
+    terminal::workspace::WorkspaceManagerMutationView TerminalPage::AddWorkspaceManagerNode(const size_t workspaceIndex)
+    {
+        _SetSelectedWorkspaceIndex(workspaceIndex);
+        const auto& beforeWorkspaces = _workspaceExtension->WorkspaceEditorManager().Workspaces();
+        const auto before = workspaceIndex < beforeWorkspaces.size() ? beforeWorkspaces.at(workspaceIndex).Nodes.size() : 0;
+        _AddWorkspaceNode();
+        const auto& workspaces = _workspaceExtension->WorkspaceEditorManager().Workspaces();
+        const auto nodeCount = workspaceIndex < workspaces.size() ? workspaces.at(workspaceIndex).Nodes.size() : 0;
+        return { nodeCount != before, workspaces.size(), _workspaceExtension->WorkspaceEditorSelectedIndex(), nodeCount };
+    }
+
+    bool TerminalPage::UpdateWorkspaceManagerWorkspaceText(const terminal::workspace::WorkspaceManagerWorkspaceTextField field,
+                                                           const winrt::hstring& value)
+    {
+        auto* workspace = _SelectedWorkspaceForEditing();
+        if (!workspace)
+        {
+            return false;
+        }
+        switch (field)
+        {
+        case terminal::workspace::WorkspaceManagerWorkspaceTextField::Name:
+            workspace->Name = value.c_str();
+            break;
+        case terminal::workspace::WorkspaceManagerWorkspaceTextField::Description:
+            workspace->Description = value.c_str();
+            break;
+        case terminal::workspace::WorkspaceManagerWorkspaceTextField::DefaultStartupDirectory:
+            workspace->NewNodeDefaults.StartupDirectory = value.c_str();
+            break;
+        }
+        _workspaceExtension->WorkspaceDefinitionsDirty() = true;
+        return true;
+    }
+
+    bool TerminalPage::UpdateWorkspaceManagerWorkspaceBool(const terminal::workspace::WorkspaceManagerWorkspaceBoolField field,
+                                                           const bool value)
+    {
+        auto* workspace = _SelectedWorkspaceForEditing();
+        if (!workspace)
+        {
+            return false;
+        }
+        switch (field)
+        {
+        case terminal::workspace::WorkspaceManagerWorkspaceBoolField::DefaultShowInputPanel:
+            workspace->NewNodeDefaults.ShowInputPanel = value;
+            break;
+        case terminal::workspace::WorkspaceManagerWorkspaceBoolField::DefaultUseNodeNameAsTabTitle:
+            workspace->NewNodeDefaults.UseNodeNameAsTabTitle = value;
+            break;
+        case terminal::workspace::WorkspaceManagerWorkspaceBoolField::DefaultShowTab:
+            workspace->NewNodeDefaults.ShowTab = value;
+            break;
+        }
+        _workspaceExtension->WorkspaceDefinitionsDirty() = true;
+        return true;
+    }
+
+    bool TerminalPage::UpdateWorkspaceManagerDefaultProfile(const winrt::hstring& guid, const winrt::hstring& name)
+    {
+        auto* workspace = _SelectedWorkspaceForEditing();
+        if (!workspace)
+        {
+            return false;
+        }
+        workspace->NewNodeDefaults.ProfileGuid = guid.c_str();
+        workspace->NewNodeDefaults.ProfileName = name.c_str();
+        _workspaceExtension->WorkspaceDefinitionsDirty() = true;
+        return true;
+    }
+
+    winrt::hstring TerminalPage::WorkspaceManagerWorkspaceBackgroundColor() const
+    {
+        if (const auto* workspace = _SelectedWorkspaceForEditing())
+        {
+            return winrt::hstring{ workspace->BackgroundColor };
+        }
+        return {};
+    }
+
+    bool TerminalPage::ApplyWorkspaceManagerWorkspaceBackgroundColor(const winrt::hstring& color)
+    {
+        if (color.empty())
+        {
+            return false;
+        }
+        if (auto* workspace = _SelectedWorkspaceForEditing())
+        {
+            workspace->BackgroundColor = color.c_str();
+            _workspaceExtension->WorkspaceDefinitionsDirty() = true;
+            return true;
+        }
+        return false;
+    }
+
+    winrt::hstring TerminalPage::RotateWorkspaceManagerWorkspaceBackgroundColor()
+    {
+        auto* workspace = _SelectedWorkspaceForEditing();
+        if (!workspace)
+        {
+            return {};
+        }
+        std::unordered_set<std::wstring> usedColors;
+        for (const auto& other : _workspaceExtension->WorkspaceEditorManager().Workspaces())
+        {
+            if (&other != workspace && !other.BackgroundColor.empty())
+            {
+                usedColors.emplace(other.BackgroundColor);
+            }
+        }
+        workspace->BackgroundColor = Microsoft::Terminal::Settings::Model::implementation::PickWorkspacePaletteColor(
+            usedColors,
+            _workspaceExtension->WorkspaceEditorManager().Workspaces().size(),
+            workspace->BackgroundColor);
+        _workspaceExtension->WorkspaceDefinitionsDirty() = true;
+        return winrt::hstring{ workspace->BackgroundColor };
+    }
+
+    bool TerminalPage::UpdateWorkspaceManagerNodeText(const size_t nodeIndex,
+                                                      const terminal::workspace::WorkspaceManagerNodeTextField field,
+                                                      const winrt::hstring& value)
+    {
+        auto* workspace = _SelectedWorkspaceForEditing();
+        if (!workspace || nodeIndex >= workspace->Nodes.size())
+        {
+            return false;
+        }
+        auto& node = workspace->Nodes.at(nodeIndex);
+        switch (field)
+        {
+        case terminal::workspace::WorkspaceManagerNodeTextField::Name:
+            node.Name = value.c_str();
+            break;
+        case terminal::workspace::WorkspaceManagerNodeTextField::StartupDirectory:
+            node.StartupDirectory = value.c_str();
+            break;
+        case terminal::workspace::WorkspaceManagerNodeTextField::StartupAction:
+            node.StartupAction = value.c_str();
+            break;
+        }
+        _workspaceExtension->WorkspaceDefinitionsDirty() = true;
+        return true;
+    }
+
+    bool TerminalPage::UpdateWorkspaceManagerNodeBool(const size_t nodeIndex,
+                                                      const terminal::workspace::WorkspaceManagerNodeBoolField field,
+                                                      const bool value)
+    {
+        auto* workspace = _SelectedWorkspaceForEditing();
+        if (!workspace || nodeIndex >= workspace->Nodes.size())
+        {
+            return false;
+        }
+        auto& node = workspace->Nodes.at(nodeIndex);
+        switch (field)
+        {
+        case terminal::workspace::WorkspaceManagerNodeBoolField::ShowTab: node.ShowTab = value; break;
+        case terminal::workspace::WorkspaceManagerNodeBoolField::ShowInputPanel: node.ShowInputPanel = value; break;
+        case terminal::workspace::WorkspaceManagerNodeBoolField::UseNodeNameAsTabTitle: node.UseNodeNameAsTabTitle = value; break;
+        }
+        _workspaceExtension->WorkspaceDefinitionsDirty() = true;
+        return true;
+    }
+
+    bool TerminalPage::UpdateWorkspaceManagerNodeProfile(const size_t nodeIndex, const winrt::hstring& guid, const winrt::hstring& name)
+    {
+        auto* workspace = _SelectedWorkspaceForEditing();
+        if (!workspace || nodeIndex >= workspace->Nodes.size()) return false;
+        auto& node = workspace->Nodes.at(nodeIndex);
+        node.ProfileGuid = guid.c_str();
+        node.ProfileName = name.c_str();
+        _workspaceExtension->WorkspaceDefinitionsDirty() = true;
+        return true;
+    }
+
+    bool TerminalPage::ReorderWorkspaceManagerVisibleNodes(const std::vector<winrt::hstring>& orderedNodeIds)
+    {
+        auto* workspace = _SelectedWorkspaceForEditing();
+        if (!workspace || orderedNodeIds.empty()) return false;
+        std::vector<std::wstring> order;
+        order.reserve(orderedNodeIds.size());
+        for (const auto& id : orderedNodeIds) order.emplace_back(id.c_str());
+        workspace->TabOrder = order;
+        auto orderedNodes = workspace->Nodes;
+        orderedNodes.clear();
+        orderedNodes.reserve(workspace->Nodes.size());
+        for (const auto& id : order)
+        {
+            const auto it = std::find_if(workspace->Nodes.begin(), workspace->Nodes.end(), [&](const auto& node) {
+                return node.Id == id;
+            });
+            if (it != workspace->Nodes.end())
+            {
+                orderedNodes.emplace_back(*it);
+            }
+        }
+        for (const auto& node : workspace->Nodes) if (!node.ShowTab) orderedNodes.emplace_back(node);
+        workspace->Nodes = std::move(orderedNodes);
+        _workspaceExtension->WorkspaceDefinitionsDirty() = true;
+        return true;
+    }
+
+    std::vector<terminal::workspace::WorkspaceProfileOption> TerminalPage::WorkspaceManagerProfileOptionsForEditing(const winrt::hstring& currentGuid,
+                                                                                                                       const winrt::hstring& currentName) const
+    {
+        std::vector<terminal::workspace::WorkspaceProfileOption> options;
+        const auto profiles = _settings.ActiveProfiles();
+        options.reserve(profiles.Size() + 1);
+        for (uint32_t index = 0; index < profiles.Size(); ++index)
+        {
+            const auto profile = profiles.GetAt(index);
+            const auto guid = Utils::GuidToString(profile.Guid());
+            const auto name = profile.Name().empty() ? profile.Source() : profile.Name();
+            options.push_back({ winrt::hstring{ guid }, name.empty() ? winrt::hstring{ guid } : name });
+        }
+        if (!currentGuid.empty() && std::none_of(options.cbegin(), options.cend(), [&](const auto& option) { return _wcsicmp(option.Guid.c_str(), currentGuid.c_str()) == 0; }))
+        {
+            winrt::hstring displayName = currentName;
+            try
+            {
+                if (const auto profile = _settings.FindProfile(winrt::guid{ currentGuid }))
+                {
+                    displayName = profile.Name().empty() ? profile.Source() : profile.Name();
+                }
+            }
+            catch (const winrt::hresult_error&) {}
+            options.push_back({ currentGuid, displayName.empty() ? currentGuid : displayName });
+        }
+        return options;
+    }
+
+    winrt::hstring TerminalPage::WorkspaceManagerNodeTabColor(const size_t nodeIndex) const
+    {
+        if (const auto* workspace = _SelectedWorkspaceForEditing(); workspace && nodeIndex < workspace->Nodes.size()) return winrt::hstring{ workspace->Nodes.at(nodeIndex).TabColor };
+        return {};
+    }
+
+    winrt::hstring TerminalPage::WorkspaceManagerNodeTabColorPreview(const size_t nodeIndex) const
+    {
+        if (const auto* workspace = _SelectedWorkspaceForEditing(); workspace && nodeIndex < workspace->Nodes.size())
+        {
+            if (const auto color = Microsoft::Terminal::Settings::Model::implementation::ResolveWorkspaceNodeTabColor(*workspace, nodeIndex, _settings))
+            {
+                return winrt::hstring{ til::u8u16(::Microsoft::Console::Utils::ColorToHexString(til::color{ *color })) };
+            }
+        }
+        return {};
+    }
+    bool TerminalPage::ApplyWorkspaceManagerNodeTabColor(const size_t nodeIndex, const winrt::hstring& color)
+    {
+        if (auto* workspace = _SelectedWorkspaceForEditing(); workspace && nodeIndex < workspace->Nodes.size() && !color.empty()) { workspace->Nodes.at(nodeIndex).TabColor = color.c_str(); _workspaceExtension->WorkspaceDefinitionsDirty() = true; return true; }
+        return false;
+    }
+    bool TerminalPage::RotateWorkspaceManagerNodeTabColor(const size_t nodeIndex)
+    {
+        auto* workspace = _SelectedWorkspaceForEditing(); if (!workspace || nodeIndex >= workspace->Nodes.size()) return false;
+        std::unordered_set<std::wstring> usedColors;
+        for (size_t i = 0; i < workspace->Nodes.size(); ++i) if (i != nodeIndex && !workspace->Nodes.at(i).TabColor.empty()) usedColors.emplace(workspace->Nodes.at(i).TabColor);
+        auto& node = workspace->Nodes.at(nodeIndex);
+        node.TabColor = Microsoft::Terminal::Settings::Model::implementation::PickWorkspacePaletteColor(usedColors, nodeIndex, node.TabColor);
+        Microsoft::Terminal::Settings::Model::implementation::EnsureWorkspaceNodeTabColors(*workspace, _settings);
+        _workspaceExtension->WorkspaceDefinitionsDirty() = true; return true;
+    }
+
+    uint64_t TerminalPage::WorkspaceWindowId() const noexcept
+    {
+        return _WindowProperties.WindowId();
+    }
+
+    Microsoft::Terminal::Settings::Model::CascadiaSettings TerminalPage::WorkspaceSettings() const
+    {
+        return _settings;
+    }
+
+    void TerminalPage::CommitWorkspaceWindowRefresh(const bool clearPendingWorkspaceLaunch,
+                                                    const winrt::hstring& workspaceId)
+    {
+        if (!clearPendingWorkspaceLaunch)
+        {
+            return;
+        }
+
+        const auto appState = Microsoft::Terminal::Settings::Model::ApplicationState::SharedInstance();
+        appState.RemovePendingWorkspaceLaunch(workspaceId);
+        appState.Flush();
+    }
+
+    void TerminalPage::ConfigureWorkspaceStateHeartbeat(const bool start)
+    {
+        if (!_workspaceStateHeartbeatTimer)
+        {
+            _workspaceStateHeartbeatTimer = Windows::UI::Xaml::DispatcherTimer{};
+            _workspaceStateHeartbeatTimer.Interval(std::chrono::milliseconds{
+                winrt::Microsoft::Terminal::Settings::Model::implementation::WorkspaceStateManager::RuntimeHeartbeatIntervalMs()
+            });
+            _workspaceStateHeartbeatTimer.Tick([weakThis{ get_weak() }](auto&&, auto&&) {
+                if (auto page{ weakThis.get() })
+                {
+                    page->RefreshWorkspaceWindowState();
+                }
+            });
+        }
+
+        if (start)
+        {
+            _workspaceStateHeartbeatTimer.Start();
+        }
+        else
+        {
+            _workspaceStateHeartbeatTimer.Stop();
+        }
+    }
+
+    void TerminalPage::ApplyWorkspaceCurrentIdChange()
+    {
+        _UpdateWorkspaceTabRow();
+        _UpdateWorkspaceInteractionState();
+        _updateAllTabCloseButtons();
+        _ReloadWorkspaceChatState();
     }
 
     winrt::Windows::Foundation::IAsyncOperation<bool> TerminalPage::ConfirmCloseWindowIfNeeded()

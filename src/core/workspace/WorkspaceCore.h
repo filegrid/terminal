@@ -423,6 +423,14 @@ namespace terminal::workspace
     class WorkspaceStateManager;
 
     bool ApplyVisibleWorkspaceNodeOrder(Workspace& workspace, const std::vector<WorkspaceNode>& orderedVisibleNodes);
+    // Moves a visible editor node by one slot and keeps the persisted tab order
+    // synchronized with the definition order. UI hosts use this rather than
+    // duplicating the visibility and TabOrder rules.
+    bool MoveWorkspaceManagerVisibleNode(Workspace& workspace, size_t nodeIndex, int offset);
+    // Replaces a just-added editor node with a node template while retaining the
+    // generated identity. Profile/color presentation is intentionally outside
+    // this pure editor operation.
+    bool ApplyWorkspaceManagerNodeTemplate(Workspace& workspace, size_t templateIndex, size_t newNodeIndex);
     std::optional<Workspace> PrepareWorkspaceForCapture(const std::optional<Workspace>& currentWorkspaceDefinition,
                                                         std::vector<WorkspaceNode> capturedNodes);
     std::optional<Workspace> ResolveWorkspaceDefinition(std::wstring_view currentWorkspaceId,

@@ -17,6 +17,8 @@ Abstract:
 
 #include <inc/cppwinrt_utils.h>
 #include <JsonUtils.h>
+#include <til/mutex.h>
+#include <til/throttled_func.h>
 
 namespace winrt::Microsoft::Terminal::Settings::Model::implementation
 {

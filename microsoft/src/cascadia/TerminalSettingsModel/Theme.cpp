@@ -9,6 +9,9 @@
 #include "JsonUtils.h"
 #include "TerminalSettingsSerializationHelpers.h"
 
+#include <wil/registry.h>
+#include <winrt/Windows.UI.ViewManagement.h>
+
 #include "SettingsTheme.g.h"
 #include "ThemeColor.g.cpp"
 #include "WindowTheme.g.cpp"

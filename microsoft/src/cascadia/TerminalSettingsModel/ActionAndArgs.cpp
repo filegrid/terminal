@@ -1,4 +1,6 @@
 #include "pch.h"
+
+#include <winrt/Windows.ApplicationModel.Resources.Core.h>
 #include "AllShortcutActions.h"
 #include "ActionArgs.h"
 #include "ActionAndArgs.h"

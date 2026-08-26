@@ -9,6 +9,8 @@
 
 #include "DynamicProfileUtils.h"
 
+#include <wil/registry.h>
+
 static constexpr std::wstring_view WslHomeDirectory{ L"~" };
 static constexpr std::wstring_view DockerDistributionPrefix{ L"docker-desktop" };
 static constexpr std::wstring_view RancherDistributionPrefix{ L"rancher-desktop" };

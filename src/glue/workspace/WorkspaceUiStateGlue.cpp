@@ -167,25 +167,10 @@
         _workspaceExtension->ReplacePendingWorkspaceNodeInputVisibility(Microsoft::Terminal::Settings::Model::implementation::VisibleWorkspaceNodeInputVisibility(workspace));
     }
 
-    bool TerminalPage::_HasPendingWorkspaceNodeInputVisibility() const noexcept
-    {
-        return _workspaceExtension->HasPendingWorkspaceNodeInputVisibility();
-    }
-
-    bool TerminalPage::_ConsumePendingWorkspaceNodeInputVisibility() noexcept
-    {
-        return _workspaceExtension->ConsumePendingWorkspaceNodeInputVisibility();
-    }
-
     void TerminalPage::_PreparePendingWorkspaceNodeIds(const Workspace& workspace)
     {
         const auto startupState = ::terminal::workspace::ResolveWorkspaceStartupState(workspace, _settings);
         _workspaceExtension->ReplacePendingWorkspaceNodeIds(std::move(startupState.PendingNodeIds));
-    }
-
-    std::wstring TerminalPage::_ConsumePendingWorkspaceNodeId()
-    {
-        return _workspaceExtension->ConsumePendingWorkspaceNodeId();
     }
 
     void TerminalPage::_ApplyWorkspaceChatStateForFocusedTab()

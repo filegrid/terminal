@@ -19,6 +19,8 @@ Author(s):
 
 #pragma once
 
+#include <winrt/Windows.ApplicationModel.Resources.Core.h>
+
 // MACRO HACKS
 //
 // We want to have code that looks like:

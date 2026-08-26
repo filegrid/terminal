@@ -50,6 +50,30 @@
         return true;
     }
 
+    bool MoveWorkspaceManagerVisibleNode(Workspace& workspace, const size_t nodeIndex, const int offset)
+    {
+        auto coreWorkspace = _toCoreWorkspace(workspace);
+        if (!terminal::workspace::MoveWorkspaceManagerVisibleNode(coreWorkspace, nodeIndex, offset))
+        {
+            return false;
+        }
+
+        workspace = _fromCoreWorkspace(coreWorkspace);
+        return true;
+    }
+
+    bool ApplyWorkspaceManagerNodeTemplate(Workspace& workspace, const size_t templateIndex, const size_t newNodeIndex)
+    {
+        auto coreWorkspace = _toCoreWorkspace(workspace);
+        if (!terminal::workspace::ApplyWorkspaceManagerNodeTemplate(coreWorkspace, templateIndex, newNodeIndex))
+        {
+            return false;
+        }
+
+        workspace = _fromCoreWorkspace(coreWorkspace);
+        return true;
+    }
+
     std::optional<Workspace> PrepareWorkspaceForCapture(const std::optional<Workspace>& currentWorkspaceDefinition,
                                                         std::vector<WorkspaceNode> capturedNodes)
     {

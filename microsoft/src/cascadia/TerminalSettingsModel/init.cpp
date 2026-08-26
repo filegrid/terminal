@@ -12,6 +12,7 @@ TRACELOGGING_DEFINE_PROVIDER(
     (0xbe579944, 0x4d33, 0x5202, 0xe5, 0xd6, 0xa7, 0xa5, 0x7f, 0x19, 0x35, 0xcb),
     TraceLoggingOptionMicrosoftTelemetry());
 
+#if !defined(WT_SETTINGS_MODEL_NO_DLLMAIN)
 BOOL WINAPI DllMain(HINSTANCE hInstDll, DWORD reason, LPVOID /*reserved*/)
 {
     switch (reason)
@@ -31,5 +32,6 @@ BOOL WINAPI DllMain(HINSTANCE hInstDll, DWORD reason, LPVOID /*reserved*/)
 
     return TRUE;
 }
+#endif
 
 UTILS_DEFINE_LIBRARY_RESOURCE_SCOPE(L"Microsoft.Terminal.Settings.Model/Resources")

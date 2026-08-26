@@ -20,6 +20,8 @@ Abstract:
 #include "ModelSerializationHelpers.h"
 #include "MediaResourceSupport.h"
 
+#include <winrt/Windows.System.h>
+
 JSON_ENUM_MAPPER(::winrt::Microsoft::Terminal::Core::CursorStyle)
 {
     static constexpr std::array<pair_type, 6> mappings = {

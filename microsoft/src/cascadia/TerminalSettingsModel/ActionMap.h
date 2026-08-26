@@ -15,6 +15,9 @@ Author(s):
 
 #pragma once
 
+#include <til/mutex.h>
+#include <winrt/Windows.ApplicationModel.Resources.Core.h>
+
 #include "ActionMap.g.h"
 #include "ActionArgFactory.g.h"
 #include "IInheritable.h"

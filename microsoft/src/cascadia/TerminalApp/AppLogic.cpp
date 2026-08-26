@@ -5,8 +5,8 @@
 #include "AppLogic.h"
 #include "AppLogic.g.cpp"
 #include "SettingsLoadEventArgs.h"
-#include "..\..\..\..\src\glue\chat\WorkspaceDiagnosticLog.h"
-#include "..\..\..\..\src\glue\workspace\WorkspaceHostBridge.h"
+#include "..\..\..\..\src\core\chat\WorkspaceDiagnosticLog.h"
+#include "..\..\..\..\src\contracts\ExtCoreRuntimeClient.h"
 
 #include <WtExeUtils.h>
 #include <wil/token_helpers.h>
@@ -624,7 +624,7 @@ namespace winrt::TerminalApp::implementation
 
     void AppLogic::_RegisterWorkspaceChange()
     {
-        const auto workspacePath = terminal::workspace::WorkspaceDefinitionsPath();
+        const auto workspacePath = terminal::extcore::RuntimeClient::Shared().WorkspaceDefinitionsPath();
         _workspaceReader.create(
             workspacePath.c_str(),
             true,

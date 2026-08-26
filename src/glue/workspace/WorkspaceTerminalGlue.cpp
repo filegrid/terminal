@@ -32,7 +32,7 @@
         {
             auto workspaceItem = WUX::Controls::ToggleMenuFlyoutItem{};
             const auto& workspace = entry.Definition;
-            workspaceItem.Text(winrt::hstring{ _WorkspaceDisplayName(workspace) });
+            workspaceItem.Text(winrt::hstring{ workspace.Name });
             if (!workspace.Icon.empty())
             {
                 if (const auto icon = _CreateNewTabFlyoutIcon(winrt::hstring{ workspace.Icon }))
@@ -194,7 +194,7 @@
                 co_await wil::resume_foreground(Dispatcher(), CoreDispatcherPriority::Low);
             }
 
-            if (_ShouldSkipWorkspaceStartupAction(startupActions[i], startupActions, i))
+            if (_workspaceExtension->ShouldSkipStartupAction(startupActions[i], startupActions, i))
             {
                 Json::Value payload{ Json::objectValue };
                 terminal::workspacechat::AddOptionalDiagnosticString(payload, "workspaceId", workspaceId.c_str());
@@ -287,8 +287,8 @@
         }
         if (!_workspaceManagerTab)
         {
-            _workspaceManagerContent = winrt::make_self<WorkspaceManagerPaneContent>(_BuildWorkspaceManagerContent(), _settings);
-            auto resultPane = std::make_shared<Pane>(*_workspaceManagerContent);
+            _workspaceManagerContent = _workspaceExtension->CreateWorkspaceManagerPaneContent(_BuildWorkspaceManagerContent(), _settings);
+            auto resultPane = std::make_shared<Pane>(_workspaceManagerContent);
             _workspaceManagerTab = _CreateNewTabFromPane(resultPane);
             _tabView.SelectedItem(_workspaceManagerTab.TabViewItem());
         }
@@ -329,11 +329,6 @@
             return workspace->Id;
         }
         return {};
-    }
-
-    std::wstring TerminalPage::_WorkspaceDisplayName(const Microsoft::Terminal::Settings::Model::implementation::Workspace& workspace) const
-    {
-        return workspace.Name;
     }
 
     Microsoft::Terminal::Settings::Model::implementation::WorkspaceCurrentState TerminalPage::_LoadCurrentWorkspaceStateSnapshot() const
@@ -495,7 +490,7 @@
         _UpdateWorkspaceTabRow();
         if (_workspaceManagerContent)
         {
-            _workspaceManagerContent->UpdateSettings(_settings);
+            _workspaceExtension->UpdateWorkspaceManagerPaneSettings(_workspaceManagerContent, _settings);
             _RebuildWorkspaceManagerTab();
         }
     }

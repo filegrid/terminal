@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 #include "pch.h"
+
+#include <winrt/Windows.ApplicationModel.Resources.Core.h>
 #include "AllShortcutActions.h"
 #include "ActionMap.h"
 #include "Command.h"

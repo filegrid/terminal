@@ -6,6 +6,8 @@
 
 #include "TextMenuFlyout.g.cpp"
 
+#include <winrt/Windows.ApplicationModel.Resources.Core.h>
+
 using namespace ::winrt::Windows::UI::Xaml;
 using namespace ::winrt::Windows::UI::Xaml::Controls;
 using namespace ::winrt::Windows::ApplicationModel::Resources::Core;

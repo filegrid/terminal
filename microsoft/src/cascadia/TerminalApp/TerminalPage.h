@@ -14,8 +14,8 @@
 #include "LaunchPositionRequest.g.h"
 #include "Toast.h"
 #include "WindowsPackageManagerFactory.h"
-#include "..\..\..\..\src\glue\workspace\WorkspaceHostInterfaces.h"
-#include "..\..\..\..\src\glue\workspace\TerminalPageWorkspaceIncludes.h"
+#include "..\..\..\..\src\contracts\GluePageHostContract.h"
+#include "WorkspacePageLegacyIncludes.h"
 
 #define DECLARE_ACTION_HANDLER(action) void _Handle##action(const IInspectable& sender, const Microsoft::Terminal::Settings::Model::ActionEventArgs& args);
 
@@ -110,7 +110,7 @@ namespace winrt::TerminalApp::implementation
     struct TerminalPage : TerminalPageT<TerminalPage>, terminal::workspace::TerminalPageBase
     {
     public:
-        #include "..\..\..\..\src\glue\workspace\TerminalPageWorkspacePublicSurface.h"
+        #include "WorkspacePageLegacyPublicSurface.h"
 
         TerminalPage(TerminalApp::WindowProperties properties, const TerminalApp::ContentManager& manager);
         ~TerminalPage();
@@ -297,10 +297,10 @@ namespace winrt::TerminalApp::implementation
         winrt::Windows::UI::Xaml::Controls::TextBox::LayoutUpdated_revoker _renamerLayoutUpdatedRevoker;
         int _renamerLayoutCount{ 0 };
         bool _renamerPressedEnter{ false };
-        #include "..\..\..\..\src\glue\workspace\TerminalPageWorkspacePrivateMembersSurface.h"
+        #include "WorkspacePageLegacyPrivateMembersSurface.h"
         HMODULE _workspaceExtensionModule{ nullptr };
-        terminal::workspace::DestroyWorkspaceTerminalPageExtensionFn _destroyWorkspaceExtension{ nullptr };
-        terminal::workspace::IWorkspaceTerminalPageExtension* _workspaceExtension{ nullptr };
+        terminal::workspace::DestroyGlueTerminalPageExtensionFn _destroyWorkspaceExtension{ nullptr };
+        terminal::workspace::IGlueTerminalPageExtension* _workspaceExtension{ nullptr };
 
         TerminalApp::WindowProperties _WindowProperties{ nullptr };
         PaneResources _paneResources;
@@ -335,7 +335,7 @@ namespace winrt::TerminalApp::implementation
         winrt::Windows::UI::Xaml::Controls::IconElement _CreateNewTabFlyoutIcon(const winrt::hstring& icon);
         winrt::Windows::UI::Xaml::Controls::MenuFlyoutItem _CreateNewTabFlyoutProfile(const Microsoft::Terminal::Settings::Model::Profile profile, int profileIndex, const winrt::hstring& iconPathOverride);
         winrt::Windows::UI::Xaml::Controls::MenuFlyoutItem _CreateNewTabFlyoutAction(const winrt::hstring& actionId, const winrt::hstring& iconPathOverride);
-        #include "..\..\..\..\src\glue\workspace\TerminalPageWorkspacePrivateMethodsSurface.h"
+        #include "WorkspacePageLegacyPrivateMethodsSurface.h"
 
         void _OpenNewTabDropdown();
         void _LoadWorkspaceExtension();
@@ -348,8 +348,44 @@ namespace winrt::TerminalApp::implementation
         void PersistWorkspaceInputPanelVisibilityFromFocusedTab(bool showInputPanel) override;
         void ApplyWorkspaceChatStateForFocusedTab() override;
         void FocusActiveTabSurface() override;
-        void PrepareStartupWorkspaceState() override;
-        void ClearPendingWorkspaceStartupState() override;
+        winrt::Windows::Foundation::IAsyncOperation<winrt::Windows::UI::Xaml::Controls::ContentDialogResult> ShowWorkspaceDialog(
+            winrt::Windows::UI::Xaml::Controls::ContentDialog dialog) override;
+        winrt::Windows::Foundation::IAsyncOperation<winrt::hstring> PickWorkspacePath(bool pickFolder) override;
+        winrt::hstring WorkspaceManagerWorkspaceIconForEditing() const override;
+        winrt::hstring WorkspaceManagerNodeIconForEditing(size_t nodeIndex) const override;
+        winrt::hstring WorkspaceManagerNodeIconPreviewForEditing(size_t nodeIndex) const override;
+        void ApplyWorkspaceManagerWorkspaceIcon(const winrt::hstring& icon) override;
+        void ApplyWorkspaceManagerNodeIcon(size_t nodeIndex, const winrt::hstring& icon) override;
+        bool RemoveWorkspaceManagerWorkspace(const winrt::hstring& workspaceId) override;
+        bool RemoveWorkspaceManagerNode(const winrt::hstring& workspaceId, const winrt::hstring& nodeId) override;
+        void SelectWorkspaceManagerWorkspace(size_t index) override;
+        void RefreshWorkspaceManagerContent() override;
+        bool SaveWorkspaceManagerEdits() override;
+        terminal::workspace::WorkspaceManagerEditorView ReloadWorkspaceManagerEdits(bool preserveSelection) override;
+        terminal::workspace::WorkspaceManagerMutationView AddWorkspaceManagerDefinition(std::optional<size_t> templateIndex) override;
+        terminal::workspace::WorkspaceManagerMutationView AddWorkspaceManagerNode(size_t workspaceIndex) override;
+        bool UpdateWorkspaceManagerWorkspaceText(terminal::workspace::WorkspaceManagerWorkspaceTextField field, const winrt::hstring& value) override;
+        bool UpdateWorkspaceManagerWorkspaceBool(terminal::workspace::WorkspaceManagerWorkspaceBoolField field, bool value) override;
+        bool UpdateWorkspaceManagerDefaultProfile(const winrt::hstring& guid, const winrt::hstring& name) override;
+        winrt::hstring WorkspaceManagerWorkspaceBackgroundColor() const override;
+        bool ApplyWorkspaceManagerWorkspaceBackgroundColor(const winrt::hstring& color) override;
+        winrt::hstring RotateWorkspaceManagerWorkspaceBackgroundColor() override;
+        bool UpdateWorkspaceManagerNodeText(size_t nodeIndex, terminal::workspace::WorkspaceManagerNodeTextField field, const winrt::hstring& value) override;
+        bool UpdateWorkspaceManagerNodeBool(size_t nodeIndex, terminal::workspace::WorkspaceManagerNodeBoolField field, bool value) override;
+        bool UpdateWorkspaceManagerNodeProfile(size_t nodeIndex, const winrt::hstring& guid, const winrt::hstring& name) override;
+        bool ReorderWorkspaceManagerVisibleNodes(const std::vector<winrt::hstring>& orderedNodeIds) override;
+        winrt::hstring WorkspaceManagerNodeTabColor(size_t nodeIndex) const override;
+        winrt::hstring WorkspaceManagerNodeTabColorPreview(size_t nodeIndex) const override;
+        bool ApplyWorkspaceManagerNodeTabColor(size_t nodeIndex, const winrt::hstring& color) override;
+        bool RotateWorkspaceManagerNodeTabColor(size_t nodeIndex) override;
+        std::vector<terminal::workspace::WorkspaceProfileOption> WorkspaceManagerProfileOptionsForEditing(const winrt::hstring& currentGuid,
+                                                                                                            const winrt::hstring& currentName) const override;
+        winrt::Microsoft::Terminal::Settings::Model::CascadiaSettings WorkspaceSettings() const override;
+        uint64_t WorkspaceWindowId() const noexcept override;
+        void CommitWorkspaceWindowRefresh(bool clearPendingWorkspaceLaunch,
+                                          const winrt::hstring& workspaceId) override;
+        void ConfigureWorkspaceStateHeartbeat(bool start) override;
+        void ApplyWorkspaceCurrentIdChange() override;
         winrt::Windows::Foundation::IAsyncOperation<bool> ConfirmCloseWindowIfNeeded() override;
         bool ShouldBlockSplitPaneForTab(const winrt::com_ptr<Tab>& tab) const override;
         void RegisterWorkspaceNodeRuntimeStateIfNeeded(const winrt::Microsoft::Terminal::Control::TermControl& control,

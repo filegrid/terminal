@@ -1,35 +1,5 @@
 #include "../../../../microsoft/src/cascadia/WinRTUtils/inc/Utils.h"
-#include "../chat/WorkspaceDiagnosticLog.h"
-
-    int32_t TerminalPage::_WorkspaceManagerWorkspaceNavSelection(const size_t workspaceIndex) const
-    {
-        return Microsoft::Terminal::Settings::Model::implementation::WorkspaceManagerNavSelectionForWorkspace(workspaceIndex);
-    }
-
-    int32_t TerminalPage::_WorkspaceManagerWorkspaceNodeNavSelection(const size_t workspaceIndex, const size_t nodeIndex) const
-    {
-        return Microsoft::Terminal::Settings::Model::implementation::WorkspaceManagerNavSelectionForWorkspaceNode(workspaceIndex, nodeIndex);
-    }
-
-    int32_t TerminalPage::_WorkspaceManagerEditorNavSelection() const
-    {
-        return Microsoft::Terminal::Settings::Model::implementation::ResolveWorkspaceManagerNavSelectionForEditor(_workspaceExtension->WorkspaceEditorManager().Workspaces().size(),
-                                                                                                                    _workspaceExtension->WorkspaceEditorSelectedIndex());
-    }
-
-    void TerminalPage::_ApplyWorkspaceManagerNavSelection(const int32_t navSelection, const bool rebuild)
-    {
-        _workspaceExtension->WorkspaceManagerNavSelection() = navSelection;
-        if (const auto workspaceIndex = Microsoft::Terminal::Settings::Model::implementation::ResolveWorkspaceIndexFromManagerNavSelection(navSelection))
-        {
-            _SetSelectedWorkspaceIndex(*workspaceIndex);
-        }
-
-        if (rebuild)
-        {
-            _RebuildWorkspaceManagerTab();
-        }
-    }
+#include "../../core/chat/WorkspaceDiagnosticLog.h"
 
     void TerminalPage::_ApplyWorkspaceManagerWorkspaceIconSelection(const std::wstring_view iconValue)
     {
@@ -37,7 +7,7 @@
         {
             current->Icon = iconValue;
             _workspaceExtension->WorkspaceDefinitionsDirty() = true;
-            _ApplyWorkspaceManagerNavSelection(_WorkspaceManagerWorkspaceNavSelection(_workspaceExtension->WorkspaceEditorSelectedIndex()));
+            _workspaceExtension->NavigateWorkspaceManager(_workspaceExtension->WorkspaceManagerWorkspaceNavSelection(_workspaceExtension->WorkspaceEditorSelectedIndex()), _workspaceExtension->WorkspaceEditorManager().Workspaces().size(), _workspaceExtension->WorkspaceEditorSelectedIndex());
         }
     }
 
@@ -56,7 +26,7 @@
             Json::Value refreshPayload{ Json::objectValue };
             refreshPayload["nodeIndex"] = nodeIndex;
             std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_icon_picker_rebuild_page_begin", refreshPayload);
-            _ApplyWorkspaceManagerNavSelection(_WorkspaceManagerWorkspaceNodeNavSelection(_workspaceExtension->WorkspaceEditorSelectedIndex(), nodeIndex));
+            _workspaceExtension->NavigateWorkspaceManager(_workspaceExtension->WorkspaceManagerWorkspaceNodeNavSelection(_workspaceExtension->WorkspaceEditorSelectedIndex(), nodeIndex), _workspaceExtension->WorkspaceEditorManager().Workspaces().size(), _workspaceExtension->WorkspaceEditorSelectedIndex());
             std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_icon_picker_rebuild_page_done", refreshPayload);
         }
     }
@@ -65,11 +35,11 @@
     {
         {
             Json::Value payload{ Json::objectValue };
-            payload["workspaceCount"] = gsl::narrow<Json::ArrayIndex>(_workspaceEditorManager.Workspaces().size());
-            payload["navSelection"] = _workspaceManagerNavSelection;
-            payload["selectedWorkspaceIndex"] = _workspaceEditorSelectedIndex;
-            payload["editMode"] = _workspaceEditorEditMode;
-            payload["definitionsDirty"] = _workspaceDefinitionsDirty;
+            payload["workspaceCount"] = gsl::narrow<Json::ArrayIndex>(_workspaceExtension->WorkspaceEditorManager().Workspaces().size());
+            payload["navSelection"] = _workspaceExtension->WorkspaceManagerNavSelection();
+            payload["selectedWorkspaceIndex"] = _workspaceExtension->WorkspaceEditorSelectedIndex();
+            payload["editMode"] = _workspaceExtension->WorkspaceEditorEditMode();
+            payload["definitionsDirty"] = _workspaceExtension->WorkspaceDefinitionsDirty();
             std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_manager_build_begin", payload);
         }
         const auto marginBottom = [](const double bottom) {
@@ -146,7 +116,7 @@
             applyWorkspaceStyle(setting, L"WorkspaceSettingContainerStyle");
             return setting;
         };
-        const auto loadedFlyoutState = ::terminal::workspace::LoadWorkspaceFlyoutState(_currentWorkspaceId.c_str());
+        const auto loadedFlyoutState = ::terminal::workspace::LoadWorkspaceFlyoutState(_workspaceExtension->CurrentWorkspaceIdState().c_str());
         std::unordered_set<std::wstring> openWorkspaceIds;
         openWorkspaceIds.reserve(loadedFlyoutState.FlyoutState.Entries.size());
         for (const auto& entry : loadedFlyoutState.FlyoutState.Entries)
@@ -156,7 +126,7 @@
                 openWorkspaceIds.emplace(entry.Definition.Id);
             }
         }
-        const auto& workspaces = _workspaceEditorManager.Workspaces();
+        const auto& workspaces = _workspaceExtension->WorkspaceEditorManager().Workspaces();
         auto nav = MUX::Controls::NavigationView{};
         nav.Background(SolidColorBrush{ Colors::Transparent() });
         nav.IsBackButtonVisible(MUX::Controls::NavigationViewBackButtonVisible::Collapsed);
@@ -166,24 +136,24 @@
         nav.OpenPaneLength(320);
         nav.AlwaysShowHeader(false);
 
-        if (_workspaceManagerNavSelection == 0 && !workspaces.empty())
+        if (_workspaceExtension->WorkspaceManagerNavSelection() == 0 && !workspaces.empty())
         {
-            _workspaceManagerNavSelection = _WorkspaceManagerWorkspaceNavSelection(0);
+                _workspaceExtension->WorkspaceManagerNavSelection() = _workspaceExtension->WorkspaceManagerWorkspaceNavSelection(0);
             Json::Value payload{ Json::objectValue };
             payload["workspaceCount"] = gsl::narrow<Json::ArrayIndex>(workspaces.size());
-            payload["navSelection"] = _workspaceManagerNavSelection;
+            payload["navSelection"] = _workspaceExtension->WorkspaceManagerNavSelection();
             std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_manager_nav_defaulted", payload);
         }
-        if (_workspaceManagerNavSelection >= 1000)
+        if (_workspaceExtension->WorkspaceManagerNavSelection() >= 1000)
         {
-            const auto workspaceIndex = Microsoft::Terminal::Settings::Model::implementation::ResolveWorkspaceIndexFromManagerNavSelection(_workspaceManagerNavSelection);
+            const auto workspaceIndex = _workspaceExtension->ResolveWorkspaceManagerWorkspaceIndex(_workspaceExtension->WorkspaceManagerNavSelection());
             if (workspaces.empty() || !workspaceIndex.has_value() || *workspaceIndex >= workspaces.size())
             {
-                _workspaceManagerNavSelection = _WorkspaceManagerEditorNavSelection();
+                _workspaceExtension->WorkspaceManagerNavSelection() = _workspaceExtension->WorkspaceManagerEditorNavSelection(workspaces.size(), _workspaceExtension->WorkspaceEditorSelectedIndex());
                 Json::Value payload{ Json::objectValue };
                 payload["workspaceCount"] = gsl::narrow<Json::ArrayIndex>(workspaces.size());
-                payload["selectedWorkspaceIndex"] = _workspaceEditorSelectedIndex;
-                payload["navSelection"] = _workspaceManagerNavSelection;
+            payload["selectedWorkspaceIndex"] = _workspaceExtension->WorkspaceEditorSelectedIndex();
+            payload["navSelection"] = _workspaceExtension->WorkspaceManagerNavSelection();
                 std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_manager_nav_recovered", payload);
             }
         }
@@ -215,7 +185,7 @@
             workspaceHeader.ColumnDefinitions().Append(workspaceStateColumn);
 
             auto workspaceNameText = TextBlock{};
-            workspaceNameText.Text(winrt::hstring{ _WorkspaceDisplayName(workspace) });
+            workspaceNameText.Text(winrt::hstring{ workspace.Name });
             workspaceNameText.TextTrimming(TextTrimming::CharacterEllipsis);
             workspaceNameText.VerticalAlignment(VerticalAlignment::Center);
             workspaceHeader.Children().Append(workspaceNameText);
@@ -233,8 +203,8 @@
 
             item.Content(workspaceHeader);
             item.SelectsOnInvoked(false);
-            item.IsExpanded(_workspaceManagerNavSelection >= 1000 &&
-                             Microsoft::Terminal::Settings::Model::implementation::ResolveWorkspaceIndexFromManagerNavSelection(_workspaceManagerNavSelection) == index);
+            item.IsExpanded(_workspaceExtension->WorkspaceManagerNavSelection() >= 1000 &&
+                            _workspaceExtension->ResolveWorkspaceManagerWorkspaceIndex(_workspaceExtension->WorkspaceManagerNavSelection()) == index);
             item.Tapped([item](auto&&, auto&&) {
                 item.IsExpanded(!item.IsExpanded());
             });
@@ -284,10 +254,11 @@
             addBlankNodeItem.Click([weakThis{ get_weak() }, index](auto&&, auto&&) {
                 if (auto self{ weakThis.get() })
                 {
-                    self->_SetSelectedWorkspaceIndex(index);
-                    self->_AddWorkspaceNode();
-                    const auto& nodes = self->_workspaceExtension->WorkspaceEditorManager().Workspaces().at(index).Nodes;
-                    self->_ApplyWorkspaceManagerNavSelection(self->_WorkspaceManagerWorkspaceNodeNavSelection(index, nodes.size() - 1));
+                    const auto result = self->_workspaceExtension->AddWorkspaceManagerNode(index);
+                    if (result.Changed)
+                    {
+                        self->_workspaceExtension->NavigateWorkspaceManager(self->_workspaceExtension->WorkspaceManagerWorkspaceNodeNavSelection(index, result.SelectedWorkspaceNodeCount - 1), result.WorkspaceCount, result.SelectedWorkspaceIndex);
+                    }
                 }
             });
             addNodeFlyout.Items().Append(addBlankNodeItem);
@@ -302,21 +273,24 @@
                     templateItem.Click([weakThis{ get_weak() }, index, templateIndex](auto&&, auto&&) {
                         if (auto self{ weakThis.get() })
                         {
-                            self->_SetSelectedWorkspaceIndex(index);
-                            self->_AddWorkspaceNode();
-                            auto& nodes = self->_workspaceExtension->WorkspaceEditorManager().Workspaces().at(index).Nodes;
-                            if (nodes.size() < 2 || templateIndex >= nodes.size() - 1)
+                            const auto result = self->_workspaceExtension->AddWorkspaceManagerNode(index);
+                            if (!result.Changed)
                             {
                                 return;
                             }
-                            const auto newId = nodes.back().Id;
-                            const auto generatedName = nodes.back().Name;
-                            nodes.back() = nodes.at(templateIndex);
-                            nodes.back().Id = newId;
-                            nodes.back().Name = generatedName;
-                            EnsureWorkspaceNodeTabColors(self->_workspaceExtension->WorkspaceEditorManager().Workspaces().at(index), self->_settings);
+                            if (result.SelectedWorkspaceNodeCount < 2 || templateIndex >= result.SelectedWorkspaceNodeCount - 1)
+                            {
+                                return;
+                            }
+                            const auto newNodeIndex = result.SelectedWorkspaceNodeCount - 1;
+                            if (!Microsoft::Terminal::Settings::Model::implementation::ApplyWorkspaceManagerNodeTemplate(
+                                    self->_workspaceExtension->WorkspaceEditorManager().Workspaces().at(index), templateIndex, newNodeIndex))
+                            {
+                                return;
+                            }
+                            EnsureWorkspaceNodeTabColors(self->_workspaceExtension->WorkspaceEditorManager().Workspaces().at(index), self->_workspaceExtension->WorkspaceSettings());
                             self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
-                            self->_ApplyWorkspaceManagerNavSelection(self->_WorkspaceManagerWorkspaceNodeNavSelection(index, nodes.size() - 1));
+                            self->_workspaceExtension->NavigateWorkspaceManager(self->_workspaceExtension->WorkspaceManagerWorkspaceNodeNavSelection(index, newNodeIndex), result.WorkspaceCount, result.SelectedWorkspaceIndex);
                         }
                     });
                     addNodeFlyout.Items().Append(templateItem);
@@ -327,7 +301,7 @@
             });
             generalContent.Children().Append(addNodeButton);
             generalItem.Content(generalContent);
-            generalItem.Tag(box_value(_WorkspaceManagerWorkspaceNavSelection(index)));
+                generalItem.Tag(box_value(_workspaceExtension->WorkspaceManagerWorkspaceNavSelection(index)));
             {
                 WUX::Controls::SymbolIcon childIcon{};
                 childIcon.Symbol(WUX::Controls::Symbol::Bullets);
@@ -351,7 +325,7 @@
                 nodeLabel.Text(winrt::hstring{ node.Name.empty() ? node.Id : node.Name });
                 nodeLabel.VerticalAlignment(VerticalAlignment::Center);
                 nodeContent.Children().Append(nodeLabel);
-                if (_workspaceEditorEditMode && node.ShowTab)
+                if (_workspaceExtension->WorkspaceEditorEditMode() && node.ShowTab)
                 {
                     auto moveButton = Button{};
                     moveButton.Content(box_value(L"↕"));
@@ -367,24 +341,14 @@
                         moveItem.Click([weakThis{ get_weak() }, index, nodeIndex, offset](auto&&, auto&&) {
                             if (auto self{ weakThis.get() })
                             {
-                                auto& nodes = self->_workspaceExtension->WorkspaceEditorManager().Workspaces().at(index).Nodes;
-                                const auto target = static_cast<size_t>(static_cast<int>(nodeIndex) + offset);
-                                if (target >= nodes.size() || !nodes.at(target).ShowTab)
+                                auto& workspace = self->_workspaceExtension->WorkspaceEditorManager().Workspaces().at(index);
+                                if (!Microsoft::Terminal::Settings::Model::implementation::MoveWorkspaceManagerVisibleNode(workspace, nodeIndex, offset))
                                 {
                                     return;
                                 }
-                                std::swap(nodes.at(nodeIndex), nodes.at(target));
-                                auto& workspace = self->_workspaceExtension->WorkspaceEditorManager().Workspaces().at(index);
-                                workspace.TabOrder.clear();
-                                for (const auto& candidate : workspace.Nodes)
-                                {
-                                    if (candidate.ShowTab)
-                                    {
-                                        workspace.TabOrder.emplace_back(candidate.Id);
-                                    }
-                                }
+                                const auto target = static_cast<size_t>(static_cast<int64_t>(nodeIndex) + offset);
                                 self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
-                                self->_ApplyWorkspaceManagerNavSelection(self->_WorkspaceManagerWorkspaceNodeNavSelection(index, target));
+                                self->_workspaceExtension->NavigateWorkspaceManager(self->_workspaceExtension->WorkspaceManagerWorkspaceNodeNavSelection(index, target), self->_workspaceExtension->WorkspaceEditorManager().Workspaces().size(), self->_workspaceExtension->WorkspaceEditorSelectedIndex());
                             }
                         });
                         moveFlyout.Items().Append(moveItem);
@@ -395,7 +359,7 @@
                     nodeContent.Children().Append(moveButton);
                 }
                 nodeItem.Content(nodeContent);
-                nodeItem.Tag(box_value(_WorkspaceManagerWorkspaceNodeNavSelection(index, nodeIndex)));
+                nodeItem.Tag(box_value(_workspaceExtension->WorkspaceManagerWorkspaceNodeNavSelection(index, nodeIndex)));
                 nodeItem.DoubleTapped([item](auto&&, auto&&) {
                     item.IsExpanded(!item.IsExpanded());
                 });
@@ -411,7 +375,7 @@
                 {
                     if (const auto guid = _tryParseGuid(node.ProfileGuid); guid.has_value())
                     {
-                        if (const auto profile = _settings.FindProfile(*guid))
+                        if (const auto profile = _workspaceExtension->WorkspaceSettings().FindProfile(*guid))
                         {
                             nodeIcon = _CreateNewTabFlyoutIcon(profile.Icon().Resolved());
                         }
@@ -466,10 +430,10 @@
         }
         nav.FooterMenuItems().Append(openYamlItem);
 
-        if (_workspaceManagerNavSelection >= 1000)
+        if (_workspaceExtension->WorkspaceManagerNavSelection() >= 1000)
         {
-            const auto workspaceIndex = Microsoft::Terminal::Settings::Model::implementation::ResolveWorkspaceIndexFromManagerNavSelection(_workspaceManagerNavSelection).value_or(0);
-            const auto selectedNodeIndex = Microsoft::Terminal::Settings::Model::implementation::ResolveWorkspaceNodeIndexFromManagerNavSelection(_workspaceManagerNavSelection);
+            const auto workspaceIndex = _workspaceExtension->ResolveWorkspaceManagerWorkspaceIndex(_workspaceExtension->WorkspaceManagerNavSelection()).value_or(0);
+            const auto selectedNodeIndex = _workspaceExtension->ResolveWorkspaceManagerNodeIndex(_workspaceExtension->WorkspaceManagerNavSelection());
             if (workspaceIndex < workspaceGeneralItems.size())
             {
                 if (!selectedNodeIndex.has_value())
@@ -508,9 +472,11 @@
                             addBlankWorkspaceItem.Click([weakThis](auto&&, auto&&) {
                                 if (auto self{ weakThis.get() })
                                 {
-                                    self->_AddWorkspaceDefinition();
-                                    const auto& workspaces = self->_workspaceExtension->WorkspaceEditorManager().Workspaces();
-                                    self->_ApplyWorkspaceManagerNavSelection(self->_WorkspaceManagerWorkspaceNavSelection(workspaces.size() - 1));
+                                    const auto result = self->_workspaceExtension->AddWorkspaceManagerDefinition(std::nullopt);
+                                    if (result.Changed)
+                                    {
+                                        self->_workspaceExtension->NavigateWorkspaceManager(self->_workspaceExtension->WorkspaceManagerWorkspaceNavSelection(result.WorkspaceCount - 1), result.WorkspaceCount, result.SelectedWorkspaceIndex);
+                                    }
                                 }
                             });
                             addWorkspaceFlyout.Items().Append(addBlankWorkspaceItem);
@@ -522,13 +488,15 @@
                                 {
                                     const auto& templateWorkspace = workspaces.at(templateIndex);
                                     auto templateItem = MenuFlyoutItem{};
-                                    templateItem.Text(winrt::hstring{ L"来自工作区模板：" + self->_WorkspaceDisplayName(templateWorkspace) });
+                                    templateItem.Text(winrt::hstring{ L"来自工作区模板：" + templateWorkspace.Name });
                                     templateItem.Click([weakThis, templateIndex](auto&&, auto&&) {
                                         if (auto self{ weakThis.get() })
                                         {
-                                            self->_AddWorkspaceDefinition(templateIndex);
-                                            const auto& workspaces = self->_workspaceExtension->WorkspaceEditorManager().Workspaces();
-                                            self->_ApplyWorkspaceManagerNavSelection(self->_WorkspaceManagerWorkspaceNavSelection(workspaces.size() - 1));
+                                            const auto result = self->_workspaceExtension->AddWorkspaceManagerDefinition(templateIndex);
+                                            if (result.Changed)
+                                            {
+                                                self->_workspaceExtension->NavigateWorkspaceManager(self->_workspaceExtension->WorkspaceManagerWorkspaceNavSelection(result.WorkspaceCount - 1), result.WorkspaceCount, result.SelectedWorkspaceIndex);
+                                            }
                                         }
                                     });
                                     addWorkspaceFlyout.Items().Append(templateItem);
@@ -565,7 +533,7 @@
                 if (const auto item = args.SelectedItemContainer().try_as<MUX::Controls::NavigationViewItem>())
                 {
                     const auto value = winrt::unbox_value<int32_t>(item.Tag());
-                    self->_ApplyWorkspaceManagerNavSelection(value);
+                    self->_workspaceExtension->NavigateWorkspaceManager(value, self->_workspaceExtension->WorkspaceEditorManager().Workspaces().size(), self->_workspaceExtension->WorkspaceEditorSelectedIndex());
                 }
             }
         });
@@ -602,10 +570,10 @@
             empty.VerticalAlignment(VerticalAlignment::Center);
             root.Children().Append(empty);
         }
-        else if (_workspaceManagerNavSelection >= 1000)
+        else if (_workspaceExtension->WorkspaceManagerNavSelection() >= 1000)
         {
             auto* workspace = _SelectedWorkspaceForEditing();
-            const auto selectedNodeIndex = Microsoft::Terminal::Settings::Model::implementation::ResolveWorkspaceNodeIndexFromManagerNavSelection(_workspaceManagerNavSelection);
+            const auto selectedNodeIndex = _workspaceExtension->ResolveWorkspaceManagerNodeIndex(_workspaceExtension->WorkspaceManagerNavSelection());
             if (workspace == nullptr)
             {
                 auto empty = TextBlock{};
@@ -660,21 +628,18 @@
             saveButton.Click([weakThis{ get_weak() }](auto&&, auto&&) {
                 if (auto self{ weakThis.get() })
                 {
-                    self->_SaveWorkspaceEditorState();
+                    self->_workspaceExtension->SaveWorkspaceManagerEdits();
                 }
             });
             footerButtons.Children().Append(saveButton);
 
             auto resetButton = Button{};
             resetButton.Content(box_value(RS_(L"WorkspaceEditor_ResetButton")));
-            resetButton.IsEnabled(_workspaceDefinitionsDirty);
+            resetButton.IsEnabled(_workspaceExtension->WorkspaceDefinitionsDirty());
             resetButton.Click([weakThis{ get_weak() }](auto&&, auto&&) {
                 if (auto self{ weakThis.get() })
                 {
-                    self->_workspaceExtension->WorkspaceDefinitionsDirty() = false;
-                    self->_workspaceExtension->WorkspaceEditorEditMode() = true;
-                    self->_LoadWorkspaceEditorState(false);
-                    self->_ApplyWorkspaceManagerNavSelection(self->_WorkspaceManagerEditorNavSelection());
+                    self->_workspaceExtension->ResetWorkspaceManagerEdits();
                 }
             });
             footerButtons.Children().Append(resetButton);
@@ -687,8 +652,8 @@
         {
             Json::Value payload{ Json::objectValue };
             payload["workspaceCount"] = gsl::narrow<Json::ArrayIndex>(workspaces.size());
-            payload["navSelection"] = _workspaceManagerNavSelection;
-            payload["selectedWorkspaceIndex"] = _workspaceEditorSelectedIndex;
+            payload["navSelection"] = _workspaceExtension->WorkspaceManagerNavSelection();
+            payload["selectedWorkspaceIndex"] = _workspaceExtension->WorkspaceEditorSelectedIndex();
             payload["menuItemCount"] = nav.MenuItems().Size();
             payload["isFirstRun"] = workspaces.empty();
             std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_manager_build_end", payload);
@@ -698,13 +663,13 @@
 
     void TerminalPage::_WorkspaceManagerPrimaryButtonClick(const IInspectable& /*sender*/, const ContentDialogButtonClickEventArgs& eventArgs)
     {
-        if (!_workspaceEditorEditMode)
+        if (!_workspaceExtension->WorkspaceEditorEditMode())
         {
             eventArgs.Cancel(true);
             return;
         }
 
-        if (!_SaveWorkspaceEditorState())
+        if (!_workspaceExtension->SaveWorkspaceManagerEdits())
         {
             eventArgs.Cancel(true);
         }

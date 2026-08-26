@@ -66,29 +66,3 @@
             }
         });
     }
-
-    void TerminalPage::_PrepareStartupWorkspaceState()
-    {
-        if (_startupWorkspaceId.empty())
-        {
-            return;
-        }
-
-        CurrentWorkspaceId(_startupWorkspaceId);
-        const auto startupState = ::terminal::workspace::LoadWorkspaceStartupState(_startupWorkspaceId.c_str());
-        _workspaceExtension->ReplacePendingWorkspaceNodeInputVisibility(std::move(startupState.PendingNodeInputVisibility));
-        _workspaceExtension->ReplacePendingWorkspaceNodeIds(std::move(startupState.PendingNodeIds));
-        _startupWorkspaceId.clear();
-    }
-
-    void TerminalPage::_ClearPendingWorkspaceStartupState() noexcept
-    {
-        _workspaceExtension->ClearPendingWorkspaceNodeQueues();
-    }
-
-    bool TerminalPage::_ShouldSkipWorkspaceStartupAction(const ActionAndArgs& action,
-                                                         const std::vector<ActionAndArgs>& actions,
-                                                         const size_t index)
-    {
-        return _workspaceExtension->ShouldSkipStartupAction(action, actions, index);
-    }

@@ -1,9 +1,19 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-#include "pch.h"
+#include <LibraryIncludes.h>
+#include <LibraryResources.h>
+#include <wil/cppwinrt.h>
+#include <winrt/Microsoft.Terminal.Settings.Model.h>
+#include <winrt/Windows.UI.Xaml.Controls.h>
+#include <winrt/Windows.UI.Xaml.Media.h>
+
 #include "WorkspaceManagerPaneContent.h"
 #include "Utils.h"
+
+// This implementation is compiled into Glue.dll. Keep its resource lookup
+// scope local to Glue instead of relying on TerminalApp's link environment.
+UTILS_DEFINE_LIBRARY_RESOURCE_SCOPE(L"Microsoft.Terminal.UI")
 
 using namespace winrt::Windows::Foundation;
 using namespace winrt::Windows::UI::Xaml;

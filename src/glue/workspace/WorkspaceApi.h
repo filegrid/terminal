@@ -48,6 +48,8 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
     #include "WorkspaceEditorTypes.h"
 
     bool ApplyVisibleWorkspaceNodeOrder(Workspace& workspace, const std::vector<WorkspaceNode>& orderedVisibleNodes);
+    bool MoveWorkspaceManagerVisibleNode(Workspace& workspace, size_t nodeIndex, int offset);
+    bool ApplyWorkspaceManagerNodeTemplate(Workspace& workspace, size_t templateIndex, size_t newNodeIndex);
     std::optional<Workspace> PrepareWorkspaceForCapture(const std::optional<Workspace>& currentWorkspaceDefinition,
                                                         std::vector<WorkspaceNode> capturedNodes);
     std::optional<Workspace> ResolveWorkspaceDefinition(std::wstring_view currentWorkspaceId,

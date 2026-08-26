@@ -298,8 +298,8 @@ internal sealed class Program
                     throw new InvalidOperationException($"Workspace extension output directory {outputDirectory} does not exist.");
                 }
 
-                UpdateZipEntryIfPresent(archive, outputDirectory, terminalDirectoryName, "WorkspaceExtension.dll");
-                UpdateZipEntryIfPresent(archive, outputDirectory, terminalDirectoryName, "WorkspaceExtension.pri");
+                UpdateZipEntryIfPresent(archive, outputDirectory, terminalDirectoryName, "Ext.dll");
+                UpdateZipEntryIfPresent(archive, outputDirectory, terminalDirectoryName, "Glue.dll");
                 OverlayTerminalUiRuntime(archive, terminalDirectoryName);
                 OverlayWorkspaceSpriteResources(archive, terminalDirectoryName, outputDirectory);
                 OverlayMergedIconAtlases(archive, terminalDirectoryName, outputDirectory);

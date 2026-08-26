@@ -78,11 +78,9 @@
             workspaceNameBox.TextChanged([weakThis{ get_weak() }](auto&& sender, auto&&) {
                 if (auto self{ weakThis.get() })
                 {
-                    if (auto* current = self->_SelectedWorkspaceForEditing())
-                    {
-                        current->Name = sender.as<TextBox>().Text().c_str();
-                        self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
-                    }
+                    self->_workspaceExtension->UpdateWorkspaceManagerWorkspaceText(
+                        terminal::workspace::WorkspaceManagerWorkspaceTextField::Name,
+                        sender.as<TextBox>().Text());
                 }
             });
         }
@@ -98,24 +96,10 @@
             Automation::AutomationProperties::SetName(deleteWorkspaceButton, RS_(L"WorkspaceEditor_DeleteWorkspaceButton"));
             const auto workspaceId = workspace->Id;
             deleteWorkspaceButton.Click([weakThis{ get_weak() }, workspaceId](auto&&, auto&&) {
-                [](auto weakThis, std::wstring workspaceId) -> safe_void_coroutine {
-                    if (auto self{ weakThis.get() })
-                    {
-                        auto dialog = ContentDialog{};
-                        dialog.Title(box_value(L"删除工作区"));
-                        dialog.Content(box_value(L"确定要删除这个工作区吗？"));
-                        dialog.PrimaryButtonText(L"删除");
-                        dialog.CloseButtonText(L"取消");
-                        if (auto presenter{ self->_dialogPresenter.get() })
-                        {
-                            const auto result = co_await presenter.ShowDialog(dialog);
-                            if (auto strong{ weakThis.get() }; strong && result == ContentDialogResult::Primary)
-                            {
-                                strong->_RemoveWorkspaceDefinitionById(workspaceId);
-                            }
-                        }
-                    }
-                }(weakThis, workspaceId);
+                if (auto self{ weakThis.get() })
+                {
+                    self->_workspaceExtension->DeleteWorkspaceManagerWorkspace(winrt::hstring{ workspaceId });
+                }
             });
             workspaceNamePanel.Children().Append(deleteWorkspaceButton);
         }
@@ -123,11 +107,9 @@
         addLabeledTextBox(generalPanel, RS_(L"WorkspaceEditor_Description").c_str(), workspace->Description, [weakThis{ get_weak() }](auto&& sender, auto&&) {
             if (auto self{ weakThis.get() })
             {
-                if (auto* current = self->_SelectedWorkspaceForEditing())
-                {
-                    current->Description = sender.as<TextBox>().Text().c_str();
-                    self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
-                }
+                self->_workspaceExtension->UpdateWorkspaceManagerWorkspaceText(
+                    terminal::workspace::WorkspaceManagerWorkspaceTextField::Description,
+                    sender.as<TextBox>().Text());
             }
         }, !_workspaceEditorEditMode, true);
 
@@ -138,8 +120,9 @@
         reorderList.AllowDrop(_workspaceEditorEditMode);
         reorderList.Margin(marginBottom(16));
         uint32_t displayOrder = 0;
-        for (const auto& candidate : workspace->Nodes)
+        for (size_t nodeIndex = 0; nodeIndex < workspace->Nodes.size(); ++nodeIndex)
         {
+            const auto& candidate = workspace->Nodes.at(nodeIndex);
             if (!candidate.ShowTab)
             {
                 continue;
@@ -159,19 +142,10 @@
             number.VerticalAlignment(VerticalAlignment::Center);
             nodeRow.Children().Append(number);
             IconElement icon{ nullptr };
-            if (!candidate.Icon.empty())
+            const auto resolvedIcon = _workspaceExtension->WorkspaceManagerNodeIconPreviewForEditing(nodeIndex);
+            if (!resolvedIcon.empty())
             {
-                icon = _CreateNewTabFlyoutIcon(winrt::hstring{ candidate.Icon });
-            }
-            if (!icon)
-            {
-                if (const auto guid = _tryParseGuid(candidate.ProfileGuid); guid.has_value())
-                {
-                    if (const auto profile = _settings.FindProfile(*guid))
-                    {
-                        icon = _CreateNewTabFlyoutIcon(profile.Icon().Resolved());
-                    }
-                }
+                icon = _CreateNewTabFlyoutIcon(resolvedIcon);
             }
             if (!icon)
             {
@@ -206,83 +180,43 @@
             reorderList.DragItemsCompleted([weakThis{ get_weak() }, reorderList](auto&&, auto&&) {
                 if (auto self{ weakThis.get() })
                 {
-                    auto* current = self->_SelectedWorkspaceForEditing();
-                    if (!current)
-                    {
-                        return;
-                    }
-                    std::vector<std::wstring> order;
+                    std::vector<winrt::hstring> order;
                     order.reserve(reorderList.Items().Size());
                     for (uint32_t itemIndex = 0; itemIndex < reorderList.Items().Size(); ++itemIndex)
                     {
                         if (const auto element = reorderList.Items().GetAt(itemIndex).try_as<FrameworkElement>())
                         {
-                            order.emplace_back(winrt::unbox_value<winrt::hstring>(element.Tag()).c_str());
+                            order.emplace_back(winrt::unbox_value<winrt::hstring>(element.Tag()));
                         }
                     }
                     if (order.empty())
                     {
                         return;
                     }
-                    current->TabOrder = order;
-                    std::vector<WorkspaceNode> orderedNodes;
-                    orderedNodes.reserve(current->Nodes.size());
-                    for (const auto& id : order)
-                    {
-                        const auto it = std::find_if(current->Nodes.begin(), current->Nodes.end(), [&](const auto& node) { return node.Id == id; });
-                        if (it != current->Nodes.end())
-                        {
-                            orderedNodes.emplace_back(*it);
-                        }
-                    }
-                    for (const auto& node : current->Nodes)
-                    {
-                        if (!node.ShowTab)
-                        {
-                            orderedNodes.emplace_back(node);
-                        }
-                    }
-                    current->Nodes = std::move(orderedNodes);
-                    self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
+                    self->_workspaceExtension->ReorderWorkspaceManagerVisibleNodes(order);
                 }
             });
         }
         generalPanel.Children().Append(reorderList);
 
         generalPanel.Children().Append(makeSectionTitle(L"节点默认值"));
-        auto defaultProfilePicker = ComboBox{};
+        const auto defaultProfileOptions = _workspaceExtension->WorkspaceManagerProfileOptionsForEditing(
+            winrt::hstring{ workspace->NewNodeDefaults.ProfileGuid }, winrt::hstring{ workspace->NewNodeDefaults.ProfileName });
+        auto defaultProfilePicker = _workspaceExtension->CreateWorkspaceManagerProfilePicker(
+            defaultProfileOptions,
+            workspace->NewNodeDefaults.ProfileGuid,
+            _workspaceEditorEditMode);
         applyWorkspaceStyle(defaultProfilePicker, L"WorkspaceComboBoxSettingStyle");
-        defaultProfilePicker.IsEnabled(_workspaceEditorEditMode);
-        int32_t selectedDefaultProfileIndex = -1;
-        const auto defaultProfiles = _settings.ActiveProfiles();
-        for (uint32_t profileIndex = 0; profileIndex < defaultProfiles.Size(); ++profileIndex)
-        {
-            const auto profile = defaultProfiles.GetAt(profileIndex);
-            auto profileItem = ComboBoxItem{};
-            const auto guidText = Utils::GuidToString(profile.Guid());
-            const auto displayName = profile.Name().empty() ? profile.Source() : profile.Name();
-            profileItem.Content(box_value(displayName.empty() ? winrt::hstring{ guidText } : displayName));
-            profileItem.Tag(box_value(guidText));
-            defaultProfilePicker.Items().Append(profileItem);
-            if (!workspace->NewNodeDefaults.ProfileGuid.empty() && _wcsicmp(guidText.c_str(), workspace->NewNodeDefaults.ProfileGuid.c_str()) == 0)
-            {
-                selectedDefaultProfileIndex = gsl::narrow_cast<int32_t>(profileIndex);
-            }
-        }
-        defaultProfilePicker.SelectedIndex(selectedDefaultProfileIndex);
         if (_workspaceEditorEditMode)
         {
             defaultProfilePicker.SelectionChanged([weakThis{ get_weak() }](auto&& sender, auto&&) {
                 if (auto self{ weakThis.get() })
                 {
-                    if (auto* current = self->_SelectedWorkspaceForEditing())
+                    if (const auto item = sender.as<ComboBox>().SelectedItem().try_as<ComboBoxItem>())
                     {
-                        if (const auto item = sender.as<ComboBox>().SelectedItem().try_as<ComboBoxItem>())
-                        {
-                            current->NewNodeDefaults.ProfileGuid = winrt::unbox_value<winrt::hstring>(item.Tag()).c_str();
-                            current->NewNodeDefaults.ProfileName = winrt::unbox_value_or<winrt::hstring>(item.Content(), {}).c_str();
-                            self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
-                        }
+                        self->_workspaceExtension->UpdateWorkspaceManagerDefaultProfile(
+                            winrt::unbox_value<winrt::hstring>(item.Tag()),
+                            winrt::unbox_value_or<winrt::hstring>(item.Content(), {}));
                     }
                 }
             });
@@ -291,11 +225,9 @@
         addLabeledTextBox(generalPanel, L"启动目录", workspace->NewNodeDefaults.StartupDirectory, [weakThis{ get_weak() }](auto&& sender, auto&&) {
             if (auto self{ weakThis.get() })
             {
-                if (auto* current = self->_SelectedWorkspaceForEditing())
-                {
-                    current->NewNodeDefaults.StartupDirectory = sender.as<TextBox>().Text().c_str();
-                    self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
-                }
+                self->_workspaceExtension->UpdateWorkspaceManagerWorkspaceText(
+                    terminal::workspace::WorkspaceManagerWorkspaceTextField::DefaultStartupDirectory,
+                    sender.as<TextBox>().Text());
             }
         }, !_workspaceEditorEditMode);
         const auto addDefaultToggle = [&](const wchar_t* label, const bool isOn, const auto& onToggled) {
@@ -314,21 +246,17 @@
         addDefaultToggle(L"显示输入框", workspace->NewNodeDefaults.ShowInputPanel, [weakThis{ get_weak() }](auto&& sender, auto&&) {
             if (auto self{ weakThis.get() })
             {
-                if (auto* current = self->_SelectedWorkspaceForEditing())
-                {
-                    current->NewNodeDefaults.ShowInputPanel = sender.as<WUX::Controls::ToggleSwitch>().IsOn();
-                    self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
-                }
+                self->_workspaceExtension->UpdateWorkspaceManagerWorkspaceBool(
+                    terminal::workspace::WorkspaceManagerWorkspaceBoolField::DefaultShowInputPanel,
+                    sender.as<WUX::Controls::ToggleSwitch>().IsOn());
             }
         });
         addDefaultToggle(L"固定标题", workspace->NewNodeDefaults.UseNodeNameAsTabTitle, [weakThis{ get_weak() }](auto&& sender, auto&&) {
             if (auto self{ weakThis.get() })
             {
-                if (auto* current = self->_SelectedWorkspaceForEditing())
-                {
-                    current->NewNodeDefaults.UseNodeNameAsTabTitle = sender.as<WUX::Controls::ToggleSwitch>().IsOn();
-                    self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
-                }
+                self->_workspaceExtension->UpdateWorkspaceManagerWorkspaceBool(
+                    terminal::workspace::WorkspaceManagerWorkspaceBoolField::DefaultUseNodeNameAsTabTitle,
+                    sender.as<WUX::Controls::ToggleSwitch>().IsOn());
             }
         });
         auto defaultShowTab = WUX::Controls::ToggleSwitch{};
@@ -341,11 +269,9 @@
             defaultShowTab.Toggled([weakThis{ get_weak() }](auto&& sender, auto&&) {
                 if (auto self{ weakThis.get() })
                 {
-                    if (auto* current = self->_SelectedWorkspaceForEditing())
-                    {
-                        current->NewNodeDefaults.ShowTab = sender.as<WUX::Controls::ToggleSwitch>().IsOn();
-                        self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
-                    }
+                    self->_workspaceExtension->UpdateWorkspaceManagerWorkspaceBool(
+                        terminal::workspace::WorkspaceManagerWorkspaceBoolField::DefaultShowTab,
+                        sender.as<WUX::Controls::ToggleSwitch>().IsOn());
                 }
             });
         }
@@ -390,46 +316,30 @@
             chooseColorButton.Content(chooseColorIcon);
             ToolTipService::SetToolTip(chooseColorButton, box_value(L"换一个"));
             Automation::AutomationProperties::SetName(chooseColorButton, L"换一个");
-            auto backgroundColorFlyout = winrt::make<ColorPickupFlyout>();
-            if (const auto parsedColor = _parseWorkspaceColor(workspace->BackgroundColor))
-            {
-                backgroundColorFlyout.Color(*parsedColor);
-            }
-            backgroundColorFlyout.ColorSelected([weakThis{ get_weak() }, applyWorkspaceColorPreview](const winrt::Windows::UI::Color& color) {
-                if (auto self{ weakThis.get() })
-                {
-                    if (auto* current = self->_SelectedWorkspaceForEditing())
-                    {
-                        current->BackgroundColor = _workspaceColorToString(color);
-                        self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
-                        applyWorkspaceColorPreview(current->BackgroundColor);
-                    }
-                }
-            });
             chooseColorButton.Click([weakThis{ get_weak() }, applyWorkspaceColorPreview](auto&&, auto&&) {
                 if (auto self{ weakThis.get() })
                 {
-                    if (auto* current = self->_SelectedWorkspaceForEditing())
+                    if (const auto color = self->_workspaceExtension->RotateWorkspaceManagerWorkspaceBackgroundColor(); !color.empty())
                     {
-                        std::unordered_set<std::wstring> usedColors;
-                        for (const auto& other : self->_workspaceExtension->WorkspaceEditorManager().Workspaces())
-                        {
-                            if (&other != current && !other.BackgroundColor.empty())
-                            {
-                                usedColors.emplace(other.BackgroundColor);
-                            }
-                        }
-                        current->BackgroundColor = PickWorkspacePaletteColor(
-                            usedColors,
-                            self->_workspaceExtension->WorkspaceEditorManager().Workspaces().size(),
-                            current->BackgroundColor);
-                        self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
-                        applyWorkspaceColorPreview(current->BackgroundColor);
+                        applyWorkspaceColorPreview(color.c_str());
                     }
                 }
             });
-            colorPreviewRow.Tapped([backgroundColorFlyout, colorPreviewRow](auto&&, auto&&) {
-                backgroundColorFlyout.ShowAt(colorPreviewRow);
+            colorPreviewRow.Tapped([weakThis{ get_weak() }, applyWorkspaceColorPreview](auto&&, auto&&) {
+                [](auto weakThis, auto applyWorkspaceColorPreview) -> safe_void_coroutine {
+                    if (auto self{ weakThis.get() })
+                    {
+                        const auto initialColor = std::wstring{ self->_workspaceExtension->WorkspaceManagerWorkspaceBackgroundColor().c_str() };
+                        const auto color = co_await self->_workspaceExtension->PickWorkspaceManagerColor(initialColor);
+                        if (auto strong{ weakThis.get() }; strong && !color.empty())
+                        {
+                            if (strong->_workspaceExtension->ApplyWorkspaceManagerWorkspaceBackgroundColor(color))
+                            {
+                                applyWorkspaceColorPreview(color.c_str());
+                            }
+                        }
+                    }
+                }(weakThis, applyWorkspaceColorPreview);
             });
             colorPanel.Children().Append(chooseColorButton);
         }
@@ -446,12 +356,12 @@
         const auto refreshWorkspaceIconPreview = [weakThis{ get_weak() }, workspaceIconPreview]() {
             if (auto self{ weakThis.get() })
             {
-                if (const auto* current = self->_SelectedWorkspaceForEditing())
+                const auto currentIcon = self->_workspaceExtension->WorkspaceManagerWorkspaceIconForEditing();
                 {
                     WUX::Controls::IconElement previewIcon{ nullptr };
-                    if (!current->Icon.empty())
+                    if (!currentIcon.empty())
                     {
-                        previewIcon = self->_CreateNewTabFlyoutIcon(winrt::hstring{ current->Icon });
+                        previewIcon = self->_CreateNewTabFlyoutIcon(currentIcon);
                     }
                     if (!previewIcon)
                     {
@@ -491,7 +401,7 @@
             workspaceIconButton.Click([weakThis{ get_weak() }](auto&&, auto&&) {
                 if (auto self{ weakThis.get() })
                 {
-                    self->_ShowWorkspaceManagerWorkspaceIconPicker();
+                    self->_workspaceExtension->ShowWorkspaceManagerWorkspaceIconPicker();
                 }
             });
         }
@@ -559,7 +469,6 @@
 
         const auto stableNodeIndex = std::make_shared<size_t>(nodeIndex);
         const auto& node = workspace->Nodes.at(nodeIndex);
-        const auto profiles = _settings.ActiveProfiles();
         auto nodeRoot = StackPanel{};
 
         const auto addNodeTextBox = [&](const wchar_t* labelText, const std::wstring& initialValue, const auto& onChanged, const bool multiline = false) {
@@ -588,11 +497,10 @@
             nodeNameBox.TextChanged([weakThis{ get_weak() }, nodeIndex](auto&& sender, auto&&) {
                 if (auto self{ weakThis.get() })
                 {
-                    if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
-                    {
-                        current->Nodes.at(nodeIndex).Name = sender.as<TextBox>().Text().c_str();
-                        self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
-                    }
+                    self->_workspaceExtension->UpdateWorkspaceManagerNodeText(
+                        nodeIndex,
+                        terminal::workspace::WorkspaceManagerNodeTextField::Name,
+                        sender.as<TextBox>().Text());
                 }
             });
         }
@@ -609,24 +517,10 @@
             const auto workspaceId = workspace->Id;
             const auto nodeId = node.Id;
             deleteNodeButton.Click([weakThis{ get_weak() }, workspaceId, nodeId](auto&&, auto&&) {
-                [](auto weakThis, std::wstring workspaceId, std::wstring nodeId) -> safe_void_coroutine {
-                    if (auto self{ weakThis.get() })
-                    {
-                        auto dialog = ContentDialog{};
-                        dialog.Title(box_value(L"删除节点"));
-                        dialog.Content(box_value(L"确定要删除这个节点吗？"));
-                        dialog.PrimaryButtonText(L"删除");
-                        dialog.CloseButtonText(L"取消");
-                        if (auto presenter{ self->_dialogPresenter.get() })
-                        {
-                            const auto result = co_await presenter.ShowDialog(dialog);
-                            if (auto strong{ weakThis.get() }; strong && result == ContentDialogResult::Primary)
-                            {
-                                strong->_RemoveWorkspaceNodeById(workspaceId, nodeId);
-                            }
-                        }
-                    }
-                }(weakThis, workspaceId, nodeId);
+                if (auto self{ weakThis.get() })
+                {
+                    self->_workspaceExtension->DeleteWorkspaceManagerNode(winrt::hstring{ workspaceId }, winrt::hstring{ nodeId });
+                }
             });
             nodeNamePanel.Children().Append(deleteNodeButton);
         }
@@ -642,76 +536,32 @@
             showTabToggle.Toggled([weakThis{ get_weak() }, nodeIndex](auto&& sender, auto&&) {
                 if (auto self{ weakThis.get() })
                 {
-                    if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
+                    if (const auto toggle = sender.try_as<WUX::Controls::ToggleSwitch>())
                     {
-                        if (const auto toggle = sender.try_as<WUX::Controls::ToggleSwitch>())
-                        {
-                            current->Nodes.at(nodeIndex).ShowTab = toggle.IsOn();
-                            self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
-                        }
+                        self->_workspaceExtension->UpdateWorkspaceManagerNodeBool(nodeIndex, terminal::workspace::WorkspaceManagerNodeBoolField::ShowTab, toggle.IsOn());
                     }
                 }
             });
         }
 
-        auto profilePicker = ComboBox{};
+        const auto profileOptions = _workspaceExtension->WorkspaceManagerProfileOptionsForEditing(
+            winrt::hstring{ node.ProfileGuid }, winrt::hstring{ node.ProfileName });
+        auto profilePicker = _workspaceExtension->CreateWorkspaceManagerProfilePicker(
+            profileOptions,
+            node.ProfileGuid,
+            _workspaceEditorEditMode);
         applyWorkspaceStyle(profilePicker, L"WorkspaceComboBoxSettingStyle");
-        profilePicker.IsEnabled(_workspaceEditorEditMode);
-        int32_t selectedProfileIndex = -1;
-        for (uint32_t profileIndex = 0; profileIndex < profiles.Size(); ++profileIndex)
-        {
-            const auto profile = profiles.GetAt(profileIndex);
-            auto item = ComboBoxItem{};
-            const auto guidText = Utils::GuidToString(profile.Guid());
-            const auto displayName = profile.Name().empty() ? profile.Source() : profile.Name();
-            item.Content(box_value(displayName.empty() ? winrt::hstring{ guidText } : displayName));
-            item.Tag(box_value(guidText));
-            profilePicker.Items().Append(item);
-            if (!node.ProfileGuid.empty() && _wcsicmp(guidText.c_str(), node.ProfileGuid.c_str()) == 0)
-            {
-                selectedProfileIndex = gsl::narrow_cast<int32_t>(profileIndex);
-            }
-        }
-        if (selectedProfileIndex < 0 && !node.ProfileGuid.empty())
-        {
-            auto item = ComboBoxItem{};
-            if (const auto guid = _tryParseGuid(node.ProfileGuid); guid.has_value())
-            {
-                if (const auto profile = _settings.FindProfile(*guid))
-                {
-                    const auto displayName = profile.Name().empty() ? profile.Source() : profile.Name();
-                    item.Content(box_value(displayName.empty() ? winrt::hstring{ node.ProfileGuid } : displayName));
-                }
-                else
-                {
-                    item.Content(box_value(node.ProfileName.empty() ? winrt::hstring{ node.ProfileGuid } : winrt::hstring{ node.ProfileName }));
-                }
-            }
-            else
-            {
-                item.Content(box_value(node.ProfileName.empty() ? winrt::hstring{ node.ProfileGuid } : winrt::hstring{ node.ProfileName }));
-            }
-            item.Tag(box_value(node.ProfileGuid));
-            profilePicker.Items().Append(item);
-            selectedProfileIndex = gsl::narrow_cast<int32_t>(profilePicker.Items().Size() - 1);
-        }
-        profilePicker.SelectedIndex(selectedProfileIndex);
         if (_workspaceEditorEditMode)
         {
             profilePicker.SelectionChanged([weakThis{ get_weak() }, stableNodeIndex](auto&& sender, auto&&) {
                 if (auto self{ weakThis.get() })
                 {
                     const auto nodeIndex = *stableNodeIndex;
-                    if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
+                    if (const auto picker = sender.try_as<ComboBox>())
                     {
-                        if (const auto picker = sender.try_as<ComboBox>())
+                        if (const auto item = picker.SelectedItem().try_as<ComboBoxItem>())
                         {
-                            if (const auto item = picker.SelectedItem().try_as<ComboBoxItem>())
-                            {
-                                current->Nodes.at(nodeIndex).ProfileGuid = winrt::unbox_value<winrt::hstring>(item.Tag()).c_str();
-                                current->Nodes.at(nodeIndex).ProfileName = winrt::unbox_value_or<winrt::hstring>(item.Content(), {}).c_str();
-                                self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
-                            }
+                            self->_workspaceExtension->UpdateWorkspaceManagerNodeProfile(nodeIndex, winrt::unbox_value<winrt::hstring>(item.Tag()), winrt::unbox_value_or<winrt::hstring>(item.Content(), {}));
                         }
                     }
                 }
@@ -732,23 +582,12 @@
             if (auto self{ weakThis.get() })
             {
                 const auto nodeIndex = *stableNodeIndex;
-                if (const auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
+                const auto resolvedIcon = self->_workspaceExtension->WorkspaceManagerNodeIconPreviewForEditing(nodeIndex);
                 {
-                    const auto& currentNode = current->Nodes.at(nodeIndex);
                     WUX::Controls::IconElement previewIcon{ nullptr };
-                    if (!currentNode.Icon.empty())
+                    if (!resolvedIcon.empty())
                     {
-                        previewIcon = self->_CreateNewTabFlyoutIcon(winrt::hstring{ currentNode.Icon });
-                    }
-                    if (!previewIcon)
-                    {
-                        if (const auto guid = _tryParseGuid(currentNode.ProfileGuid); guid.has_value())
-                        {
-                            if (const auto profile = self->_settings.FindProfile(*guid))
-                            {
-                                previewIcon = self->_CreateNewTabFlyoutIcon(profile.Icon().Resolved());
-                            }
-                        }
+                        previewIcon = self->_CreateNewTabFlyoutIcon(resolvedIcon);
                     }
                     if (!previewIcon)
                     {
@@ -790,7 +629,7 @@
             iconButton.Click([weakThis{ get_weak() }, stableNodeIndex](auto&&, auto&&) {
                 if (auto self{ weakThis.get() })
                 {
-                    self->_ShowWorkspaceManagerNodeIconPicker(*stableNodeIndex);
+                    self->_workspaceExtension->ShowWorkspaceManagerNodeIconPicker(*stableNodeIndex);
                 }
             });
         }
@@ -810,12 +649,10 @@
                 pathBox.TextChanged([weakThis{ get_weak() }, nodeIndex, pickFolder](auto&& sender, auto&&) {
                     if (auto self{ weakThis.get() })
                     {
-                        if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
-                        {
-                            auto& value = pickFolder ? current->Nodes.at(nodeIndex).StartupDirectory : current->Nodes.at(nodeIndex).StartupAction;
-                            value = sender.as<TextBox>().Text().c_str();
-                            self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
-                        }
+                        self->_workspaceExtension->UpdateWorkspaceManagerNodeText(
+                            nodeIndex,
+                            pickFolder ? terminal::workspace::WorkspaceManagerNodeTextField::StartupDirectory : terminal::workspace::WorkspaceManagerNodeTextField::StartupAction,
+                            sender.as<TextBox>().Text());
                     }
                 });
             }
@@ -832,22 +669,15 @@
                 [](auto weakThis, size_t nodeIndex, bool pickFolder, TextBox pathBox) -> safe_void_coroutine {
                     if (auto self{ weakThis.get() })
                     {
-                        const auto path = co_await OpenFilePicker(self->_hostingHwnd.value_or(nullptr), [pickFolder](auto&& dialog) {
-                            if (pickFolder)
-                            {
-                                DWORD flags{};
-                                THROW_IF_FAILED(dialog->GetOptions(&flags));
-                                THROW_IF_FAILED(dialog->SetOptions(flags | FOS_PICKFOLDERS));
-                            }
-                        });
-                        if (!path.empty())
+                        const auto path = co_await self->_workspaceExtension->PickWorkspaceManagerPath(pickFolder);
+                        if (auto strong{ weakThis.get() }; strong && !path.empty())
                         {
-                            if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
+                            if (strong->_workspaceExtension->UpdateWorkspaceManagerNodeText(
+                                    nodeIndex,
+                                    pickFolder ? terminal::workspace::WorkspaceManagerNodeTextField::StartupDirectory : terminal::workspace::WorkspaceManagerNodeTextField::StartupAction,
+                                    path))
                             {
-                                auto& value = pickFolder ? current->Nodes.at(nodeIndex).StartupDirectory : current->Nodes.at(nodeIndex).StartupAction;
-                                value = path.c_str();
                                 pathBox.Text(path);
-                                self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
                             }
                         }
                     }
@@ -876,9 +706,8 @@
         const auto applyNodeColorPreview = [weakThis{ get_weak() }, nodeIndex, tabColorPreview, tabColorValue]() {
             if (auto self{ weakThis.get() })
             {
-                if (const auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
+                const auto resolvedColorText = self->_workspaceExtension->WorkspaceManagerNodeTabColorPreview(nodeIndex);
                 {
-                    const auto resolvedColorText = _workspaceNodeColorDisplayValue(*current, nodeIndex, self->_settings);
                     if (const auto parsedColor = _parseWorkspaceColor(resolvedColorText))
                     {
                         tabColorPreview.Background(SolidColorBrush{ *parsedColor });
@@ -907,24 +736,20 @@
         tabColorPanel.Children().Append(tabColorPreviewRow);
         if (_workspaceEditorEditMode)
         {
-            auto nodeColorFlyout = winrt::make<ColorPickupFlyout>();
-            if (const auto parsedColor = _parseWorkspaceColor(_workspaceNodeColorDisplayValue(*workspace, nodeIndex, _settings)))
-            {
-                nodeColorFlyout.Color(*parsedColor);
-            }
-            nodeColorFlyout.ColorSelected([weakThis{ get_weak() }, nodeIndex, applyNodeColorPreview](const winrt::Windows::UI::Color& color) {
-                if (auto self{ weakThis.get() })
-                {
-                    if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
+            tabColorPreviewRow.Tapped([weakThis{ get_weak() }, nodeIndex, applyNodeColorPreview](auto&&, auto&&) {
+                [](auto weakThis, size_t nodeIndex, auto applyNodeColorPreview) -> safe_void_coroutine {
+                    if (auto self{ weakThis.get() })
                     {
-                        current->Nodes.at(nodeIndex).TabColor = _workspaceColorToString(color);
-                        self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
-                        applyNodeColorPreview();
+                        const auto color = co_await self->_workspaceExtension->PickWorkspaceManagerColor(std::wstring{ self->_workspaceExtension->WorkspaceManagerNodeTabColor(nodeIndex).c_str() });
+                        if (auto strong{ weakThis.get() }; strong && !color.empty())
+                        {
+                            if (strong->_workspaceExtension->ApplyWorkspaceManagerNodeTabColor(nodeIndex, color))
+                            {
+                                applyNodeColorPreview();
+                            }
+                        }
                     }
-                }
-            });
-            tabColorPreviewRow.Tapped([nodeColorFlyout, tabColorPreviewRow](auto&&, auto&&) {
-                nodeColorFlyout.ShowAt(tabColorPreviewRow);
+                }(weakThis, nodeIndex, applyNodeColorPreview);
             });
 
             auto tabColorButtons = StackPanel{};
@@ -939,20 +764,8 @@
             reselectTabColorButton.Click([weakThis{ get_weak() }, nodeIndex, applyNodeColorPreview](auto&&, auto&&) {
                 if (auto self{ weakThis.get() })
                 {
-                    if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
+                    if (self->_workspaceExtension->RotateWorkspaceManagerNodeTabColor(nodeIndex))
                     {
-                        const auto previousColor = current->Nodes.at(nodeIndex).TabColor;
-                        std::unordered_set<std::wstring> usedColors;
-                        for (size_t i = 0; i < current->Nodes.size(); ++i)
-                        {
-                            if (i != nodeIndex && !current->Nodes.at(i).TabColor.empty())
-                            {
-                                usedColors.emplace(current->Nodes.at(i).TabColor);
-                            }
-                        }
-                        current->Nodes.at(nodeIndex).TabColor = PickWorkspacePaletteColor(usedColors, nodeIndex, previousColor);
-                        EnsureWorkspaceNodeTabColors(*current, self->_settings);
-                        self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
                         applyNodeColorPreview();
                     }
                 }
@@ -978,13 +791,9 @@
             showInputPanelToggle.Toggled([weakThis{ get_weak() }, nodeIndex](auto&& sender, auto&&) {
                 if (auto self{ weakThis.get() })
                 {
-                    if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
+                    if (const auto toggle = sender.try_as<WUX::Controls::ToggleSwitch>())
                     {
-                        if (const auto toggle = sender.try_as<WUX::Controls::ToggleSwitch>())
-                        {
-                            current->Nodes.at(nodeIndex).ShowInputPanel = toggle.IsOn();
-                            self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
-                        }
+                        self->_workspaceExtension->UpdateWorkspaceManagerNodeBool(nodeIndex, terminal::workspace::WorkspaceManagerNodeBoolField::ShowInputPanel, toggle.IsOn());
                     }
                 }
             });
@@ -1001,13 +810,9 @@
             useDefinedTitleToggle.Toggled([weakThis{ get_weak() }, nodeIndex](auto&& sender, auto&&) {
                 if (auto self{ weakThis.get() })
                 {
-                    if (auto* current = self->_SelectedWorkspaceForEditing(); current && nodeIndex < current->Nodes.size())
+                    if (const auto toggle = sender.try_as<WUX::Controls::ToggleSwitch>())
                     {
-                        if (const auto toggle = sender.try_as<WUX::Controls::ToggleSwitch>())
-                        {
-                            current->Nodes.at(nodeIndex).UseNodeNameAsTabTitle = toggle.IsOn();
-                            self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
-                        }
+                        self->_workspaceExtension->UpdateWorkspaceManagerNodeBool(nodeIndex, terminal::workspace::WorkspaceManagerNodeBoolField::UseNodeNameAsTabTitle, toggle.IsOn());
                     }
                 }
             });

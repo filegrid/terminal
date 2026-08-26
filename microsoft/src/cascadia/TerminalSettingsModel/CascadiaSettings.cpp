@@ -15,6 +15,7 @@
 #include <shellapi.h>
 #include <til/latch.h>
 #include <til/env.h>
+#include <wil/registry.h>
 
 using namespace winrt::Microsoft::Terminal;
 using namespace winrt::Microsoft::Terminal::Settings;

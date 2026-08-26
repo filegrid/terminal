@@ -1,10 +1,15 @@
-#include "pch.h"
-#include "WorkspaceDiagnosticLog.h"
+#include "../../core/chat/WorkspaceDiagnosticLog.h"
 
 #include "WorkspaceStoragePaths.h"
 
+#include <algorithm>
+#include <cstdlib>
+#include <filesystem>
 #include <fmt/format.h>
-#include <til/unicode.h>
+#include <fmt/xchar.h>
+#include <gsl/gsl>
+#include <wil/result.h>
+#include <wil/resource.h>
 
 #include <mutex>
 namespace terminal::workspacechat
@@ -79,7 +84,7 @@ namespace terminal::workspacechat
 
     std::string DiagnosticUtf8(const std::wstring_view value)
     {
-        return til::u16u8(std::wstring{ value });
+        return winrt::to_string(winrt::hstring{ value });
     }
 
     void AddOptionalDiagnosticString(Json::Value& object, const std::string_view key, const std::wstring_view value)
@@ -180,7 +185,7 @@ namespace terminal::workspacechat
     void AppendExceptionDiagnostic(Json::Value& payload, const std::exception& ex)
     {
         payload["exceptionKind"] = "std_exception";
-        AddDiagnosticTextFields(payload, "message", til::u8u16(std::string_view{ ex.what() }));
+        AddDiagnosticTextFields(payload, "message", winrt::to_hstring(std::string{ ex.what() }).c_str());
     }
 
     void AppendUnknownExceptionDiagnostic(Json::Value& payload)

@@ -5,8 +5,8 @@
 #include "TerminalWindow.h"
 
 #include "AppLogic.h"
-#include "..\..\..\..\src\glue\workspace\WorkspaceHostBridge.h"
-#include "..\..\..\..\src\glue\chat\WorkspaceDiagnosticLog.h"
+#include "..\..\..\..\src\contracts\ExtCoreRuntimeClient.h"
+#include "..\..\..\..\src\core\chat\WorkspaceDiagnosticLog.h"
 
 #include <til/env.h>
 
@@ -151,7 +151,7 @@ namespace winrt::TerminalApp::implementation
     {
         if (const auto windowId = _WindowProperties ? _WindowProperties->WindowId() : 0; windowId != 0)
         {
-            terminal::workspace::RemovePersistedWorkspaceWindowState(windowId);
+            terminal::extcore::RuntimeClient::Shared().RemovePersistedWorkspaceWindowState(windowId);
         }
     }
 

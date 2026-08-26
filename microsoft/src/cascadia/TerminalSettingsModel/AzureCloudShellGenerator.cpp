@@ -9,6 +9,8 @@
 #include "../../inc/DefaultSettings.h"
 #include "DynamicProfileUtils.h"
 
+#include <winrt/Microsoft.Terminal.TerminalConnection.h>
+
 using namespace ::Microsoft::Terminal::Settings::Model;
 using namespace winrt::Microsoft::Terminal::Settings::Model;
 using namespace winrt::Microsoft::Terminal::TerminalConnection;

@@ -318,6 +318,6 @@
     {
         if (_workspaceManagerContent)
         {
-            _workspaceManagerContent->UpdateContent(_BuildWorkspaceManagerContent());
+            _workspaceExtension->UpdateWorkspaceManagerPaneContent(_workspaceManagerContent, _BuildWorkspaceManagerContent());
         }
     }

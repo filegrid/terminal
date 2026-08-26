@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <winrt/Windows.ApplicationModel.Resources.Core.h>
+
 // HEY YOU: When adding ActionArgs types, make sure to add the corresponding
 //          *.g.cpp to ActionArgs.cpp!
 #include "ActionEventArgs.g.h"

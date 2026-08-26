@@ -37,7 +37,6 @@ Author(s):
 #include "consoletaeftemplates.hpp"
 #include "winrtTaefTemplates.hpp"
 
-#include <winrt/Windows.ApplicationModel.Resources.Core.h>
 #include "winrt/Windows.UI.Xaml.Markup.h"
 #include <winrt/Windows.system.h>
 #include <winrt/Windows.Foundation.h>

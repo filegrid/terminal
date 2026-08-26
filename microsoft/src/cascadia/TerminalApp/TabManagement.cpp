@@ -217,10 +217,10 @@ namespace winrt::TerminalApp::implementation
         if (pane)
         {
             auto newTabImpl = winrt::make_self<Tab>(pane);
-            if (_HasPendingWorkspaceNodeInputVisibility())
+            if (_workspaceExtension->HasPendingWorkspaceNodeInputVisibility())
             {
                 newTabImpl->IsWorkspaceNodeTab(true);
-                newTabImpl->ShowWorkspaceInputPanel(_ConsumePendingWorkspaceNodeInputVisibility());
+                newTabImpl->ShowWorkspaceInputPanel(_workspaceExtension->ConsumePendingWorkspaceNodeInputVisibility());
             }
             _ApplyWorkspaceNodeTitlePolicy(newTabImpl);
             _InitializeTab(newTabImpl, insertPosition);

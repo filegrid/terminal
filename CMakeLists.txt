@@ -2377,9 +2377,10 @@ endif()
 set(_msvc_toolset_dir "${_portable_msvc_root}")
 
 set(_workspace_extension_target WorkspaceExtension)
-set(_workspace_extension_output_root "${_openconsole_root}/bin/${PORTABLE_PLATFORM}/$<CONFIG>/WorkspaceExtension")
-set(_workspace_extension_obj_root "${_openconsole_root}/obj/${PORTABLE_PLATFORM}/$<CONFIG>/WorkspaceExtension")
-set(_workspace_extension_generated_root "${_openconsole_root}/obj/${PORTABLE_PLATFORM}/$<CONFIG>/WorkspaceExtension/Generated Files")
+set(_glue_extension_target Glue)
+set(_workspace_extension_output_root "${_openconsole_root}/bin/${PORTABLE_PLATFORM}/$<CONFIG>/Ext")
+set(_workspace_extension_obj_root "${_openconsole_root}/obj/${PORTABLE_PLATFORM}/$<CONFIG>/Ext")
+set(_workspace_extension_generated_root "${_openconsole_root}/obj/${PORTABLE_PLATFORM}/$<CONFIG>/Ext/Generated Files")
 set(_workspace_extension_platform_winmd "${_msvc_toolset_dir}/lib/x86/store/references/platform.winmd")
 set(_workspace_extension_til_feature_header "${_openconsole_root}/bin/Release/inc/TilFeatureStaging.h")
 set(_workspace_extension_themehelpers_lib "${_themehelpers_package_dir}/runtimes/win10-x64/lib/uap10.0/TerminalThemeHelpers.lib")
@@ -3529,9 +3530,7 @@ set(_terminal_settings_model_sources
 )
 list(TRANSFORM _terminal_settings_model_sources PREPEND "${_terminal_settings_model_source_root}/")
 list(APPEND _terminal_settings_model_sources "${_terminal_settings_model_module_cpp}"
-    "${_workspace_root}/src/glue/chat/WorkspaceDiagnosticLog.cpp"
-    "${_workspace_root}/src/core/chat/WorkspaceChatTextHelpers.cpp"
-    "${_workspace_root}/src/core/chat/WorkspaceStoragePaths.cpp")
+    )
 set(_terminal_settings_model_json_root "${_terminal_settings_model_generation_root}/json")
 set(_terminal_settings_model_defaults "${_terminal_settings_model_json_root}/defaults.json")
 set(_terminal_settings_model_user_defaults "${_terminal_settings_model_json_root}/userDefaults.json")
@@ -3588,6 +3587,32 @@ target_include_directories(${_terminal_settings_model_lib_target} PRIVATE
 target_compile_definitions(${_terminal_settings_model_lib_target} PRIVATE _LIB _UNICODE UNICODE WINRT_LEAN_AND_MEAN WT_BRANDING_DEV NDEBUG _WINDOWS EXTERNAL_BUILD _SILENCE_STDEXT_ARR_ITERS_DEPRECATION_WARNING __WRL_NO_DEFAULT_LIB__)
 target_compile_options(${_terminal_settings_model_lib_target} PRIVATE ${_native_product_archive_compile_options} /Zc:preprocessor /bigobj /W3 /wd4702 /wd5104 /wd28204 /wd4201 /wd4312 /wd5105 /wd26434 /wd26445 /wd26456 /wd26478 /wd26494 "/FU${_workspace_extension_platform_winmd}" "/FI${_workspace_extension_til_feature_header}")
 set_target_properties(${_terminal_settings_model_lib_target} PROPERTIES OUTPUT_NAME "Microsoft.Terminal.Settings.Model.Lib" INTERPROCEDURAL_OPTIMIZATION FALSE MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" ARCHIVE_OUTPUT_DIRECTORY "${_terminal_settings_model_lib_output_root}")
+
+# Ext owns WorkspaceModel, but it only needs the startup-action WinRT value
+# implementations. Keep that narrow subset separate from the Settings Model DLL
+# implementation archive: the latter owns DllMain and cannot be linked into a
+# second DLL.
+set(_workspace_ext_settings_support_target WorkspaceExtSettingsSupport)
+add_library(${_workspace_ext_settings_support_target} STATIC EXCLUDE_FROM_ALL
+    "${_terminal_settings_model_source_root}/ActionAndArgs.cpp"
+    "${_terminal_settings_model_source_root}/ActionArgs.cpp"
+    "${_terminal_settings_model_source_root}/init.cpp")
+get_target_property(_settings_model_includes ${_terminal_settings_model_lib_target} INCLUDE_DIRECTORIES)
+get_target_property(_settings_model_definitions ${_terminal_settings_model_lib_target} COMPILE_DEFINITIONS)
+get_target_property(_settings_model_options ${_terminal_settings_model_lib_target} COMPILE_OPTIONS)
+target_compile_features(${_workspace_ext_settings_support_target} PRIVATE cxx_std_20)
+target_precompile_headers(${_workspace_ext_settings_support_target} PRIVATE "${_terminal_settings_model_source_root}/pch.h")
+target_include_directories(${_workspace_ext_settings_support_target} PRIVATE ${_settings_model_includes})
+target_compile_definitions(${_workspace_ext_settings_support_target} PRIVATE
+    ${_settings_model_definitions}
+    WT_SETTINGS_MODEL_NO_DLLMAIN)
+target_compile_options(${_workspace_ext_settings_support_target} PRIVATE ${_settings_model_options})
+set_target_properties(${_workspace_ext_settings_support_target} PROPERTIES
+    OUTPUT_NAME "WorkspaceExtSettingsSupport"
+    INTERPROCEDURAL_OPTIMIZATION FALSE
+    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+    ARCHIVE_OUTPUT_DIRECTORY "${_terminal_settings_model_lib_output_root}")
+
 set_source_files_properties("${_terminal_settings_model_rc}" PROPERTIES GENERATED TRUE)
 add_library(${_terminal_settings_model_target} SHARED "${_terminal_settings_model_rc}" "${_terminal_settings_model_source_root}/dll/Microsoft.Terminal.Settings.Model.def" "${_terminal_settings_model_defaults}" "${_terminal_settings_model_user_defaults}" "${_terminal_settings_model_color_selection}")
 target_link_directories(${_terminal_settings_model_target} PRIVATE "${_workspace_extension_vcpkg_lib_root}" "${_workspace_extension_vcpkg_manual_lib_root}" ${_portable_msvc_lib_dirs})
@@ -4144,7 +4169,7 @@ set(_terminal_app_idl_names
     AboutDialog App Remoting PaletteItemTemplateSelector IPaletteItem ShortcutActionDispatch AppKeyBindings AppLogic
     TerminalWindow MinMaxCloseControl Tab TaskbarState TerminalPage TerminalTabStatus TitlebarControl TabRowControl
     TabHeaderControl HighlightedTextControl ColorPickupFlyout CommandPalette SuggestionsControl FilteredCommand
-    IPaneContent TerminalPaneContent MarkdownPaneContent WorkspaceIconPickerDialog)
+    IPaneContent TerminalPaneContent MarkdownPaneContent)
 set(_terminal_app_idls)
 foreach(_terminal_app_idl_name IN LISTS _terminal_app_idl_names)
     list(APPEND _terminal_app_idls "${_terminal_app_source_root}/${_terminal_app_idl_name}.idl")
@@ -4190,6 +4215,10 @@ endforeach()
 add_custom_command(
     OUTPUT "${_terminal_app_winmd}" "${_terminal_app_module_cpp}" "${_terminal_app_projection_header}"
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${_terminal_app_lib_output_root}" "${_terminal_app_projection_root}"
+    # mdmerge consumes every WinMD in this directory. Remove the obsolete generated
+    # component before merging so a retired RuntimeClass cannot retain an activation
+    # factory after its IDL and implementation have left TerminalApp.
+    COMMAND "${CMAKE_COMMAND}" -E rm -f "${_terminal_app_unmerged_root}/WorkspaceIconPickerDialog.winmd"
     COMMAND "${_portable_mdmerge_path}" -i "${_terminal_app_unmerged_root}" -o "${_terminal_app_lib_output_root}" ${_terminal_app_mdmerge_metadata_args} -partial
     COMMAND "${_cppwinrt_path}" -input "${_terminal_app_winmd}" -reference "${PORTABLE_WINDOWS_TARGET_PLATFORM_VERSION}"
         -reference "${_terminal_connection_winmd}" -reference "${_terminal_control_winmd}" -reference "${_terminal_settings_editor_winmd}"
@@ -4209,7 +4238,7 @@ add_custom_command(
 
 set(_terminal_app_page_names AboutDialog MinMaxCloseControl TerminalPage TitlebarControl TabRowControl TabHeaderControl
     HighlightedTextControlStyle ColorPickupFlyout CommandPalette SuggestionsControl SnippetsPaneContent MarkdownPaneContent
-    WorkspaceSettingsResources WorkspaceIconPickerDialog)
+    WorkspaceSettingsResources)
 set(_terminal_app_xaml_pages)
 set(_terminal_app_xaml_page_args)
 set(_terminal_app_xaml_outputs "${_terminal_app_projection_root}/App.xaml.g.hpp")
@@ -4323,23 +4352,31 @@ set(_terminal_app_sources
     ActionPreviewHandlers.cpp TerminalTabStatus.cpp TitlebarControl.cpp TabRowControl.cpp TabHeaderControl.cpp HighlightedTextControl.cpp
     ColorPickupFlyout.cpp CommandPalette.cpp FilteredCommand.cpp Pane.cpp Pane.LayoutSizeNode.cpp DebugTapConnection.cpp AppKeyBindings.cpp
     ShortcutActionDispatch.cpp AboutDialog.cpp App.cpp AppActionHandlers.cpp AppLogic.cpp ContentManager.cpp TerminalWindow.cpp
-    TerminalPaneContent.cpp ScratchpadContent.cpp SnippetsPaneContent.cpp SettingsPaneContent.cpp WorkspaceManagerPaneContent.cpp
-    Toast.cpp DesktopNotification.cpp TerminalSettingsCache.cpp SuggestionsControl.cpp MarkdownPaneContent.cpp WorkspaceIconPickerDialog.cpp)
+    TerminalPaneContent.cpp ScratchpadContent.cpp SnippetsPaneContent.cpp SettingsPaneContent.cpp
+    Toast.cpp DesktopNotification.cpp TerminalSettingsCache.cpp SuggestionsControl.cpp MarkdownPaneContent.cpp)
 list(TRANSFORM _terminal_app_sources PREPEND "${_terminal_app_source_root}/")
 list(APPEND _terminal_app_sources "${_terminal_app_source_root}/../fzf/fzf.cpp"
     "${_terminal_app_source_root}/../TerminalSettingsModel/Workspace.cpp"
+    "${_workspace_root}/src/contracts/ExtCoreRuntimeClient.cpp"
     "${_workspace_root}/src/glue/workspace/WorkspaceTerminalPageLegacyGlue.cpp"
-    "${_workspace_root}/src/core/chat/TerminalInputHarness.cpp" "${_workspace_root}/src/core/chat/TerminalEventStore.cpp"
-    "${_workspace_root}/src/core/chat/WorkspaceChatController.cpp" "${_workspace_root}/src/core/chat/WorkspaceChatStateHelpers.cpp"
-    "${_workspace_root}/src/core/chat/WorkspaceChatTextHelpers.cpp" "${_workspace_root}/src/glue/chat/WorkspaceDiagnosticLog.cpp"
-    "${_workspace_root}/src/core/chat/WorkspaceChatStore.cpp" "${_workspace_root}/src/core/chat/WorkspaceStoragePaths.cpp"
     "${_terminal_app_module_cpp}" "${_terminal_app_xaml_provider_cpp}" "${_terminal_app_xaml_typeinfo}" "${_terminal_app_xaml_typeinfo_impl}")
-set(_terminal_app_no_pch_sources
-    "${_workspace_root}/src/core/chat/TerminalInputHarness.cpp" "${_workspace_root}/src/core/chat/TerminalEventStore.cpp"
-    "${_workspace_root}/src/core/chat/WorkspaceChatController.cpp" "${_workspace_root}/src/core/chat/WorkspaceChatStateHelpers.cpp"
-    "${_workspace_root}/src/core/chat/WorkspaceChatTextHelpers.cpp" "${_workspace_root}/src/core/chat/WorkspaceChatStore.cpp"
-    "${_workspace_root}/src/core/chat/WorkspaceStoragePaths.cpp")
-set_source_files_properties(${_terminal_app_no_pch_sources} PROPERTIES SKIP_PRECOMPILE_HEADERS TRUE)
+# Workspace.cpp is an intentional include-wrapper for the split workspace
+# implementation. Ninja cannot discover nested textual includes before compiling
+# it, so list them explicitly; otherwise a Glue/Core change can leave the host
+# linked against a stale Workspace.cpp object.
+set_source_files_properties("${_terminal_app_source_root}/../TerminalSettingsModel/Workspace.cpp"
+    PROPERTIES
+        OBJECT_DEPENDS
+            "${_workspace_root}/src/glue/workspace/WorkspaceModel.cpp;${_workspace_root}/src/core/workspace/WorkspaceCore.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreManagerStorage.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreNavigation.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreEditor.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreEditorState.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreLaunch.cpp;${_workspace_root}/src/core/workspace/WorkspaceCorePersistence.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreRuntime.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreRuntimeOps.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreStateManager.cpp;${_workspace_root}/src/core/workspace/deprecated/WorkspaceCaptureDeprecated.cpp;${_workspace_root}/src/glue/workspace/WorkspacePaletteHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeConversionHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeEditorStateMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeStartupMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadePersistenceMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceUtilityHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceStartupColorLogic.cpp"
+)
+# The legacy page is likewise a single intentional aggregation TU. Track its
+# implementation fragments explicitly so an edited Glue fragment cannot be
+# silently omitted from an incremental TerminalApp build.
+set_source_files_properties("${_workspace_root}/src/glue/workspace/WorkspaceTerminalPageLegacyGlue.cpp"
+    PROPERTIES
+        OBJECT_DEPENDS
+            "${_terminal_app_source_root}/WorkspacePageLegacyCppIncludes.h;${_terminal_app_source_root}/WorkspacePageLegacyPrelude.inc;${_terminal_app_source_root}/WorkspacePageLegacyGlue.inc;${_workspace_root}/src/glue/workspace/WorkspaceTerminalGlue.cpp;${_workspace_root}/src/glue/workspace/WorkspaceUiStateGlue.cpp;${_workspace_root}/src/glue/chat/WorkspaceChatDispatchGlue.cpp;${_workspace_root}/src/glue/chat/WorkspaceChatTerminalGlue.cpp;${_workspace_root}/src/glue/workspace/WorkspaceSaveRuntimeGlue.cpp;${_workspace_root}/src/glue/workspace/WorkspaceEditorGlue.cpp;${_workspace_root}/src/glue/workspace/WorkspaceManagerIconPickerGlue.cpp;${_workspace_root}/src/glue/workspace/WorkspaceManagerEditorPanels.cpp;${_workspace_root}/src/glue/workspace/WorkspaceManagerContentGlue.cpp;${_workspace_root}/src/glue/workspace/WorkspaceSaverGlue.cpp;${_workspace_root}/src/glue/workspace/WorkspaceLaunchRuntimeGlue.cpp;${_workspace_root}/src/glue/workspace/WorkspaceCreateGlue.cpp"
+)
 set_source_files_properties("${_terminal_app_module_cpp}" "${_terminal_app_xaml_provider_cpp}" "${_terminal_app_xaml_typeinfo}" "${_terminal_app_xaml_typeinfo_impl}" "${_terminal_app_pri}" PROPERTIES GENERATED TRUE)
 add_library(${_terminal_app_lib_target} STATIC ${_terminal_app_sources} "${_terminal_app_reference_header}" "${_terminal_app_pri}")
 add_dependencies(${_terminal_app_lib_target} TerminalAppXaml ${_terminal_settings_adapter_target})
@@ -4434,14 +4471,7 @@ set(_windows_terminal_sources
     "${_windows_terminal_source_root}/AppHost.cpp" "${_windows_terminal_source_root}/IslandWindow.cpp"
     "${_windows_terminal_source_root}/NonClientIslandWindow.cpp" "${_windows_terminal_source_root}/VirtualDesktopUtils.cpp"
     "${_windows_terminal_source_root}/WindowEmperor.cpp" "${_windows_terminal_source_root}/icon.cpp"
-    "${_windows_terminal_source_root}/WindowsTerminal.rc"
-    "${_workspace_root}/src/glue/chat/WorkspaceDiagnosticLog.cpp"
-    "${_workspace_root}/src/core/chat/WorkspaceChatTextHelpers.cpp"
-    "${_workspace_root}/src/core/chat/WorkspaceStoragePaths.cpp")
-set_source_files_properties(
-    "${_workspace_root}/src/core/chat/WorkspaceChatTextHelpers.cpp"
-    "${_workspace_root}/src/core/chat/WorkspaceStoragePaths.cpp"
-    PROPERTIES SKIP_PRECOMPILE_HEADERS TRUE)
+    "${_windows_terminal_source_root}/WindowsTerminal.rc")
 add_executable(${_windows_terminal_target} WIN32 ${_windows_terminal_sources})
 add_dependencies(${_windows_terminal_target} ${_terminal_app_target} windows-terminal-xaml-runtime windows-terminal-unpackaged-resources)
 target_compile_features(${_windows_terminal_target} PRIVATE cxx_std_20)
@@ -5001,24 +5031,22 @@ add_custom_target(ext-build-version
     DEPENDS "${_ext_generated_version_header}"
 )
 
+# AboutDialog includes this generated value directly. Keep the generation edge
+# explicit so a shared build-tree clean cannot leave TerminalApp with a missing
+# header; this is a file-generation dependency, not a TerminalApp -> Ext link.
+add_dependencies(${_terminal_app_lib_target} ext-build-version)
+
 add_library(${_workspace_extension_target} SHARED
-    "${_workspace_root}/src/glue/workspace/WorkspaceTerminalPageExtension.cpp"
     "${_workspace_root}/src/glue/workspace/dll/WorkspaceModelWrapper.cpp"
-    "${_workspace_root}/src/core/chat/TerminalInputHarness.cpp"
-    "${_workspace_root}/src/core/chat/TerminalEventStore.cpp"
-    "${_workspace_root}/src/core/chat/WorkspaceChatController.cpp"
-    "${_workspace_root}/src/core/chat/WorkspaceChatStateHelpers.cpp"
-    "${_workspace_root}/src/core/chat/WorkspaceChatTextHelpers.cpp"
-    "${_workspace_root}/src/glue/chat/WorkspaceDiagnosticLog.cpp"
-    "${_workspace_root}/src/core/chat/WorkspaceChatStore.cpp"
-    "${_workspace_root}/src/core/chat/WorkspaceStoragePaths.cpp"
+    "${_workspace_root}/src/core/workspace/ExtCoreApi.cpp"
+    "${_workspace_root}/src/core/workspace/ExtActionNameFallback.cpp"
 )
 
 set_source_files_properties(
     "${_workspace_root}/src/glue/workspace/dll/WorkspaceModelWrapper.cpp"
     PROPERTIES
         OBJECT_DEPENDS
-            "${_workspace_root}/src/glue/workspace/WorkspaceApi.h;${_workspace_root}/src/glue/workspace/WorkspaceDataTypes.h;${_workspace_root}/src/glue/workspace/WorkspaceRuntimeTypes.h;${_workspace_root}/src/glue/workspace/WorkspaceEditorTypes.h;${_workspace_root}/src/glue/workspace/WorkspaceModel.cpp;${_workspace_root}/src/core/workspace/WorkspaceCore.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreManagerStorage.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreNavigation.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreEditor.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreEditorState.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreLaunch.cpp;${_workspace_root}/src/core/workspace/WorkspaceCorePersistence.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreRuntime.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreRuntimeOps.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreStateManager.cpp;${_workspace_root}/src/core/workspace/deprecated/WorkspaceCaptureDeprecated.cpp;${_workspace_root}/src/glue/workspace/WorkspacePaletteHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeConversionHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeEditorStateMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeStartupMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadePersistenceMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceUtilityHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceStartupColorLogic.cpp;${_workspace_root}/src/glue/workspace/WorkspaceTerminalPageLegacyGlue.cpp;${_workspace_root}/src/glue/workspace/TerminalPageWorkspacePrelude.cpp;${_workspace_root}/src/glue/workspace/TerminalPageWorkspaceGlue.cpp;${_workspace_root}/src/glue/workspace/WorkspaceTerminalGlue.cpp;${_workspace_root}/src/glue/workspace/WorkspaceUiStateGlue.cpp;${_workspace_root}/src/glue/workspace/WorkspaceSaveRuntimeGlue.cpp;${_workspace_root}/src/glue/workspace/WorkspaceEditorGlue.cpp;${_workspace_root}/src/glue/workspace/WorkspaceManagerIconPickerGlue.cpp;${_workspace_root}/src/glue/workspace/WorkspaceManagerEditorPanels.cpp;${_workspace_root}/src/glue/workspace/WorkspaceManagerContentGlue.cpp;${_workspace_root}/src/glue/workspace/WorkspaceSaverGlue.cpp;${_workspace_root}/src/glue/workspace/WorkspaceLaunchRuntimeGlue.cpp;${_workspace_root}/src/glue/workspace/WorkspaceCreateGlue.cpp;${_workspace_root}/src/core/chat/WorkspaceChatTextHelpers.cpp;${_workspace_root}/src/glue/chat/WorkspaceChatDispatchGlue.cpp;${_workspace_root}/src/glue/chat/WorkspaceChatTerminalGlue.cpp;${_workspace_root}/src/glue/chat/WorkspaceChatTopLevelHelpers.cpp"
+            "${_workspace_root}/src/core/workspace/ExtCoreApi.h;${_workspace_root}/src/glue/workspace/WorkspaceApi.h;${_workspace_root}/src/glue/workspace/WorkspaceDataTypes.h;${_workspace_root}/src/glue/workspace/WorkspaceRuntimeTypes.h;${_workspace_root}/src/glue/workspace/WorkspaceEditorTypes.h;${_workspace_root}/src/glue/workspace/WorkspaceModel.cpp;${_workspace_root}/src/core/workspace/WorkspaceCore.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreManagerStorage.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreNavigation.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreEditor.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreEditorState.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreLaunch.cpp;${_workspace_root}/src/core/workspace/WorkspaceCorePersistence.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreRuntime.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreRuntimeOps.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreStateManager.cpp;${_workspace_root}/src/core/workspace/deprecated/WorkspaceCaptureDeprecated.cpp;${_workspace_root}/src/glue/workspace/WorkspacePaletteHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeConversionHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeEditorStateMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeStartupMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadePersistenceMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceUtilityHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceStartupColorLogic.cpp"
 )
 
 target_compile_features(${_workspace_extension_target} PRIVATE cxx_std_20)
@@ -5033,27 +5061,11 @@ target_include_directories(${_workspace_extension_target} PRIVATE
     "${_workspace_extension_generated_root}"
     "${_workspace_extension_obj_root}"
     "${_openconsole_root}/src/cascadia"
-    "${_openconsole_root}/src/cascadia/TerminalApp"
-    "${_openconsole_root}/src/cascadia/TerminalApp/Generated Files"
-    "${_openconsole_root}/src/cascadia/WindowsTerminal/Generated Files"
-    "${_openconsole_root}/src/cascadia/WindowsTerminal/Generated Files/winrt"
-    "${_openconsole_root}/src/cascadia/TerminalControl"
-    "${_openconsole_root}/src/cascadia/TerminalControl/Generated Files"
-    "${_openconsole_root}/src/cascadia/TerminalControl/Generated Files/winrt"
-    "${_openconsole_root}/src/cascadia/TerminalControl/dll/Generated Files"
-    "${_openconsole_root}/src/cascadia/TerminalControl/dll/Generated Files/winrt"
     "${_openconsole_root}/src/cascadia/TerminalSettingsModel"
     "${_openconsole_root}/src/cascadia/TerminalSettingsModel/Generated Files"
     "${_openconsole_root}/src/cascadia/TerminalSettingsModel/Generated Files/winrt"
     "${_openconsole_root}/src/cascadia/TerminalSettingsModel/dll/Generated Files"
     "${_openconsole_root}/src/cascadia/TerminalSettingsModel/dll/Generated Files/winrt"
-    "${_openconsole_root}/src/cascadia/TerminalSettingsAppAdapterLib"
-    "${_openconsole_root}/src/cascadia/TerminalSettingsAppAdapterLib/Generated Files"
-    "${_openconsole_root}/src/cascadia/TerminalSettingsAppAdapterLib/Generated Files/winrt"
-    "${_openconsole_root}/src/cascadia/UIHelpers/Generated Files"
-    "${_openconsole_root}/src/cascadia/UIHelpers/Generated Files/winrt"
-    "${_openconsole_root}/src/cascadia/UIMarkdown/Generated Files"
-    "${_openconsole_root}/src/cascadia/UIMarkdown/Generated Files/winrt"
     "${_openconsole_root}/src/inc"
     "${_openconsole_root}/dep"
     "${_openconsole_root}/dep/Console"
@@ -5073,6 +5085,7 @@ target_compile_definitions(${_workspace_extension_target} PRIVATE
     _WINDLL
     UNICODE
     WT_WORKSPACE_EXTENSION_EXPORTS
+    WT_EXT_CORE_BUILD
     _WINRT_DLL
     WINRT_LEAN_AND_MEAN
     WT_BRANDING_DEV
@@ -5144,28 +5157,17 @@ target_link_directories(${_workspace_extension_target} PRIVATE
 )
 
 target_link_libraries(${_workspace_extension_target} PRIVATE
-    "${_workspace_extension_themehelpers_lib}"
+    # WorkspaceModel is compiled into Ext, but its startup-action value types
+    # are implemented by a DllMain-free subset of Settings Model.
+    ${_workspace_ext_settings_support_target}
     ${_types_target}
-    "${_workspace_extension_release_root}/ConProps.lib"
     "${_workspace_extension_release_root}/WinRTUtils/WinRTUtils.lib"
-    "${_workspace_extension_release_root}/TerminalSettingsAppAdapterLib/TerminalSettingsAppAdapterLib.lib"
-    "${_workspace_extension_release_root}/TerminalConnection/TerminalConnection.lib"
-    "${_workspace_extension_release_root}/Microsoft.Terminal.Control/Microsoft.Terminal.Control.lib"
     "${_workspace_extension_release_root}/Microsoft.Terminal.Settings.Model/Microsoft.Terminal.Settings.Model.lib"
-    "${_workspace_extension_release_root}/Microsoft.Terminal.Settings.Editor/Microsoft.Terminal.Settings.Editor.lib"
-    "${_workspace_extension_release_root}/Microsoft.Terminal.UI/Microsoft.Terminal.UI.lib"
-    "${_workspace_extension_release_root}/Microsoft.Terminal.UI.Markdown/Microsoft.Terminal.UI.Markdown.lib"
     ${_workspace_extension_vcpkg_libs}
     onecoreuap_apiset
-    d3dcompiler
-    dwmapi
-    uxtheme
     shlwapi
     ntdll
     WindowsApp
-    User32
-    shell32
-    WinMM
 )
 
 target_link_options(${_workspace_extension_target} PRIVATE
@@ -5190,7 +5192,7 @@ target_link_options(${_workspace_extension_target} PRIVATE
 )
 
 set_target_properties(${_workspace_extension_target} PROPERTIES
-    OUTPUT_NAME "WorkspaceExtension"
+    OUTPUT_NAME "Ext"
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
@@ -5200,6 +5202,97 @@ set_target_properties(${_workspace_extension_target} PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${_workspace_extension_output_root}"
     ARCHIVE_OUTPUT_DIRECTORY "${_workspace_extension_output_root}"
 )
+
+# Glue is the generic page-plugin container. New feature pages live under src/glue
+# and are loaded by TerminalApp through this DLL; Ext remains page-free core.
+add_library(${_glue_extension_target} SHARED
+    "${_workspace_root}/src/glue/workspace/WorkspaceTerminalPageExtension.cpp"
+    "${_workspace_root}/src/glue/workspace/WorkspaceExtLoader.cpp"
+      "${_workspace_root}/src/glue/workspace/WorkspaceManagerDeleteConfirmationDialog.cpp"
+      "${_workspace_root}/src/glue/workspace/WorkspaceManagerColorPickerDialog.cpp"
+      "${_workspace_root}/src/glue/workspace/WorkspaceManagerIconPickerDialog.cpp"
+      "${_workspace_root}/src/glue/workspace/WorkspaceManagerPathPicker.cpp"
+      "${_workspace_root}/src/glue/workspace/WorkspaceManagerProfilePicker.cpp"
+      "${_openconsole_root}/src/cascadia/TerminalApp/WorkspaceManagerPaneContent.cpp"
+)
+get_target_property(_ext_core_includes ${_workspace_extension_target} INCLUDE_DIRECTORIES)
+get_target_property(_ext_core_definitions ${_workspace_extension_target} COMPILE_DEFINITIONS)
+get_target_property(_ext_core_options ${_workspace_extension_target} COMPILE_OPTIONS)
+get_target_property(_ext_core_link_options ${_workspace_extension_target} LINK_OPTIONS)
+
+# Pure chat/storage implementation is shared by Glue and the remaining legacy
+# host glue. Compile it once instead of adding the same translation units to
+# both targets; it contains no TerminalPage, XAML, or Ext page dependency.
+set(_workspace_chat_core_target WorkspaceChatCore)
+set(_workspace_chat_core_sources
+    "${_workspace_root}/src/core/chat/TerminalInputHarness.cpp"
+    "${_workspace_root}/src/core/chat/TerminalEventStore.cpp"
+    "${_workspace_root}/src/core/chat/WorkspaceChatController.cpp"
+    "${_workspace_root}/src/core/chat/WorkspaceChatStateHelpers.cpp"
+    "${_workspace_root}/src/core/chat/WorkspaceChatTextHelpers.cpp"
+    "${_workspace_root}/src/core/chat/WorkspaceChatStore.cpp"
+    "${_workspace_root}/src/core/chat/WorkspaceStoragePaths.cpp"
+    "${_workspace_root}/src/glue/chat/WorkspaceDiagnosticLog.cpp")
+add_library(${_workspace_chat_core_target} STATIC ${_workspace_chat_core_sources})
+target_compile_features(${_workspace_chat_core_target} PRIVATE cxx_std_20)
+target_include_directories(${_workspace_chat_core_target} PRIVATE
+    ${_ext_core_includes}
+    "${_workspace_root}/src/core/chat"
+    "${_workspace_root}/src/glue/chat"
+    "${_workspace_root}/src/glue/workspace")
+target_compile_definitions(${_workspace_chat_core_target} PRIVATE ${_ext_core_definitions})
+target_compile_options(${_workspace_chat_core_target} PRIVATE ${_ext_core_options})
+set_source_files_properties(${_workspace_chat_core_sources} PROPERTIES SKIP_PRECOMPILE_HEADERS TRUE)
+set_target_properties(${_workspace_chat_core_target} PROPERTIES
+    CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF EXCLUDE_FROM_ALL YES
+    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+    ARCHIVE_OUTPUT_DIRECTORY "${_workspace_extension_output_root}")
+target_compile_features(${_glue_extension_target} PRIVATE cxx_std_20)
+target_precompile_headers(${_glue_extension_target} PRIVATE
+    "$<$<COMPILE_LANGUAGE:CXX>:${_workspace_root}/src/glue/workspace/dll/pch.h>")
+target_include_directories(${_glue_extension_target} PRIVATE
+    ${_ext_core_includes}
+    "${_openconsole_root}/src/cascadia/TerminalApp"
+    "${_openconsole_root}/src/cascadia/TerminalApp/Generated Files"
+    "${_openconsole_root}/src/cascadia/TerminalControl"
+    "${_openconsole_root}/src/cascadia/TerminalControl/Generated Files"
+    "${_openconsole_root}/src/cascadia/TerminalControl/Generated Files/winrt"
+    "${_openconsole_root}/src/cascadia/TerminalControl/dll/Generated Files"
+    "${_openconsole_root}/src/cascadia/TerminalControl/dll/Generated Files/winrt"
+    "${_openconsole_root}/src/cascadia/TerminalSettingsAppAdapterLib"
+    "${_openconsole_root}/src/cascadia/TerminalSettingsAppAdapterLib/Generated Files"
+    "${_openconsole_root}/src/cascadia/TerminalSettingsAppAdapterLib/Generated Files/winrt"
+    "${_workspace_root}/src/core/chat"
+    "${_workspace_root}/src/glue/chat"
+    "${_workspace_root}/src/glue/workspace")
+target_compile_definitions(${_glue_extension_target} PRIVATE ${_ext_core_definitions})
+target_compile_options(${_glue_extension_target} PRIVATE ${_ext_core_options})
+target_link_directories(${_glue_extension_target} PRIVATE
+    "${_workspace_extension_vcpkg_lib_root}" "${_workspace_extension_vcpkg_manual_lib_root}" ${_portable_msvc_lib_dirs})
+target_link_libraries(${_glue_extension_target} PRIVATE
+    ${_workspace_chat_core_target} "${_workspace_extension_themehelpers_lib}" ${_workspace_ext_settings_support_target} ${_types_target}
+    "${_workspace_extension_release_root}/ConProps.lib"
+    "${_workspace_extension_release_root}/WinRTUtils/WinRTUtils.lib"
+    "${_workspace_extension_release_root}/TerminalSettingsAppAdapterLib/TerminalSettingsAppAdapterLib.lib"
+    "${_workspace_extension_release_root}/TerminalConnection/TerminalConnection.lib"
+    "${_workspace_extension_release_root}/Microsoft.Terminal.Control/Microsoft.Terminal.Control.lib"
+    "${_workspace_extension_release_root}/Microsoft.Terminal.Settings.Model/Microsoft.Terminal.Settings.Model.lib"
+    "${_workspace_extension_release_root}/Microsoft.Terminal.Settings.Editor/Microsoft.Terminal.Settings.Editor.lib"
+    "${_workspace_extension_release_root}/Microsoft.Terminal.UI/Microsoft.Terminal.UI.lib"
+    "${_workspace_extension_release_root}/Microsoft.Terminal.UI.Markdown/Microsoft.Terminal.UI.Markdown.lib"
+    ${_workspace_extension_vcpkg_libs} onecoreuap_apiset d3dcompiler dwmapi uxtheme shlwapi ntdll WindowsApp User32 shell32 WinMM)
+target_link_options(${_glue_extension_target} PRIVATE ${_ext_core_link_options})
+# WindowsTerminal links TerminalAppLib directly as well as TerminalApp.dll, so
+# propagate the core archive from the static host library to every final linker.
+target_link_libraries(${_terminal_app_lib_target} PUBLIC ${_workspace_chat_core_target})
+target_link_libraries(${_terminal_settings_model_target} PRIVATE ${_workspace_chat_core_target})
+target_link_libraries(${_windows_terminal_target} PRIVATE ${_workspace_chat_core_target})
+set_target_properties(${_glue_extension_target} PROPERTIES
+    OUTPUT_NAME "Glue" CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF EXCLUDE_FROM_ALL YES
+    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+    RUNTIME_OUTPUT_DIRECTORY "${_workspace_extension_output_root}"
+    LIBRARY_OUTPUT_DIRECTORY "${_workspace_extension_output_root}"
+    ARCHIVE_OUTPUT_DIRECTORY "${_workspace_extension_output_root}")
 
 set(_portable_tool_source "${_workspace_root}/src/glue/portable/PortablePackageTool/Program.cs")
 set(_portable_tool_global_usings "${_workspace_root}/src/glue/portable/PortablePackageTool/GlobalUsings.cs")
@@ -5445,6 +5538,12 @@ set_property(TARGET ${_workspace_extension_target} PROPERTY RULE_LAUNCH_COMPILE
 set_property(TARGET ${_workspace_extension_target} PROPERTY RULE_LAUNCH_LINK
     "\"${CMAKE_COMMAND}\" -DSTEP_NAME=workspace-extension-link -P \"${_portable_timed_command_script}\" --"
 )
+set_property(TARGET ${_glue_extension_target} PROPERTY RULE_LAUNCH_COMPILE
+    "\"${CMAKE_COMMAND}\" -DSTEP_NAME=glue-extension-compile -P \"${_portable_timed_command_script}\" --"
+)
+set_property(TARGET ${_glue_extension_target} PROPERTY RULE_LAUNCH_LINK
+    "\"${CMAKE_COMMAND}\" -DSTEP_NAME=glue-extension-link -P \"${_portable_timed_command_script}\" --"
+)
 
 add_custom_target(full
     COMMAND ${CMAKE_COMMAND}
@@ -5496,11 +5595,11 @@ add_custom_target(full
         /p "${_portable_terminal_package}"
         /o
     COMMAND ${CMAKE_COMMAND}
-        -DSTEP_NAME=workspace-extension-full
+        -DSTEP_NAME=extension-containers-full
         -DSTEP_WORKING_DIRECTORY=${_workspace_root}
         -P "${_portable_timed_command_script}"
         --
-        "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}" --config "$<CONFIG>" --target "${_workspace_extension_target}"
+        "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}" --config "$<CONFIG>" --target "${_workspace_extension_target}" "${_glue_extension_target}"
     COMMAND ${CMAKE_COMMAND}
         -DSTEP_NAME=full-repack
         -DSTEP_WORKING_DIRECTORY=${_workspace_root}
@@ -5516,7 +5615,7 @@ add_custom_target(full
         --makepri-path "${_makepri_path_native}"
         --roslyn-path "${_dotnet_csc_path_native}"
         --framework-reference-path "${_net472_reference_path_native}"
-        --workspace-extension-output-dir "${_openconsole_bin_root_native_base}/$<CONFIG>/WorkspaceExtension"
+        --workspace-extension-output-dir "${_openconsole_bin_root_native_base}/$<CONFIG>/Ext"
         --single-file-output
         --portable-mode
     DEPENDS
@@ -5544,12 +5643,13 @@ add_custom_target(ext ALL
         --makepri-path "${_makepri_path_native}"
         --roslyn-path "${_dotnet_csc_path_native}"
         --framework-reference-path "${_net472_reference_path_native}"
-        --workspace-extension-output-dir "${_openconsole_bin_root_native_base}/$<CONFIG>/WorkspaceExtension"
+        --workspace-extension-output-dir "${_openconsole_bin_root_native_base}/$<CONFIG>/Ext"
         --single-file-output
         --portable-mode
     DEPENDS
         portable-package-tool
         ${_workspace_extension_target}
+        ${_glue_extension_target}
     USES_TERMINAL
     VERBATIM
     COMMENT "Packaging final bin artifacts into ${_portable_output_root} from ext-only changes"

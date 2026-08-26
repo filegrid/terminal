@@ -450,26 +450,12 @@
 
         for (size_t i = 0; i < actions.size(); ++i)
         {
-            if (_ShouldSkipWorkspaceStartupAction(actions[i], actions, i))
+            if (_workspaceExtension->ShouldSkipStartupAction(actions[i], actions, i))
             {
                 continue;
             }
 
             _actionDispatch->DoAction(actions[i]);
-        }
-    }
-
-    void TerminalPage::_ApplyWorkspaceNodeIcon(const size_t nodeIndex)
-    {
-        const auto* workspace = _SelectedCurrentWorkspaceForEditingPtr();
-        if (!workspace || nodeIndex >= workspace->Nodes.size())
-        {
-            return;
-        }
-
-        if (const auto tabImpl = _GetWorkspaceBackedTabByNodeIndex(nodeIndex))
-        {
-            _UpdateTabIcon(*tabImpl);
         }
     }
 

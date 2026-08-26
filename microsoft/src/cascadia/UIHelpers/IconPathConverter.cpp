@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include <mutex>
+#include <winrt/Windows.Graphics.Imaging.h>
 #include <winrt/Windows.Storage.h>
 #include <til/unicode.h>
 #include <unordered_map>

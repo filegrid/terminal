@@ -24,18 +24,10 @@
 #endif
 
 #include <wil/cppwinrt.h>
-#include <wil/registry.h>
 
-#include <winrt/Windows.ApplicationModel.AppExtensions.h>
-#include <winrt/Windows.ApplicationModel.Resources.Core.h>
 #include <winrt/Windows.ApplicationModel.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Foundation.h>
-#include <winrt/Windows.Storage.h>
-#include <winrt/Windows.Storage.Streams.h>
-#include <winrt/Windows.System.h>
-#include <winrt/Windows.UI.Core.h>
-#include <winrt/Windows.UI.ViewManagement.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 
@@ -43,7 +35,6 @@
 
 #include <winrt/Microsoft.Terminal.Core.h>
 #include <winrt/Microsoft.Terminal.Control.h>
-#include <winrt/Microsoft.Terminal.TerminalConnection.h>
 
 // Including TraceLogging essentials for the binary
 #include <TraceLoggingProvider.h>
@@ -59,8 +50,6 @@ TRACELOGGING_DECLARE_PROVIDER(g_hSettingsModelProvider);
 #include "til.h"
 #include <til/winrt.h>
 
-#include <til/mutex.h>
-#include <til/throttled_func.h>
 
 #include <cppwinrt_utils.h>
 #include <wil/cppwinrt_helpers.h> // must go after the CoreDispatcher type is defined

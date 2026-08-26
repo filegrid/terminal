@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 #include "pch.h"
+#include <winrt/Windows.Foundation.Collections.h>
 #include "CodeBlock.h"
 #include "MarkdownToXaml.h"
 

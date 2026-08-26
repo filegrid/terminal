@@ -49,10 +49,6 @@
 #include <winrt/Windows.UI.Xaml.Media.h>
 #include <winrt/Windows.UI.Xaml.Media.Imaging.h>
 #include <winrt/Windows.UI.Xaml.Media.Animation.h>
-#include <winrt/Windows.Media.h>
-#include <winrt/Windows.Media.Core.h>
-#include <winrt/Windows.Media.Playback.h>
-#include <winrt/Windows.Management.Deployment.h>
 
 #include <winrt/Windows.UI.Notifications.h>
 #include <winrt/Windows.Data.Xml.Dom.h>
@@ -69,10 +65,7 @@
 #include <winrt/Microsoft.Terminal.UI.h>
 #include <winrt/Microsoft.Terminal.UI.Markdown.h>
 
-#include <winrt/Windows.Services.Store.h>
 #include <winrt/Windows.Storage.h>
-#include <winrt/Windows.Storage.Provider.h>
-#include <winrt/Windows.Storage.Pickers.h>
 
 #include <windows.ui.xaml.media.dxinterop.h>
 

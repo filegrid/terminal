@@ -8,6 +8,8 @@
 #include <shlobj.h>
 #include <til/latch.h>
 #include <til/io.h>
+#include <winrt/Windows.ApplicationModel.AppExtensions.h>
+#include <winrt/Windows.Storage.h>
 
 #include "resource.h"
 

@@ -1,7 +1,6 @@
 #include "WorkspaceCore.h"
 
 #include "WorkspacePersistencePaths.h"
-#include "../../glue/chat/WorkspaceDiagnosticLog.h"
 
 #include <algorithm>
 #include <array>

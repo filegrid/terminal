@@ -1,8 +1,3 @@
-    void TerminalPage::_OpenWorkspaceSaver()
-    {
-        // Definitions are created only through the workspace manager.
-    }
-
     std::wstring TerminalPage::_SuggestedWorkspaceSaveName() const
     {
         const auto manager = Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::Load();
