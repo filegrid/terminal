@@ -303,12 +303,55 @@ internal sealed class Program
                 OverlayTerminalUiRuntime(archive, terminalDirectoryName);
                 OverlayWorkspaceSpriteResources(archive, terminalDirectoryName, outputDirectory);
                 OverlayMergedIconAtlases(archive, terminalDirectoryName, outputDirectory);
+                OverlayWebResources(archive, terminalDirectoryName);
+                OverlayWebView2Loader(archive, terminalDirectoryName);
                 return;
             }
 
             OverlayTerminalUiRuntime(archive, terminalDirectoryName);
             OverlayWorkspaceSpriteResources(archive, terminalDirectoryName, string.Empty);
             OverlayMergedIconAtlases(archive, terminalDirectoryName, string.Empty);
+            OverlayWebResources(archive, terminalDirectoryName);
+            OverlayWebView2Loader(archive, terminalDirectoryName);
+        }
+
+        private void OverlayWebResources(ZipArchive archive, string terminalDirectoryName)
+        {
+            var sourceDirectory = Path.Combine(_options.SourceRoot, "res", "web");
+            if (!Directory.Exists(sourceDirectory))
+            {
+                return;
+            }
+
+            foreach (var file in Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+            {
+                var relativePath = Path.GetRelativePath(sourceDirectory, file).Replace('\\', '/');
+                var entryName = $"{terminalDirectoryName}/res/web/{relativePath}";
+                archive.GetEntry(entryName)?.Delete();
+                archive.CreateEntryFromFile(file, entryName, CompressionLevel.Optimal);
+            }
+        }
+
+        private void OverlayWebView2Loader(ZipArchive archive, string terminalDirectoryName)
+        {
+            var sourceDirectory = Path.Combine(
+                _options.SourceRoot,
+                "microsoft",
+                "packages",
+                "Microsoft.Web.WebView2.1.0.1661.34",
+                "runtimes",
+                "win-" + _options.Platform,
+                "native");
+            UpdateZipEntryIfPresent(archive, sourceDirectory, terminalDirectoryName, "WebView2Loader.dll");
+            var uapSourceDirectory = Path.Combine(
+                _options.SourceRoot,
+                "microsoft",
+                "packages",
+                "Microsoft.Web.WebView2.1.0.1661.34",
+                "runtimes",
+                "win-" + _options.Platform,
+                "native_uap");
+            UpdateZipEntryIfPresent(archive, uapSourceDirectory, terminalDirectoryName, "Microsoft.Web.WebView2.Core.dll");
         }
 
         private void OverlayTerminalUiRuntime(ZipArchive archive, string terminalDirectoryName)

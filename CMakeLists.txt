@@ -2937,10 +2937,10 @@ add_custom_command(
 set(_ui_helpers_svg_stamp "${_ui_helpers_generation_root}/workspace-svg.stamp")
 add_custom_command(
     OUTPUT "${_ui_helpers_svg_stamp}"
-    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${_workspace_root}/tools/Generate-WorkspaceSvgIcons.ps1" -OutputRoot "${_workspace_root}/bin/res/workspace-icons"
+    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${_workspace_root}/tools/workspace-icons/Generate-WorkspaceSvgIcons.ps1" -OutputRoot "${_workspace_root}/bin/res/workspace-icons"
     COMMAND "${CMAKE_COMMAND}" -E copy_directory "${_workspace_root}/bin/res/workspace-icons" "${_ui_helpers_output_root}/res/workspace-icons"
     COMMAND "${CMAKE_COMMAND}" -E touch "${_ui_helpers_svg_stamp}"
-    DEPENDS "${_workspace_root}/tools/Generate-WorkspaceSvgIcons.ps1"
+    DEPENDS "${_workspace_root}/tools/workspace-icons/Generate-WorkspaceSvgIcons.ps1"
     VERBATIM
     COMMENT "Generating and copying UIHelpers workspace SVG resources"
 )
@@ -5294,18 +5294,18 @@ set_target_properties(${_glue_extension_target} PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${_workspace_extension_output_root}"
     ARCHIVE_OUTPUT_DIRECTORY "${_workspace_extension_output_root}")
 
-set(_portable_tool_source "${_workspace_root}/src/glue/portable/PortablePackageTool/Program.cs")
-set(_portable_tool_global_usings "${_workspace_root}/src/glue/portable/PortablePackageTool/GlobalUsings.cs")
-set(_portable_manifest_tool_source "${_workspace_root}/src/glue/portable/PortablePackageTool/ProductManifestGenerator.cs")
-set(_portable_pri_tool_source "${_workspace_root}/src/glue/portable/PortablePackageTool/ProductPriGenerator.cs")
-set(_portable_package_map_tool_source "${_workspace_root}/src/glue/portable/PortablePackageTool/ProductPackageMapGenerator.cs")
-set(_portable_tool_runtimeconfig_source "${_workspace_root}/src/glue/portable/PortablePackageTool/PortablePackageTool.runtimeconfig.json")
+set(_portable_tool_source "${_workspace_root}/tools/portable/PortablePackageTool/Program.cs")
+set(_portable_tool_global_usings "${_workspace_root}/tools/portable/PortablePackageTool/GlobalUsings.cs")
+set(_portable_manifest_tool_source "${_workspace_root}/tools/portable/PortablePackageTool/ProductManifestGenerator.cs")
+set(_portable_pri_tool_source "${_workspace_root}/tools/portable/PortablePackageTool/ProductPriGenerator.cs")
+set(_portable_package_map_tool_source "${_workspace_root}/tools/portable/PortablePackageTool/ProductPackageMapGenerator.cs")
+set(_portable_tool_runtimeconfig_source "${_workspace_root}/tools/portable/PortablePackageTool/PortablePackageTool.runtimeconfig.json")
 set(_portable_tool_output_dir "${CMAKE_BINARY_DIR}/portable-package-tool")
 set(_portable_tool_dll "${_portable_tool_output_dir}/PortablePackageTool.dll")
 set(_portable_tool_pdb "${_portable_tool_output_dir}/PortablePackageTool.pdb")
 set(_portable_tool_runtimeconfig "${_portable_tool_output_dir}/PortablePackageTool.runtimeconfig.json")
 set(_portable_tool_rsp "${CMAKE_BINARY_DIR}/portable-package-tool.rsp")
-set(_portable_cmake_dir "${_workspace_root}/src/glue/portable/cmake")
+set(_portable_cmake_dir "${_workspace_root}/tools/portable/cmake")
 set(_portable_timed_command_script "${_portable_cmake_dir}/RunTimedCommand.cmake")
 set(_portable_timing_dir "${CMAKE_BINARY_DIR}/portable-timing")
 set(_product_package_build_root "${CMAKE_BINARY_DIR}/product-package/$<CONFIG>")

@@ -46,6 +46,7 @@ internal static class ProductPackageMapGenerator
         };
 
         AddDirectory(files, Path.Combine(repoRoot, "microsoft", "res", "terminal", "images-Dev"), "Images");
+        AddDirectory(files, Path.Combine(repoRoot, "res", "web"), @"res\web");
         AddDirectory(files, Path.Combine(packageRoot, "ProfileIcons"), "ProfileIcons");
         AddDirectory(files, Path.Combine(packageRoot, "ProfileGeneratorIcons"), "ProfileGeneratorIcons");
         files.Add((RequireFile(Path.Combine(repoRoot, "microsoft", "src", "cascadia", "TerminalSettingsModel", "defaults.json")), "defaults.json"));
@@ -56,13 +57,15 @@ internal static class ProductPackageMapGenerator
         }
 
         files.Add((RequireFile(Path.Combine(repoRoot, "microsoft", "packages", "Microsoft.Internal.Windows.Terminal.ThemeHelpers.0.8.250811004", "runtimes", "win10-" + platform, "native", "TerminalThemeHelpers.dll")), "TerminalThemeHelpers.dll"));
+        files.Add((RequireFile(Path.Combine(repoRoot, "microsoft", "packages", "Microsoft.Web.WebView2.1.0.1661.34", "runtimes", "win-" + platform, "native", "WebView2Loader.dll")), "WebView2Loader.dll"));
+        files.Add((RequireFile(Path.Combine(repoRoot, "microsoft", "packages", "Microsoft.Web.WebView2.1.0.1661.34", "runtimes", "win-" + platform, "native_uap", "Microsoft.Web.WebView2.Core.dll")), "Microsoft.Web.WebView2.Core.dll"));
         files.Add((RequireFile(Path.Combine(repoRoot, "microsoft", "packages", "Microsoft.UI.Xaml.2.8.4", "lib", "uap10.0", "Microsoft.UI.Xaml.winmd")), "Microsoft.UI.Xaml.winmd"));
         files.Add((resourcesPri, "resources.pri"));
         files.Add((RequireFile(Path.Combine(repoRoot, "microsoft", "packages", "Microsoft.WindowsPackageManager.ComInterop.1.8.1911", "lib", "Microsoft.Management.Deployment.winmd")), "Microsoft.Management.Deployment.winmd"));
 
-        if (files.Count != 253)
+        if (files.Count != 256)
         {
-            throw new InvalidOperationException($"Expected 253 package payload files, found {files.Count}.");
+            throw new InvalidOperationException($"Expected 256 package payload files, found {files.Count}.");
         }
         var duplicateTargets = files.GroupBy(item => item.Target, StringComparer.OrdinalIgnoreCase).Where(group => group.Count() != 1).ToArray();
         if (duplicateTargets.Length != 0)

@@ -430,6 +430,17 @@
         }
         nav.FooterMenuItems().Append(openYamlItem);
 
+        auto webDemoItem = MUX::Controls::NavigationViewItem{};
+        webDemoItem.Content(box_value(L"Web Demo"));
+        webDemoItem.Tag(box_value(-3));
+        webDemoItem.SelectsOnInvoked(false);
+        {
+            WUX::Controls::SymbolIcon icon{};
+            icon.Symbol(WUX::Controls::Symbol::World);
+            webDemoItem.Icon(icon);
+        }
+        nav.FooterMenuItems().Append(webDemoItem);
+
         if (_workspaceExtension->WorkspaceManagerNavSelection() >= 1000)
         {
             const auto workspaceIndex = _workspaceExtension->ResolveWorkspaceManagerWorkspaceIndex(_workspaceExtension->WorkspaceManagerNavSelection()).value_or(0);
@@ -456,7 +467,13 @@
             }
         }
 
-        nav.ItemInvoked([weakThis{ get_weak() }](auto&&, const MUX::Controls::NavigationViewItemInvokedEventArgs& args) {
+        auto contentGrid = Grid{};
+        contentGrid.RowDefinitions().Append(RowDefinition{});
+        auto footerRow = RowDefinition{};
+        footerRow.Height(GridLengthHelper::Auto());
+        contentGrid.RowDefinitions().Append(footerRow);
+
+        nav.ItemInvoked([weakThis{ get_weak() }, contentGrid](auto&&, const MUX::Controls::NavigationViewItemInvokedEventArgs& args) {
             if (auto self{ weakThis.get() })
             {
                 if (const auto item = args.InvokedItemContainer().try_as<MUX::Controls::NavigationViewItem>())
@@ -513,6 +530,59 @@
                                 ShellExecuteW(nullptr, L"open", L"explorer.exe", filePath.c_str(), nullptr, SW_SHOW);
                             }
                         }
+                        else if (value == -3)
+                        {
+                            contentGrid.Children().Clear();
+                            contentGrid.RowDefinitions().Clear();
+                            contentGrid.RowDefinitions().Append(RowDefinition{});
+
+                            auto webView = MUX::Controls::WebView2{};
+                            webView.HorizontalAlignment(HorizontalAlignment::Stretch);
+                            webView.VerticalAlignment(VerticalAlignment::Stretch);
+                            auto webHost = Grid{};
+                            auto status = TextBlock{};
+                            status.Text(L"正在初始化 WebView2…");
+                            status.HorizontalAlignment(HorizontalAlignment::Center);
+                            status.VerticalAlignment(VerticalAlignment::Center);
+                            webHost.Children().Append(webView);
+                            webHost.Children().Append(status);
+                            const auto webRoot = (std::filesystem::path{ wil::GetModuleFileNameW<std::wstring>(nullptr) }.parent_path() / L"res" / L"web").wstring();
+                            webView.CoreWebView2Initialized([webView, webRoot, status](auto&&, const auto& args) {
+                                if (SUCCEEDED(args.Exception()))
+                                {
+                                    const auto core = webView.CoreWebView2();
+                                    core.SetVirtualHostNameToFolderMapping(L"workspace.local",
+                                                                            webRoot,
+                                                                            winrt::Microsoft::Web::WebView2::Core::CoreWebView2HostResourceAccessKind::DenyCors);
+                                    core.Navigate(L"https://workspace.local/index.html");
+                                }
+                                else
+                                {
+                                    status.Text(L"WebView2 初始化失败。");
+                                }
+                            });
+                            webView.Loaded([webView, status](auto&&, auto&&) -> safe_void_coroutine {
+                                try
+                                {
+                                    co_await webView.EnsureCoreWebView2Async();
+                                }
+                                catch (const winrt::hresult_error& error)
+                                {
+                                    status.Text(winrt::hstring{ L"WebView2 初始化调用失败：" } + winrt::to_hstring(error.code().value));
+                                }
+                            });
+                            webView.NavigationCompleted([status](auto&&, const auto& args) {
+                                if (args.IsSuccess())
+                                {
+                                    status.Visibility(Visibility::Collapsed);
+                                }
+                                else
+                                {
+                                    status.Text(L"页面加载失败。");
+                                }
+                            });
+                            contentGrid.Children().Append(webHost);
+                        }
                     }
                     else if (item.MenuItems().Size() > 0)
                     {
@@ -537,12 +607,6 @@
                 }
             }
         });
-
-        auto contentGrid = Grid{};
-        contentGrid.RowDefinitions().Append(RowDefinition{});
-        auto footerRow = RowDefinition{};
-        footerRow.Height(GridLengthHelper::Auto());
-        contentGrid.RowDefinitions().Append(footerRow);
 
         auto scrollViewer = ScrollViewer{};
         scrollViewer.VerticalScrollBarVisibility(ScrollBarVisibility::Auto);
