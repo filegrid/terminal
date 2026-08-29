@@ -1259,4 +1259,8 @@
  <data name="WorkspaceChat_ShowForTab" xml:space="preserve">
  <value>显示输入框</value>
  </data>
+  <data name="WorkspaceEditor_IconFamilyColor" xml:space="preserve"><value>彩色</value></data>
+  <data name="WorkspaceEditor_IconFamilyOutline" xml:space="preserve"><value>线框</value></data>
+  <data name="WorkspaceEditor_IconFamilyDuotone" xml:space="preserve"><value>双色</value></data>
+  <data name="WorkspaceEditor_IconFamilySharp" xml:space="preserve"><value>锐利</value></data>
 </root>

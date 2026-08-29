@@ -30,7 +30,18 @@ namespace terminal::workspace
             uint32_t Count;
         };
 
-        constexpr std::array<const wchar_t*, 4> Families{ L"color", L"outline", L"duotone", L"sharp" };
+        struct IconFamily
+        {
+            const wchar_t* Key;
+            const wchar_t* LabelResourceKey;
+        };
+
+        constexpr std::array<IconFamily, 4> Families{ {
+            { L"color", L"WorkspaceEditor_IconFamilyColor" },
+            { L"outline", L"WorkspaceEditor_IconFamilyOutline" },
+            { L"duotone", L"WorkspaceEditor_IconFamilyDuotone" },
+            { L"sharp", L"WorkspaceEditor_IconFamilySharp" },
+        } };
         constexpr std::array<IconSection, 6> Sections{ {
             { L"numbers", L"数字 0-9", 10 }, { L"letters", L"字母 A-Z", 26 }, { L"daily", L"日常", 20 },
             { L"development", L"研发", 20 }, { L"office", L"办公", 20 }, { L"windows", L"Windows / OS", 20 },
@@ -118,12 +129,12 @@ namespace terminal::workspace
         auto sections = StackPanel{};
         sections.Spacing(1);
         const auto rebuild = [selected, family, sections, dialog]() { _buildSections(selected, family, sections, dialog); };
-        for (const auto familyName : Families)
+        for (const auto& familyInfo : Families)
         {
             auto button = Button{};
-            button.Content(box_value(familyName)); button.Tag(box_value(familyName));
+            button.Content(box_value(RS_(familyInfo.LabelResourceKey))); button.Tag(box_value(familyInfo.Key));
             button.Padding(WUX::ThicknessHelper::FromLengths(6, 3, 6, 3)); button.MinWidth(64); button.MinHeight(28);
-            button.Click([family, rebuild, familyValue = std::wstring{ familyName }](auto&&, auto&&) { *family = familyValue; rebuild(); });
+            button.Click([family, rebuild, familyValue = std::wstring{ familyInfo.Key }](auto&&, auto&&) { *family = familyValue; rebuild(); });
             header.Children().Append(button);
         }
         auto chooseFile = HyperlinkButton{};

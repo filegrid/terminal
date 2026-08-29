@@ -1259,4 +1259,8 @@
  <data name="WorkspaceChat_ShowForTab" xml:space="preserve">
    <value>Show input panel</value>
  </data>
+  <data name="WorkspaceEditor_IconFamilyColor" xml:space="preserve"><value>Color</value></data>
+  <data name="WorkspaceEditor_IconFamilyOutline" xml:space="preserve"><value>Outline</value></data>
+  <data name="WorkspaceEditor_IconFamilyDuotone" xml:space="preserve"><value>Duotone</value></data>
+  <data name="WorkspaceEditor_IconFamilySharp" xml:space="preserve"><value>Sharp</value></data>
 </root>
