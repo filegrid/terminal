@@ -325,21 +325,28 @@
                     }
                 }
             });
-            colorPreviewRow.Tapped([weakThis{ get_weak() }, applyWorkspaceColorPreview](auto&&, auto&&) {
-                [](auto weakThis, auto applyWorkspaceColorPreview) -> safe_void_coroutine {
-                    if (auto self{ weakThis.get() })
+            colorPreviewRow.Tapped([weakThis{ get_weak() }, applyWorkspaceColorPreview, colorPreviewRow](auto&&, auto&&) {
+                if (auto self{ weakThis.get() })
+                {
+                    // Keep workspace colors on the same preset/custom flyout used by tabs.
+                    auto picker = winrt::TerminalApp::ColorPickupFlyout{};
+                    if (const auto color = _parseWorkspaceColor(self->_workspaceExtension->WorkspaceManagerWorkspaceBackgroundColor().c_str()))
                     {
-                        const auto initialColor = std::wstring{ self->_workspaceExtension->WorkspaceManagerWorkspaceBackgroundColor().c_str() };
-                        const auto color = co_await self->_workspaceExtension->PickWorkspaceManagerColor(initialColor);
-                        if (auto strong{ weakThis.get() }; strong && !color.empty())
+                        picker.Color(*color);
+                    }
+                    picker.ColorSelected([weakThis, applyWorkspaceColorPreview](const auto color) {
+                        if (auto strong{ weakThis.get() })
                         {
-                            if (strong->_workspaceExtension->ApplyWorkspaceManagerWorkspaceBackgroundColor(color))
+                            wchar_t text[8]{};
+                            swprintf_s(text, L"#%02X%02X%02X", color.R, color.G, color.B);
+                            if (strong->_workspaceExtension->ApplyWorkspaceManagerWorkspaceBackgroundColor(text))
                             {
-                                applyWorkspaceColorPreview(color.c_str());
+                                applyWorkspaceColorPreview(text);
                             }
                         }
-                    }
-                }(weakThis, applyWorkspaceColorPreview);
+                    });
+                    picker.ShowAt(colorPreviewRow);
+                }
             });
             colorPanel.Children().Append(chooseColorButton);
         }
@@ -736,20 +743,27 @@
         tabColorPanel.Children().Append(tabColorPreviewRow);
         if (_workspaceEditorEditMode)
         {
-            tabColorPreviewRow.Tapped([weakThis{ get_weak() }, nodeIndex, applyNodeColorPreview](auto&&, auto&&) {
-                [](auto weakThis, size_t nodeIndex, auto applyNodeColorPreview) -> safe_void_coroutine {
-                    if (auto self{ weakThis.get() })
+            tabColorPreviewRow.Tapped([weakThis{ get_weak() }, nodeIndex, applyNodeColorPreview, tabColorPreviewRow](auto&&, auto&&) {
+                if (auto self{ weakThis.get() })
+                {
+                    auto picker = winrt::TerminalApp::ColorPickupFlyout{};
+                    if (const auto color = _parseWorkspaceColor(self->_workspaceExtension->WorkspaceManagerNodeTabColor(nodeIndex).c_str()))
                     {
-                        const auto color = co_await self->_workspaceExtension->PickWorkspaceManagerColor(std::wstring{ self->_workspaceExtension->WorkspaceManagerNodeTabColor(nodeIndex).c_str() });
-                        if (auto strong{ weakThis.get() }; strong && !color.empty())
+                        picker.Color(*color);
+                    }
+                    picker.ColorSelected([weakThis, nodeIndex, applyNodeColorPreview](const auto color) {
+                        if (auto strong{ weakThis.get() })
                         {
-                            if (strong->_workspaceExtension->ApplyWorkspaceManagerNodeTabColor(nodeIndex, color))
+                            wchar_t text[8]{};
+                            swprintf_s(text, L"#%02X%02X%02X", color.R, color.G, color.B);
+                            if (strong->_workspaceExtension->ApplyWorkspaceManagerNodeTabColor(nodeIndex, text))
                             {
                                 applyNodeColorPreview();
                             }
                         }
-                    }
-                }(weakThis, nodeIndex, applyNodeColorPreview);
+                    });
+                    picker.ShowAt(tabColorPreviewRow);
+                }
             });
 
             auto tabColorButtons = StackPanel{};
