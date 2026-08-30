@@ -105,7 +105,14 @@ internal static class Program
         var payloadRoot = Path.Combine(cacheRoot, "p");
         var completionSentinel = Path.Combine(cacheRoot, "c");
 
-        Directory.CreateDirectory(cacheRoot);
+        try
+        {
+            Directory.CreateDirectory(cacheRoot);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return ExtractPayloadFallback(launcherPath, payloadInfo, cacheKey);
+        }
 
         using (var mutex = new Mutex(false, @"Local\WindowsTerminalPortable_" + cacheKey))
         {
@@ -143,12 +150,30 @@ internal static class Program
                     Directory.Move(unpackRoot, payloadRoot);
                     File.WriteAllText(completionSentinel, DateTime.UtcNow.ToString("O"));
                 }
+                catch (UnauthorizedAccessException)
+                {
+                    // Some endpoint security products briefly deny a nested
+                    // create or move below the normal portable cache. Do not
+                    // turn that transient condition into a user-facing launch
+                    // error: expand this invocation into an isolated fallback
+                    // directory and start from there instead.
+                    return ExtractPayloadFallback(launcherPath, payloadInfo, cacheKey);
+                }
+                catch (IOException)
+                {
+                    return ExtractPayloadFallback(launcherPath, payloadInfo, cacheKey);
+                }
                 finally
                 {
-                    if (Directory.Exists(extractionPath))
+                    try
                     {
-                        Directory.Delete(extractionPath, true);
+                        if (Directory.Exists(extractionPath))
+                        {
+                            Directory.Delete(extractionPath, true);
+                        }
                     }
+                    catch (IOException) { }
+                    catch (UnauthorizedAccessException) { }
                 }
 
                 return payloadRoot;
@@ -156,6 +181,27 @@ internal static class Program
             finally
             {
                 mutex.ReleaseMutex();
+            }
+        }
+    }
+
+    private static string ExtractPayloadFallback(string launcherPath, PayloadInfo payloadInfo, string cacheKey)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "WindowsTerminalPortable", cacheKey.Substring(0, Math.Min(12, cacheKey.Length)), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var zipPath = Path.Combine(root, "payload.zip");
+        try
+        {
+            CopyPayloadTo(launcherPath, payloadInfo, zipPath);
+            ZipFile.ExtractToDirectory(zipPath, root);
+            File.WriteAllText(Path.Combine(root, "terminal.marker"), string.Empty);
+            return root;
+        }
+        finally
+        {
+            if (File.Exists(zipPath))
+            {
+                File.Delete(zipPath);
             }
         }
     }

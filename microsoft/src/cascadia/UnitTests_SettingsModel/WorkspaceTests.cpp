@@ -10,11 +10,13 @@
 #include "../TerminalSettingsModel/CascadiaSettings.h"
 #include "../TerminalSettingsModel/Workspace.h"
 #include "../../types/inc/utils.hpp"
+#include "../../../../src/core/workspace/WorkspaceCore.h"
 
 using namespace Microsoft::Console;
 using namespace winrt::Microsoft::Terminal::Settings::Model;
 using namespace winrt::Microsoft::Terminal::Settings::Model::implementation;
 using namespace WEX::Logging;
+namespace workspace_core = terminal::workspace;
 
 namespace SettingsModelUnitTests
 {
@@ -61,6 +63,13 @@ namespace SettingsModelUnitTests
         TEST_METHOD(ParseWorkspaceWindowStateYaml);
         TEST_METHOD(SaveWorkspaceWindowStateYamlRoundTrip);
         TEST_METHOD(PersistWorkspaceStateInApplicationState);
+        TEST_METHOD(WorkspaceMultiWindowReadsLegacyCommandAndWritesNewSchema);
+        TEST_METHOD(WorkspaceMultiWindowReadsNewCommandListAndNormalizesPreference);
+        TEST_METHOD(WorkspaceMultiWindowMigratesCommandsAndKeepsFivePercentWeights);
+        TEST_METHOD(WorkspaceMultiWindowSplitLayoutRespectsMinimumWidth);
+        TEST_METHOD(WorkspaceMultiWindowSessionTitlesStayOutOfConfiguration);
+        TEST_METHOD(WorkspaceMultiWindowRejectsInvalidCommandLists);
+        TEST_METHOD(WorkspaceMultiWindowFacadeRoundTripPreservesConfiguration);
 
     private:
         struct TempPath
@@ -1518,5 +1527,196 @@ namespace SettingsModelUnitTests
         VERIFY_IS_FALSE(loaded->OpenInNewWindow());
         VERIFY_ARE_EQUAL(1u, loaded->PendingWorkspaceLaunches().Size());
         VERIFY_IS_TRUE(loaded->PendingWorkspaceLaunches().GetAt(0) == L"Gamma Workspace");
+    }
+
+    void WorkspaceTests::WorkspaceMultiWindowReadsLegacyCommandAndWritesNewSchema()
+    {
+        workspace_core::WorkspaceNode node;
+        node.Id = L"legacy";
+        node.Name = L"Legacy node";
+        node.Icon = L"workspace-icon://color/terminal";
+        node.StartupAction = L"pwsh -NoLogo";
+
+        const auto commands = workspace_core::EffectiveWorkspaceNodeCommands(node);
+        VERIFY_ARE_EQUAL(1u, gsl::narrow_cast<unsigned int>(commands.size()));
+        VERIFY_IS_TRUE(commands[0].Command == L"pwsh -NoLogo");
+        VERIFY_IS_TRUE(commands[0].Name == L"Legacy node");
+        VERIFY_IS_TRUE(workspace_core::ValidateWorkspaceNodeMultiWindowConfig(node).IsValid);
+
+        TempPath temp;
+        workspace_core::Workspace workspace;
+        workspace.Id = L"compat";
+        workspace.Name = L"Compat";
+        workspace.Nodes.emplace_back(node);
+        terminal::workspace::WorkspaceManager manager;
+        manager.SetWorkspaces({ workspace });
+        VERIFY_IS_TRUE(manager.SaveToPath(temp.path));
+
+        std::ifstream saved{ temp.path / L"Compat" / L"Legacy node" / L"tab.yaml", std::ios::binary };
+        const std::string text{ std::istreambuf_iterator<char>{ saved }, std::istreambuf_iterator<char>{} };
+        VERIFY_IS_TRUE(text.rfind("version: 2\n", 0) == 0);
+        VERIFY_IS_TRUE(text.find("commands:") != std::string::npos);
+        VERIFY_IS_TRUE(text.find("startupAction:") == std::string::npos);
+
+        const auto loaded = terminal::workspace::WorkspaceManager::LoadFromPath(temp.path);
+        const auto& loadedNode = loaded.Workspaces().front().Nodes.front();
+        VERIFY_ARE_EQUAL(1u, gsl::narrow_cast<unsigned int>(loadedNode.Commands.size()));
+        VERIFY_IS_TRUE(loadedNode.Commands.front().Command == L"pwsh -NoLogo");
+    }
+
+    void WorkspaceTests::WorkspaceMultiWindowMigratesCommandsAndKeepsFivePercentWeights()
+    {
+        workspace_core::WorkspaceNode node;
+        node.Id = L"node";
+        VERIFY_IS_TRUE(workspace_core::SetWorkspaceNodeCommands(node, {
+            { L"a", L"workspace-icon://color/terminal", L"API", L"npm run api" },
+            { L"b", L"workspace-icon://color/terminal", L"Web", L"" },
+            { L"c", L"workspace-icon://color/terminal", L"Worker", L"npm run worker" },
+        }));
+        VERIFY_ARE_EQUAL(3u, gsl::narrow_cast<unsigned int>(node.Commands.size()));
+        VERIFY_IS_TRUE(workspace_core::ResizeWorkspaceNodeSplit(node, 0, 0.7));
+        VERIFY_ARE_EQUAL(0.5, node.MultiWindowPreference.SplitWeights[0]);
+        VERIFY_ARE_EQUAL(0.2, node.MultiWindowPreference.SplitWeights[1]);
+        VERIFY_ARE_EQUAL(0.3, node.MultiWindowPreference.SplitWeights[2]);
+
+        VERIFY_IS_TRUE(workspace_core::ReorderWorkspaceNodeCommands(node, { L"c", L"a", L"b" }));
+        VERIFY_IS_TRUE(node.Commands[0].Id == L"c");
+        VERIFY_ARE_EQUAL(0.3, node.MultiWindowPreference.SplitWeights[0]);
+        VERIFY_ARE_EQUAL(0.5, node.MultiWindowPreference.SplitWeights[1]);
+        VERIFY_ARE_EQUAL(0.2, node.MultiWindowPreference.SplitWeights[2]);
+
+        VERIFY_IS_TRUE(workspace_core::SetWorkspaceNodeCommands(node, { node.Commands[0], node.Commands[2] }));
+        VERIFY_ARE_EQUAL(2u, gsl::narrow_cast<unsigned int>(node.MultiWindowPreference.SplitWeights.size()));
+        VERIFY_ARE_EQUAL(0.6, node.MultiWindowPreference.SplitWeights[0]);
+        VERIFY_ARE_EQUAL(0.4, node.MultiWindowPreference.SplitWeights[1]);
+
+        auto added = node.Commands;
+        added.emplace_back(workspace_core::WorkspaceNodeCommand{ L"d", {}, L"New", {} });
+        VERIFY_IS_TRUE(workspace_core::SetWorkspaceNodeCommands(node, std::move(added)));
+        VERIFY_ARE_EQUAL(3u, gsl::narrow_cast<unsigned int>(node.MultiWindowPreference.SplitWeights.size()));
+        VERIFY_ARE_EQUAL(0.4, node.MultiWindowPreference.SplitWeights[0]);
+        VERIFY_ARE_EQUAL(0.25, node.MultiWindowPreference.SplitWeights[1]);
+        VERIFY_ARE_EQUAL(0.35, node.MultiWindowPreference.SplitWeights[2]);
+    }
+
+    void WorkspaceTests::WorkspaceMultiWindowReadsNewCommandListAndNormalizesPreference()
+    {
+        TempPath temp;
+        std::filesystem::create_directories(temp.path / L"Multi" / L"Node");
+        static constexpr std::string_view workspaceYaml{ "version: 1\n" };
+        static constexpr std::string_view nodeYaml{
+            "version: 1\n"
+            "commands: |\n"
+            "  api|workspace-icon://color/terminal|API|pwsh -NoLogo\\|Write-Host api\n"
+            "  web|workspace-icon://color/code|Web|\n"
+            "  worker|workspace-icon://color/terminal|Worker|npm run worker\n"
+            "multiWindowMode: tab\n"
+            "tabPlacement: bottom-right\n"
+            "splitWeights: 0.31,0.29,0.4\n"
+        };
+        {
+            std::ofstream output{ temp.path / L"Multi" / L"workspace.yaml", std::ios::binary | std::ios::trunc };
+            output.write(workspaceYaml.data(), gsl::narrow_cast<std::streamsize>(workspaceYaml.size()));
+        }
+        {
+            std::ofstream output{ temp.path / L"Multi" / L"Node" / L"tab.yaml", std::ios::binary | std::ios::trunc };
+            output.write(nodeYaml.data(), gsl::narrow_cast<std::streamsize>(nodeYaml.size()));
+        }
+
+        const auto loaded = workspace_core::WorkspaceManager::LoadFromPath(temp.path);
+        const auto& node = loaded.Workspaces().front().Nodes.front();
+        VERIFY_ARE_EQUAL(3u, gsl::narrow_cast<unsigned int>(node.Commands.size()));
+        VERIFY_IS_TRUE(node.Commands[0].Command == L"pwsh -NoLogo|Write-Host api");
+        VERIFY_IS_TRUE(node.Commands[1].Command.empty());
+        VERIFY_IS_TRUE(node.MultiWindowPreference.DisplayMode == workspace_core::WorkspaceWindowDisplayMode::Tab);
+        VERIFY_IS_TRUE(node.MultiWindowPreference.TabPlacement == workspace_core::WorkspaceTabPlacement::BottomRight);
+        VERIFY_ARE_EQUAL(0.3, node.MultiWindowPreference.SplitWeights[0]);
+        VERIFY_ARE_EQUAL(0.3, node.MultiWindowPreference.SplitWeights[1]);
+        VERIFY_ARE_EQUAL(0.4, node.MultiWindowPreference.SplitWeights[2]);
+        VERIFY_IS_TRUE(node.StartupAction == L"pwsh -NoLogo|Write-Host api");
+    }
+
+    void WorkspaceTests::WorkspaceMultiWindowRejectsInvalidCommandLists()
+    {
+        workspace_core::WorkspaceNode node;
+        node.Id = L"node";
+        VERIFY_IS_FALSE(workspace_core::SetWorkspaceNodeCommands(node, {}));
+        VERIFY_IS_FALSE(workspace_core::SetWorkspaceNodeCommands(node, {
+            { L"same", {}, {}, {} }, { L"same", {}, {}, {} },
+        }));
+        VERIFY_IS_FALSE(workspace_core::SetWorkspaceNodeCommands(node, {
+            { L"1", {}, {}, {} }, { L"2", {}, {}, {} }, { L"3", {}, {}, {} }, { L"4", {}, {}, {} },
+        }));
+    }
+
+    void WorkspaceTests::WorkspaceMultiWindowSplitLayoutRespectsMinimumWidth()
+    {
+        workspace_core::WorkspaceNode node;
+        node.Id = L"node";
+        VERIFY_IS_TRUE(workspace_core::SetWorkspaceNodeCommands(node, {
+            { L"a", {}, {}, {} }, { L"b", {}, {}, {} }, { L"c", {}, {}, {} },
+        }));
+        VERIFY_IS_TRUE(workspace_core::SetWorkspaceNodeSplitWeights(node, { 0.5, 0.25, 0.25 }));
+
+        const auto constrained = workspace_core::CalculateWorkspaceNodeSplitLayout(node, 900.0, 400.0);
+        VERIFY_IS_TRUE(constrained.RequiresHorizontalScroll);
+        VERIFY_ARE_EQUAL(400.0, constrained.WindowWidths[0]);
+        VERIFY_ARE_EQUAL(400.0, constrained.WindowWidths[2]);
+
+        const auto fitted = workspace_core::CalculateWorkspaceNodeSplitLayout(node, 1000.0, 200.0);
+        VERIFY_IS_FALSE(fitted.RequiresHorizontalScroll);
+        VERIFY_ARE_EQUAL(500.0, fitted.WindowWidths[0]);
+        VERIFY_ARE_EQUAL(250.0, fitted.WindowWidths[1]);
+        VERIFY_ARE_EQUAL(250.0, fitted.WindowWidths[2]);
+    }
+
+    void WorkspaceTests::WorkspaceMultiWindowSessionTitlesStayOutOfConfiguration()
+    {
+        workspace_core::WorkspaceNode node;
+        node.Id = L"node";
+        VERIFY_IS_TRUE(workspace_core::SetWorkspaceNodeCommands(node, {
+            { L"agent", {}, {}, L"codex" }, { L"shell", {}, L"Shell", L"pwsh" },
+        }));
+        workspace_core::WorkspaceNodeSessionState session;
+        VERIFY_IS_TRUE(workspace_core::SetWorkspaceCommandRuntimeTitle(node, session, L"agent", L"Codex: implementing Core"));
+        VERIFY_IS_TRUE(workspace_core::SetWorkspaceNodeActiveCommand(node, session, L"agent"));
+        VERIFY_IS_TRUE(session.ActiveCommandId == L"agent");
+        VERIFY_IS_TRUE(workspace_core::ResolveWorkspaceCommandDisplayName(node.Commands[0], session) == L"Codex: implementing Core");
+        VERIFY_IS_TRUE(workspace_core::ResolveWorkspaceCommandDisplayName(node.Commands[1], session) == L"Shell");
+        VERIFY_IS_FALSE(workspace_core::SetWorkspaceCommandRuntimeTitle(node, session, L"missing", L"ignored"));
+        VERIFY_IS_TRUE(node.Commands[0].Name.empty());
+        VERIFY_IS_TRUE(node.Commands[0].Command == L"codex");
+    }
+
+    void WorkspaceTests::WorkspaceMultiWindowFacadeRoundTripPreservesConfiguration()
+    {
+        TempPath temp;
+        Workspace workspace;
+        workspace.Id = L"glue";
+        workspace.Name = L"Glue";
+        WorkspaceNode node;
+        node.Id = L"node";
+        node.Name = L"Node";
+        node.Commands = {
+            { L"agent", L"workspace-icon://color/terminal", L"Agent", L"codex" },
+            { L"shell", L"workspace-icon://color/code", L"Shell", L"" },
+        };
+        node.MultiWindowPreference.DisplayMode = WorkspaceWindowDisplayMode::Tab;
+        node.MultiWindowPreference.TabPlacement = WorkspaceTabPlacement::TopRight;
+        node.MultiWindowPreference.SplitWeights = { 0.55, 0.45 };
+        workspace.Nodes.emplace_back(std::move(node));
+
+        WorkspaceManager manager;
+        manager.SetWorkspaces({ workspace });
+        VERIFY_IS_TRUE(manager.SaveToPath(temp.path));
+        const auto loaded = WorkspaceManager::LoadFromPath(temp.path);
+        const auto& loadedNode = loaded.Workspaces().front().Nodes.front();
+        VERIFY_ARE_EQUAL(2u, gsl::narrow_cast<unsigned int>(loadedNode.Commands.size()));
+        VERIFY_IS_TRUE(loadedNode.Commands[0].Id == L"agent");
+        VERIFY_IS_TRUE(loadedNode.Commands[1].Command.empty());
+        VERIFY_IS_TRUE(loadedNode.MultiWindowPreference.DisplayMode == WorkspaceWindowDisplayMode::Tab);
+        VERIFY_IS_TRUE(loadedNode.MultiWindowPreference.TabPlacement == WorkspaceTabPlacement::TopRight);
+        VERIFY_ARE_EQUAL(0.55, loadedNode.MultiWindowPreference.SplitWeights[0]);
+        VERIFY_ARE_EQUAL(0.45, loadedNode.MultiWindowPreference.SplitWeights[1]);
     }
 }

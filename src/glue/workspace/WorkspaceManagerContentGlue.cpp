@@ -441,6 +441,17 @@
         }
         nav.FooterMenuItems().Append(webDemoItem);
 
+        auto multiWindowDemoItem = MUX::Controls::NavigationViewItem{};
+        multiWindowDemoItem.Content(box_value(L"多窗口 Demo"));
+        multiWindowDemoItem.Tag(box_value(-4));
+        multiWindowDemoItem.SelectsOnInvoked(false);
+        {
+            WUX::Controls::SymbolIcon icon{};
+            icon.Symbol(WUX::Controls::Symbol::View);
+            multiWindowDemoItem.Icon(icon);
+        }
+        nav.FooterMenuItems().Append(multiWindowDemoItem);
+
         if (_workspaceExtension->WorkspaceManagerNavSelection() >= 1000)
         {
             const auto workspaceIndex = _workspaceExtension->ResolveWorkspaceManagerWorkspaceIndex(_workspaceExtension->WorkspaceManagerNavSelection()).value_or(0);
@@ -582,6 +593,15 @@
                                 }
                             });
                             contentGrid.Children().Append(webHost);
+                        }
+                        else if (value == -4)
+                        {
+                            // This is intentionally a native Host-only prototype.
+                            // Its state lives only in the generated visual tree.
+                            contentGrid.Children().Clear();
+                            contentGrid.RowDefinitions().Clear();
+                            contentGrid.RowDefinitions().Append(RowDefinition{});
+                            contentGrid.Children().Append(self->_BuildWorkspaceMultiWindowDemo());
                         }
                     }
                     else if (item.MenuItems().Size() > 0)

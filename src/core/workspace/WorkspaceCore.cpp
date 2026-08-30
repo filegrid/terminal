@@ -7,6 +7,7 @@
 #include <cerrno>
 #include <cwctype>
 #include <fstream>
+#include <cmath>
 #include <iterator>
 #include <optional>
 #include <sstream>
@@ -899,6 +900,67 @@ namespace terminal::workspace
             {
                 node.StartupAction = value;
             }
+            else if (key == L"commands")
+            {
+                std::wistringstream stream{ value };
+                std::vector<WorkspaceNodeCommand> commands;
+                for (std::wstring line; std::getline(stream, line);)
+                {
+                    std::vector<std::wstring> fields;
+                    std::wstring field;
+                    bool escaped{};
+                    for (const auto ch : line)
+                    {
+                        if (escaped)
+                        {
+                            field.push_back(ch == L'n' ? L'\n' : ch);
+                            escaped = false;
+                        }
+                        else if (ch == L'\\')
+                        {
+                            escaped = true;
+                        }
+                        else if (ch == L'|')
+                        {
+                            fields.emplace_back(std::move(field));
+                            field.clear();
+                        }
+                        else
+                        {
+                            field.push_back(ch);
+                        }
+                    }
+                    if (escaped)
+                    {
+                        field.push_back(L'\\');
+                    }
+                    fields.emplace_back(std::move(field));
+                    if (fields.size() == 4)
+                    {
+                        commands.emplace_back(WorkspaceNodeCommand{ std::move(fields[0]), std::move(fields[1]), std::move(fields[2]), std::move(fields[3]) });
+                    }
+                }
+                node.Commands = std::move(commands);
+            }
+            else if (key == L"multiWindowMode")
+            {
+                node.MultiWindowPreference.DisplayMode = value == L"tab" ? WorkspaceWindowDisplayMode::Tab : WorkspaceWindowDisplayMode::Split;
+            }
+            else if (key == L"tabPlacement")
+            {
+                node.MultiWindowPreference.TabPlacement = value == L"top-right" ? WorkspaceTabPlacement::TopRight :
+                                                           value == L"bottom-right" ? WorkspaceTabPlacement::BottomRight : WorkspaceTabPlacement::TopLeft;
+            }
+            else if (key == L"splitWeights")
+            {
+                std::wistringstream stream{ value };
+                std::wstring item;
+                node.MultiWindowPreference.SplitWeights.clear();
+                while (std::getline(stream, item, L','))
+                {
+                    try { node.MultiWindowPreference.SplitWeights.emplace_back(std::stod(item)); } catch (...) { node.MultiWindowPreference.SplitWeights.clear(); break; }
+                }
+            }
             else if (key == L"operatingSystem")
             {
                 node.OperatingSystem = value;
@@ -1065,7 +1127,13 @@ namespace terminal::workspace
                     }
                 }))
                 {
-                    return std::move(metadata->first);
+                    auto node = std::move(metadata->first);
+                    // Reading accepts both schemas. New files become a
+                    // normalized command list in memory; legacy files remain
+                    // readable through EffectiveWorkspaceNodeCommands until
+                    // their next save writes the new schema.
+                    NormalizeWorkspaceNodeMultiWindowConfig(node);
+                    return node;
                 }
 
             return std::nullopt;
@@ -1283,8 +1351,19 @@ namespace terminal::workspace
 
         std::wstring _serializeWorkspaceNodeMetadata(const WorkspaceNode& node)
         {
+            // Persistence has a single forward format. A legacy node is
+            // converted here, after having been read compatibly from
+            // startupAction, so saving performs the schema migration.
+            auto serializedNode = node;
+            if (serializedNode.Commands.empty())
+            {
+                serializedNode.Commands = EffectiveWorkspaceNodeCommands(serializedNode);
+            }
+            NormalizeWorkspaceNodeMultiWindowConfig(serializedNode);
             std::wostringstream stream;
-            stream << L"version: 1\n";
+            // v2 introduces the ordered commands and multi-window preference
+            // fields. Readers intentionally continue to accept v1 nodes.
+            stream << L"version: 2\n";
             if (!node.ConnectionRef.empty())
             {
                 stream << L"connectionRef: " << _quote(node.ConnectionRef) << L"\n";
@@ -1310,16 +1389,39 @@ namespace terminal::workspace
             {
                 stream << L"startupDirectory: " << _quote(node.StartupDirectory) << L"\n";
             }
-            if (!node.StartupAction.empty())
+            if (!serializedNode.Commands.empty())
             {
-                if (_containsLineBreak(node.StartupAction))
+                const auto escape = [](std::wstring_view value) {
+                    std::wstring escaped;
+                    for (const auto ch : value)
+                    {
+                        if (ch == L'\\' || ch == L'|') { escaped.push_back(L'\\'); escaped.push_back(ch); }
+                        else if (ch == L'\n') { escaped.append(L"\\n"); }
+                        else if (ch != L'\r') { escaped.push_back(ch); }
+                    }
+                    return escaped;
+                };
+                std::wstring serialized;
+                for (const auto& command : serializedNode.Commands)
                 {
-                    _writeMultilineValue(stream, L"", L"startupAction", node.StartupAction);
+                    if (!serialized.empty()) { serialized.push_back(L'\n'); }
+                    serialized.append(escape(command.Id)); serialized.push_back(L'|');
+                    serialized.append(escape(command.Icon)); serialized.push_back(L'|');
+                    serialized.append(escape(command.Name)); serialized.push_back(L'|');
+                    serialized.append(escape(command.Command));
                 }
-                else
+                _writeMultilineValue(stream, L"", L"commands", serialized);
+                stream << L"multiWindowMode: " << (serializedNode.MultiWindowPreference.DisplayMode == WorkspaceWindowDisplayMode::Tab ? L"tab" : L"split") << L"\n";
+                const auto placement = serializedNode.MultiWindowPreference.TabPlacement == WorkspaceTabPlacement::TopRight ? L"top-right" :
+                                       serializedNode.MultiWindowPreference.TabPlacement == WorkspaceTabPlacement::BottomRight ? L"bottom-right" : L"top-left";
+                stream << L"tabPlacement: " << placement << L"\n";
+                stream << L"splitWeights: ";
+                for (size_t index = 0; index < serializedNode.MultiWindowPreference.SplitWeights.size(); ++index)
                 {
-                    stream << L"startupAction: " << _quote(node.StartupAction) << L"\n";
+                    if (index != 0) { stream << L','; }
+                    stream << serializedNode.MultiWindowPreference.SplitWeights[index];
                 }
+                stream << L"\n";
             }
             if (!node.OperatingSystem.empty())
             {
@@ -1527,6 +1629,7 @@ namespace terminal::workspace
         }
     }
 
+    #include "WorkspaceCoreMultiWindow.cpp"
     #include "WorkspaceCoreManagerStorage.cpp"
 
     #include "deprecated/WorkspaceCaptureDeprecated.cpp"

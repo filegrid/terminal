@@ -2680,8 +2680,8 @@ namespace winrt::TerminalApp::implementation
         _HookupKeyBindings(_settings.ActionMap());
 
         _tabContent = this->TabContent();
-        _terminalContentHost = this->TerminalContentHost();
-        _terminalContentHost.SizeChanged([weakThis{ get_weak() }](auto&&, auto&&) {
+        _terminalContentWrapper = this->TerminalContentWrapper();
+        _terminalContentWrapper.SizeChanged([weakThis{ get_weak() }](auto&&, auto&&) {
             if (auto self{ weakThis.get() })
             {
                 self->_workspaceExtension->OnTerminalContentHostResized();
@@ -2851,6 +2851,14 @@ namespace winrt::TerminalApp::implementation
             }
             _actionDispatch->DoAction(actions[i]);
             suspend = true;
+        }
+
+        // The first-level tabs now exist. If this was a workspace window,
+        // give every node Tab its own wrapper pass here; this is the new-window
+        // equivalent of the in-window _OpenWorkspace action loop.
+        if (_terminalContentWorkspace)
+        {
+            _ConfigureTerminalContentWrapper(*_terminalContentWorkspace);
         }
 
         // GH#6586: now that we're done processing all startup commands,
@@ -3073,8 +3081,8 @@ namespace winrt::TerminalApp::implementation
 
         layout.LaunchMode({ mode });
 
-        const auto contentWidth = static_cast<float>(_terminalContentHost ? _terminalContentHost.ActualWidth() : _tabContent.ActualWidth());
-        const auto contentHeight = static_cast<float>(_terminalContentHost ? _terminalContentHost.ActualHeight() : _tabContent.ActualHeight());
+        const auto contentWidth = static_cast<float>(_terminalContentWrapper.ActualWidth());
+        const auto contentHeight = static_cast<float>(_terminalContentWrapper.ActualHeight());
         const winrt::Windows::Foundation::Size windowSize{ contentWidth, contentHeight };
 
         layout.InitialSize(windowSize);
@@ -3474,8 +3482,8 @@ namespace winrt::TerminalApp::implementation
         {
             return;
         }
-        const auto contentWidth = static_cast<float>(_terminalContentHost ? _terminalContentHost.ActualWidth() : _tabContent.ActualWidth());
-        const auto contentHeight = static_cast<float>(_terminalContentHost ? _terminalContentHost.ActualHeight() : _tabContent.ActualHeight());
+        const auto contentWidth = static_cast<float>(_terminalContentWrapper.ActualWidth());
+        const auto contentHeight = static_cast<float>(_terminalContentWrapper.ActualHeight());
         const winrt::Windows::Foundation::Size availableSpace{ contentWidth, contentHeight };
 
         const auto realSplitType = activeTab->PreCalculateCanSplit(splitDirection, splitSize, availableSpace);
@@ -3898,12 +3906,12 @@ namespace winrt::TerminalApp::implementation
                 {
                     if (*tab == page->_GetFocusedTab())
                     {
-                        const auto children = page->_terminalContentHost.Children();
+                        const auto children = page->_terminalContentWrapper.Children();
 
                         children.Clear();
                         if (auto content = tab->Content())
                         {
-                            page->_terminalContentHost.Children().Append(std::move(content));
+                            page->_terminalContentWrapper.Children().Append(std::move(content));
                         }
 
                         page->_UpdateTerminalContentHostClip();
@@ -4950,7 +4958,7 @@ namespace winrt::TerminalApp::implementation
             {
                 // Remove the content from the tab first, so Pane::UnZoom can
                 // re-attach the content to the tree w/in the pane
-                _terminalContentHost.Children().Clear();
+                _terminalContentWrapper.Children().Clear();
                 // In ExitZoom, we'll change the Tab's Content(), triggering the
                 // content changed event, which will re-attach the tab's new content
                 // root to the tree.

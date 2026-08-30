@@ -447,6 +447,12 @@
                 }
             }
         };
+        const auto makeSectionTitle = [&](const winrt::hstring& text) {
+            auto title = TextBlock{};
+            title.Text(text);
+            applyWorkspaceStyle(title, L"WorkspaceSectionHeaderStyle");
+            return title;
+        };
         const auto makeWorkspaceSetting = [&](const winrt::hstring& labelText, const UIElement& content) {
             auto setting = ContentControl{};
             setting.Tag(box_value(labelText));
@@ -694,7 +700,341 @@
             nodeRoot.Children().Append(makeWorkspaceSetting(label, panel));
         };
         addNodePathPicker(RS_(L"WorkspaceEditor_StartupDirectory").c_str(), node.StartupDirectory, true);
-        addNodePathPicker(L"启动命令", node.StartupAction, false);
+        // A legacy node still renders as one command. Once edited, it uses the
+        // ordered Commands collection that the Core serializer persists.
+        auto commandHeader = Grid{};
+        commandHeader.ColumnDefinitions().Append(ColumnDefinition{});
+        auto commandActionsColumn = ColumnDefinition{};
+        commandActionsColumn.Width(GridLengthHelper::Auto());
+        commandHeader.ColumnDefinitions().Append(commandActionsColumn);
+        commandHeader.HorizontalAlignment(HorizontalAlignment::Stretch);
+        auto commandHeaderText = makeSectionTitle(L"命令窗口");
+        commandHeaderText.VerticalAlignment(VerticalAlignment::Center);
+        commandHeader.Children().Append(commandHeaderText);
+        auto addCommandButton = Button{};
+        addCommandButton.Width(30);
+        addCommandButton.Height(30);
+        addCommandButton.MinWidth(30);
+        addCommandButton.MinHeight(30);
+        addCommandButton.Padding(ThicknessHelper::FromLengths(0, 0, 0, 0));
+        addCommandButton.VerticalAlignment(VerticalAlignment::Center);
+        auto addCommandIcon = SymbolIcon{};
+        addCommandIcon.Symbol(Symbol::Add);
+        addCommandButton.Content(addCommandIcon);
+        Grid::SetColumn(addCommandButton, 1);
+        ToolTipService::SetToolTip(addCommandButton, box_value(L"添加命令窗口"));
+        addCommandButton.IsEnabled(_workspaceEditorEditMode && (node.Commands.empty() || node.Commands.size() < 3));
+        addCommandButton.Click([weakThis{ get_weak() }, nodeIndex](auto&&, auto&&) {
+            if (auto self{ weakThis.get() })
+            {
+                if (auto* workspace = self->_SelectedWorkspaceForEditing(); workspace && nodeIndex < workspace->Nodes.size())
+                {
+                    auto& target = workspace->Nodes.at(nodeIndex);
+                    if (target.Commands.empty())
+                    {
+                        target.Commands.emplace_back(Microsoft::Terminal::Settings::Model::implementation::WorkspaceNodeCommand{
+                            target.Id + L":legacy-command", target.Icon, target.Name, target.StartupAction });
+                    }
+                    if (target.Commands.size() < 3)
+                    {
+                        target.Commands.emplace_back(Microsoft::Terminal::Settings::Model::implementation::WorkspaceNodeCommand{
+                            target.Id + L":command-" + std::to_wstring(target.Commands.size() + 1), {}, L"未命名命令", {} });
+                        target.MultiWindowPreference.SplitWeights.assign(target.Commands.size(), 1.0 / target.Commands.size());
+                        self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
+                        self->_RebuildWorkspaceManagerTab();
+                    }
+                }
+            }
+        });
+        commandHeader.Children().Append(addCommandButton);
+        nodeRoot.Children().Append(commandHeader);
+
+        const auto commands = node.Commands.empty() ? std::vector<Microsoft::Terminal::Settings::Model::implementation::WorkspaceNodeCommand>{
+            { node.Id + L":legacy-command", node.Icon, node.Name, node.StartupAction } } : node.Commands;
+        auto commandList = ListView{};
+        commandList.CanDragItems(_workspaceEditorEditMode);
+        commandList.CanReorderItems(_workspaceEditorEditMode);
+        commandList.AllowDrop(_workspaceEditorEditMode);
+        commandList.SelectionMode(ListViewSelectionMode::None);
+        for (size_t commandIndex = 0; commandIndex < commands.size(); ++commandIndex)
+        {
+            const auto& command = commands.at(commandIndex);
+            auto row = Grid{};
+            row.Padding(ThicknessHelper::FromLengths(8, 6, 8, 6));
+            row.HorizontalAlignment(HorizontalAlignment::Stretch);
+            auto iconColumn = ColumnDefinition{};
+            iconColumn.Width(GridLengthHelper::FromPixels(52));
+            row.ColumnDefinitions().Append(iconColumn);
+            auto nameColumn = ColumnDefinition{};
+            nameColumn.Width(GridLengthHelper::FromPixels(180));
+            row.ColumnDefinitions().Append(nameColumn);
+            auto gapColumn = ColumnDefinition{};
+            gapColumn.Width(GridLengthHelper::FromPixels(8));
+            row.ColumnDefinitions().Append(gapColumn);
+            row.ColumnDefinitions().Append(ColumnDefinition{});
+            auto removeColumn = ColumnDefinition{};
+            removeColumn.Width(GridLengthHelper::Auto());
+            row.ColumnDefinitions().Append(removeColumn);
+            auto iconButton = Button{};
+            iconButton.Width(40);
+            iconButton.Height(40);
+            iconButton.Padding(ThicknessHelper::FromLengths(0, 0, 0, 0));
+            if (auto icon = _CreateNewTabFlyoutIcon(winrt::hstring{ command.Icon }))
+            {
+                iconButton.Content(icon);
+            }
+            else
+            {
+                auto fallbackIcon = SymbolIcon{};
+                fallbackIcon.Symbol(Symbol::Page);
+                iconButton.Content(fallbackIcon);
+            }
+            iconButton.IsEnabled(_workspaceEditorEditMode);
+            ToolTipService::SetToolTip(iconButton, box_value(L"选择命令图标"));
+            iconButton.Click([weakThis{ get_weak() }, nodeIndex, commandIndex](auto&&, auto&&) {
+                [](winrt::weak_ref<TerminalPage> weakThis, const size_t nodeIndex, const size_t commandIndex) -> safe_void_coroutine {
+                    if (auto self{ weakThis.get() }; self && self->_workspaceExtension)
+                    {
+                        std::wstring initial;
+                        if (const auto* workspace = self->_SelectedWorkspaceForEditing(); workspace && nodeIndex < workspace->Nodes.size())
+                        {
+                            const auto& target = workspace->Nodes.at(nodeIndex);
+                            if (commandIndex < target.Commands.size())
+                            {
+                                initial = target.Commands.at(commandIndex).Icon;
+                            }
+                        }
+                        const auto selected = co_await self->_workspaceExtension->PickWorkspaceManagerIcon(std::move(initial), std::nullopt);
+                        if (!selected.empty())
+                        {
+                            if (auto* workspace = self->_SelectedWorkspaceForEditing(); workspace && nodeIndex < workspace->Nodes.size() && commandIndex < workspace->Nodes.at(nodeIndex).Commands.size())
+                            {
+                                workspace->Nodes.at(nodeIndex).Commands.at(commandIndex).Icon = selected.c_str();
+                                self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
+                                self->_RebuildWorkspaceManagerTab();
+                            }
+                        }
+                    }
+                }(weakThis, nodeIndex, commandIndex);
+            });
+            row.Children().Append(iconButton);
+            auto nameBox = TextBox{};
+            nameBox.PlaceholderText(L"名字，例如 Codex");
+            nameBox.Text(command.Name);
+            nameBox.MinWidth(0);
+            nameBox.IsEnabled(_workspaceEditorEditMode);
+            auto commandBox = TextBox{};
+            commandBox.PlaceholderText(L"启动命令，例如 codex --resume（可为空）");
+            commandBox.Text(command.Command);
+            commandBox.MinWidth(160);
+            commandBox.HorizontalAlignment(HorizontalAlignment::Stretch);
+            commandBox.IsEnabled(_workspaceEditorEditMode);
+            const auto commit = [weakThis{ get_weak() }, nodeIndex, commandIndex, nameBox, commandBox](auto&&, auto&&) {
+                if (auto self{ weakThis.get() })
+                {
+                    if (auto* workspace = self->_SelectedWorkspaceForEditing(); workspace && nodeIndex < workspace->Nodes.size())
+                    {
+                        auto& target = workspace->Nodes.at(nodeIndex);
+                        if (target.Commands.empty())
+                        {
+                            target.Commands.emplace_back(Microsoft::Terminal::Settings::Model::implementation::WorkspaceNodeCommand{
+                                target.Id + L":legacy-command", target.Icon, target.Name, target.StartupAction });
+                        }
+                        if (commandIndex < target.Commands.size())
+                        {
+                            target.Commands.at(commandIndex).Name = nameBox.Text().c_str();
+                            target.Commands.at(commandIndex).Command = commandBox.Text().c_str();
+                            self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
+                        }
+                    }
+                }
+            };
+            nameBox.LostFocus(commit);
+            commandBox.LostFocus(commit);
+            Grid::SetColumn(nameBox, 1);
+            row.Children().Append(nameBox);
+            Grid::SetColumn(commandBox, 3);
+            row.Children().Append(commandBox);
+            auto remove = Button{};
+            auto removeIcon = SymbolIcon{};
+            removeIcon.Symbol(Symbol::Delete);
+            remove.Content(removeIcon);
+            remove.IsEnabled(_workspaceEditorEditMode && commands.size() > 1);
+            Grid::SetColumn(remove, 4);
+            ToolTipService::SetToolTip(remove, box_value(L"删除命令窗口"));
+            remove.Click([weakThis{ get_weak() }, nodeIndex, commandIndex](auto&&, auto&&) {
+                if (auto self{ weakThis.get() })
+                {
+                    if (auto* workspace = self->_SelectedWorkspaceForEditing(); workspace && nodeIndex < workspace->Nodes.size())
+                    {
+                        auto& target = workspace->Nodes.at(nodeIndex);
+                        if (commandIndex < target.Commands.size() && target.Commands.size() > 1)
+                        {
+                            target.Commands.erase(target.Commands.begin() + commandIndex);
+                            target.MultiWindowPreference.SplitWeights.assign(target.Commands.size(), 1.0 / target.Commands.size());
+                            self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
+                            self->_RebuildWorkspaceManagerTab();
+                        }
+                    }
+                }
+            });
+            row.Children().Append(remove);
+            auto item = ListViewItem{};
+            applyWorkspaceStyle(item, L"WorkspaceNodeOrderItemStyle");
+            item.HorizontalContentAlignment(HorizontalAlignment::Stretch);
+            item.Tag(box_value(command.Id));
+            item.Content(row);
+            commandList.Items().Append(item);
+        }
+        commandList.DragItemsCompleted([weakThis{ get_weak() }, nodeIndex, commandList](auto&&, auto&&) {
+            if (auto self{ weakThis.get() })
+            {
+                if (auto* workspace = self->_SelectedWorkspaceForEditing(); workspace && nodeIndex < workspace->Nodes.size())
+                {
+                    auto& target = workspace->Nodes.at(nodeIndex);
+                    if (target.Commands.empty())
+                    {
+                        target.Commands.emplace_back(Microsoft::Terminal::Settings::Model::implementation::WorkspaceNodeCommand{
+                            target.Id + L":legacy-command", target.Icon, target.Name, target.StartupAction });
+                    }
+                    std::vector<Microsoft::Terminal::Settings::Model::implementation::WorkspaceNodeCommand> ordered;
+                    std::vector<double> weights;
+                    ordered.reserve(commandList.Items().Size());
+                    weights.reserve(commandList.Items().Size());
+                    auto currentWeights = target.MultiWindowPreference.SplitWeights;
+                    if (currentWeights.size() != target.Commands.size()) currentWeights.assign(target.Commands.size(), 1.0 / target.Commands.size());
+                    for (uint32_t itemIndex = 0; itemIndex < commandList.Items().Size(); ++itemIndex)
+                    {
+                        const auto id = winrt::unbox_value<winrt::hstring>(commandList.Items().GetAt(itemIndex).as<ListViewItem>().Tag());
+                        const auto found = std::find_if(target.Commands.begin(), target.Commands.end(), [&](const auto& command) { return command.Id == id.c_str(); });
+                        if (found != target.Commands.end())
+                        {
+                            const auto sourceIndex = static_cast<size_t>(std::distance(target.Commands.begin(), found));
+                            ordered.emplace_back(*found);
+                            weights.emplace_back(currentWeights[sourceIndex]);
+                        }
+                    }
+                    if (ordered.size() == target.Commands.size())
+                    {
+                        target.Commands = std::move(ordered);
+                        target.MultiWindowPreference.SplitWeights = std::move(weights);
+                        self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
+                        self->_RebuildWorkspaceManagerTab();
+                    }
+                }
+            }
+        });
+        nodeRoot.Children().Append(commandList);
+
+        if (commands.size() >= 2)
+        {
+            auto multiWindowTitle = makeSectionTitle(L"多窗口展示");
+            nodeRoot.Children().Append(multiWindowTitle);
+            auto modeBox = ComboBox{};
+            modeBox.Items().Append(box_value(L"左右分隔"));
+            modeBox.Items().Append(box_value(L"Tab"));
+            modeBox.SelectedIndex(node.MultiWindowPreference.DisplayMode == Microsoft::Terminal::Settings::Model::implementation::WorkspaceWindowDisplayMode::Tab ? 1 : 0);
+            modeBox.IsEnabled(_workspaceEditorEditMode);
+            modeBox.SelectionChanged([weakThis{ get_weak() }, nodeIndex](auto&& sender, auto&&) {
+                if (auto self{ weakThis.get() })
+                {
+                    if (auto* workspace = self->_SelectedWorkspaceForEditing(); workspace && nodeIndex < workspace->Nodes.size())
+                    {
+                        workspace->Nodes.at(nodeIndex).MultiWindowPreference.DisplayMode = sender.as<ComboBox>().SelectedIndex() == 1 ?
+                            Microsoft::Terminal::Settings::Model::implementation::WorkspaceWindowDisplayMode::Tab :
+                            Microsoft::Terminal::Settings::Model::implementation::WorkspaceWindowDisplayMode::Split;
+                        self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
+                        self->_RebuildWorkspaceManagerTab();
+                    }
+                }
+            });
+            nodeRoot.Children().Append(makeWorkspaceSetting(L"展示方式", modeBox));
+
+            if (node.MultiWindowPreference.DisplayMode == Microsoft::Terminal::Settings::Model::implementation::WorkspaceWindowDisplayMode::Tab)
+            {
+                auto placementBox = ComboBox{};
+                placementBox.Items().Append(box_value(L"左上（图标加文字）"));
+                placementBox.Items().Append(box_value(L"右上（竖排图标）"));
+                placementBox.Items().Append(box_value(L"右下（竖排图标）"));
+                placementBox.SelectedIndex(static_cast<int32_t>(node.MultiWindowPreference.TabPlacement));
+                placementBox.IsEnabled(_workspaceEditorEditMode);
+                placementBox.SelectionChanged([weakThis{ get_weak() }, nodeIndex](auto&& sender, auto&&) {
+                    if (auto self{ weakThis.get() })
+                    {
+                        if (auto* workspace = self->_SelectedWorkspaceForEditing(); workspace && nodeIndex < workspace->Nodes.size())
+                        {
+                            workspace->Nodes.at(nodeIndex).MultiWindowPreference.TabPlacement = static_cast<Microsoft::Terminal::Settings::Model::implementation::WorkspaceTabPlacement>(sender.as<ComboBox>().SelectedIndex());
+                            self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
+                        }
+                    }
+                });
+                nodeRoot.Children().Append(makeWorkspaceSetting(L"Tab 位置", placementBox));
+            }
+            else
+            {
+                auto weights = node.MultiWindowPreference.SplitWeights;
+                if (weights.size() != commands.size()) weights.assign(commands.size(), 1.0 / commands.size());
+                auto allocation = Grid{};
+                allocation.Height(46);
+                allocation.Width(500);
+                const auto columns = std::make_shared<std::vector<ColumnDefinition>>();
+                const auto labels = std::make_shared<std::vector<TextBlock>>();
+                for (size_t i = 0; i < weights.size(); ++i)
+                {
+                    auto column = ColumnDefinition{};
+                    column.Width(GridLengthHelper::FromValueAndType(weights[i], GridUnitType::Star));
+                    allocation.ColumnDefinitions().Append(column);
+                    columns->emplace_back(column);
+                    auto label = TextBlock{};
+                    label.Text(winrt::to_hstring(static_cast<int>(weights[i] * 100 + .5)) + L"%");
+                    label.HorizontalAlignment(HorizontalAlignment::Center);
+                    label.VerticalAlignment(VerticalAlignment::Center);
+                    Grid::SetColumn(label, static_cast<int>(i * 2));
+                    allocation.Children().Append(label);
+                    labels->emplace_back(label);
+                    if (i + 1 < weights.size())
+                    {
+                        auto dividerColumn = ColumnDefinition{};
+                        dividerColumn.Width(GridLengthHelper::FromPixels(10));
+                        allocation.ColumnDefinitions().Append(dividerColumn);
+                        auto divider = Border{};
+                        divider.Width(10);
+                        divider.Background(SolidColorBrush{ Colors::Gray() });
+                        divider.HorizontalAlignment(HorizontalAlignment::Center);
+                        Grid::SetColumn(divider, static_cast<int>(i * 2 + 1));
+                        struct Drag { bool Active{}; double X{}; double Left{}; double Combined{}; };
+                        const auto drag = std::make_shared<Drag>();
+                        divider.PointerPressed([allocation, divider, drag](auto&&, const auto& args) {
+                            divider.CapturePointer(args.Pointer());
+                            drag->Active = true;
+                            drag->X = args.GetCurrentPoint(allocation).Position().X;
+                        });
+                        divider.PointerMoved([weakThis{ get_weak() }, allocation, divider, columns, labels, drag, nodeIndex, i](auto&&, const auto& args) {
+                            if (!drag->Active) return;
+                            if (auto self{ weakThis.get() })
+                            {
+                                if (auto* workspace = self->_SelectedWorkspaceForEditing(); workspace && nodeIndex < workspace->Nodes.size())
+                                {
+                                    auto& current = workspace->Nodes.at(nodeIndex).MultiWindowPreference.SplitWeights;
+                                    if (current.size() != labels->size()) current.assign(labels->size(), 1.0 / labels->size());
+                                    if (drag->Combined == 0) { drag->Left = current[i]; drag->Combined = current[i] + current[i + 1]; }
+                                    const auto width = std::max(1.0, allocation.ActualWidth());
+                                    auto left = drag->Left + (args.GetCurrentPoint(allocation).Position().X - drag->X) / width;
+                                    left = std::round(left / .05) * .05;
+                                    left = std::clamp(left, .05, drag->Combined - .05);
+                                    current[i] = left; current[i + 1] = drag->Combined - left;
+                                    for (size_t j = 0; j < current.size(); ++j) { columns->at(j).Width(GridLengthHelper::FromValueAndType(current[j], GridUnitType::Star)); labels->at(j).Text(winrt::to_hstring(static_cast<int>(current[j] * 100 + .5)) + L"%"); }
+                                    self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
+                                }
+                            }
+                        });
+                        divider.PointerReleased([divider, drag](auto&&, const auto& args) { drag->Active = false; drag->Combined = 0; divider.ReleasePointerCapture(args.Pointer()); });
+                        allocation.Children().Append(divider);
+                    }
+                }
+                nodeRoot.Children().Append(makeWorkspaceSetting(L"大小分配", allocation));
+            }
+        }
 
         auto tabColorPanel = StackPanel{};
         tabColorPanel.Orientation(Orientation::Horizontal);

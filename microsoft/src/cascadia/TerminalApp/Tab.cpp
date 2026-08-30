@@ -81,7 +81,10 @@ namespace winrt::TerminalApp::implementation
             Closed.raise(nullptr, nullptr);
         });
 
-        Content(_rootPane->GetRootElement());
+        _contentWrapper = WUX::Controls::Grid{};
+        _terminalContentHost = WUX::Controls::Grid{};
+        _contentWrapper.Children().Append(_terminalContentHost);
+        _SetContentRoot(_rootPane->GetRootElement());
 
         _MakeTabViewItem();
         _CreateContextMenu();
@@ -110,6 +113,174 @@ namespace winrt::TerminalApp::implementation
 
         // Use our header control as the TabViewItem's header
         TabViewItem().Header(_headerControl);
+    }
+
+    void Tab::_SetContentRoot(const WUX::FrameworkElement& root)
+    {
+        _terminalContentHost.Children().Clear();
+        if (root)
+        {
+            _terminalContentHost.Children().Append(root);
+        }
+        Content(_contentWrapper);
+    }
+
+    void Tab::SetTerminalContentTabHost(std::vector<std::shared_ptr<Pane>> panes,
+                                        std::vector<winrt::hstring> titles,
+                                        std::vector<winrt::hstring> icons,
+                                        const bool iconButtons,
+                                        const bool dockBottom)
+    {
+        if (panes.empty() || panes.size() != titles.size() || panes.size() != icons.size())
+        {
+            return;
+        }
+
+        _commandTabPanes = std::move(panes);
+        _commandTabTitles = std::move(titles);
+        _commandTabIcons = std::move(icons);
+        _commandTabButtons.clear();
+
+        auto host = WUX::Controls::Grid{};
+        _terminalContentHost = WUX::Controls::Grid{};
+        if (!iconButtons)
+        {
+            WUX::Controls::RowDefinition tabRow;
+            tabRow.Height(WUX::GridLengthHelper::Auto());
+            host.RowDefinitions().Append(tabRow);
+            WUX::Controls::RowDefinition contentRow;
+            contentRow.Height(WUX::GridLengthHelper::FromValueAndType(1.0, WUX::GridUnitType::Star));
+            host.RowDefinitions().Append(contentRow);
+
+            _commandTabView = MUX::Controls::TabView{};
+            _commandTabView.IsAddTabButtonVisible(false);
+            WUX::Controls::Grid::SetRow(_commandTabView, 0);
+            host.Children().Append(_commandTabView);
+            WUX::Controls::Grid::SetRow(_terminalContentHost, 1);
+            host.Children().Append(_terminalContentHost);
+        }
+        else
+        {
+            // Right-side modes intentionally use compact vertical icon buttons,
+            // not a second horizontal TabView.
+            _commandTabView = nullptr;
+            host.Children().Append(_terminalContentHost);
+            auto buttons = WUX::Controls::StackPanel{};
+            buttons.Orientation(WUX::Controls::Orientation::Vertical);
+            buttons.HorizontalAlignment(WUX::HorizontalAlignment::Right);
+            buttons.VerticalAlignment(dockBottom ? WUX::VerticalAlignment::Bottom : WUX::VerticalAlignment::Top);
+            buttons.Margin(WUX::Thickness{ 0.0, dockBottom ? 0.0 : 8.0, 8.0, dockBottom ? 8.0 : 0.0 });
+            WUX::Controls::Canvas::SetZIndex(buttons, 1);
+            host.Children().Append(buttons);
+            for (size_t index = 0; index < _commandTabTitles.size(); ++index)
+            {
+                auto button = WUX::Controls::Button{};
+                button.Width(34);
+                button.Height(34);
+                button.Padding(WUX::Thickness{});
+                button.HorizontalContentAlignment(WUX::HorizontalAlignment::Center);
+                button.VerticalContentAlignment(WUX::VerticalAlignment::Center);
+                button.Background(WUX::Media::SolidColorBrush{ Windows::UI::Colors::Transparent() });
+                button.BorderBrush(WUX::Media::SolidColorBrush{ Windows::UI::Colors::Transparent() });
+                button.BorderThickness(WUX::Thickness{});
+                button.Opacity(0.55);
+                WUX::Controls::ToolTipService::SetToolTip(button, winrt::box_value(_commandTabTitles[index]));
+                // Match the workspace demo's icon composition. ImageIcon and
+                // sprite-backed workspace icons need a centered panel and an
+                // explicit size when hosted in a compact Button.
+                auto buttonContent = WUX::Controls::StackPanel{};
+                buttonContent.HorizontalAlignment(WUX::HorizontalAlignment::Center);
+                buttonContent.VerticalAlignment(WUX::VerticalAlignment::Center);
+                if (!_commandTabIcons[index].empty())
+                {
+                    if (auto icon = Microsoft::Terminal::UI::IconPathConverter::IconWUX(_commandTabIcons[index]))
+                    {
+                        if (const auto element = icon.try_as<WUX::FrameworkElement>())
+                        {
+                            element.Width(30);
+                            element.Height(30);
+                        }
+                        buttonContent.Children().Append(icon);
+                    }
+                }
+                if (buttonContent.Children().Size() == 0)
+                {
+                    auto fallback = WUX::Controls::SymbolIcon{};
+                    fallback.Symbol(WUX::Controls::Symbol::Page);
+                    buttonContent.Children().Append(fallback);
+                }
+                button.Content(buttonContent);
+                button.PointerEntered([](const auto& sender, const auto&) { sender.as<WUX::Controls::Button>().Opacity(1.0); });
+                button.PointerExited([weakThis = get_weak(), index](const auto& sender, const auto&) {
+                    if (const auto tab = weakThis.get())
+                    {
+                        sender.as<WUX::Controls::Button>().Opacity(tab->_activePane == tab->_commandTabPanes[index] ? 1.0 : 0.55);
+                    }
+                });
+                button.Click([weakThis = get_weak(), index](const auto&, const auto&) {
+                    if (const auto tab = weakThis.get())
+                    {
+                        tab->_ActivateTerminalContentCommandTab(index);
+                    }
+                });
+                _commandTabButtons.emplace_back(button);
+                buttons.Children().Append(button);
+            }
+        }
+        _contentWrapper.Children().Clear();
+        _contentWrapper.Children().Append(host);
+
+        if (_commandTabView)
+        {
+            for (size_t index = 0; index < _commandTabTitles.size(); ++index)
+            {
+                auto item = MUX::Controls::TabViewItem{};
+                item.Header(winrt::box_value(_commandTabTitles[index]));
+                item.IsClosable(false);
+                if (!_commandTabIcons[index].empty())
+                {
+                    item.IconSource(Microsoft::Terminal::UI::IconPathConverter::IconSourceMUX(_commandTabIcons[index], false));
+                }
+                _commandTabView.TabItems().Append(item);
+            }
+
+            _commandTabView.SelectionChanged([weakThis = get_weak()](auto&&, const WUX::Controls::SelectionChangedEventArgs&) {
+                if (const auto tab = weakThis.get())
+                {
+                    const auto selected = tab->_commandTabView.SelectedIndex();
+                    if (selected >= 0)
+                    {
+                        tab->_ActivateTerminalContentCommandTab(static_cast<size_t>(selected));
+                    }
+                }
+            }
+            );
+            _commandTabView.SelectedIndex(0);
+        }
+        else
+        {
+            _ActivateTerminalContentCommandTab(0);
+        }
+        Content(_contentWrapper);
+    }
+
+    void Tab::_ActivateTerminalContentCommandTab(const size_t index)
+    {
+        if (index >= _commandTabPanes.size())
+        {
+            return;
+        }
+        const auto& pane = _commandTabPanes[index];
+        _terminalContentHost.Children().Clear();
+        _terminalContentHost.Children().Append(pane->GetRootElement());
+        _activePane = pane;
+        pane->SetActive();
+        for (size_t buttonIndex = 0; buttonIndex < _commandTabButtons.size(); ++buttonIndex)
+        {
+            _commandTabButtons[buttonIndex].Opacity(buttonIndex == index ? 1.0 : 0.55);
+        }
+        UpdateTitle();
+        Focus(WUX::FocusState::Programmatic);
     }
 
     // Method Description:
@@ -1490,7 +1661,7 @@ namespace winrt::TerminalApp::implementation
             {
                 if (tab->_zoomedPane)
                 {
-                    tab->Content(tab->_rootPane->GetRootElement());
+                    tab->_SetContentRoot(tab->_rootPane->GetRootElement());
                     tab->ExitZoom();
                 }
 
@@ -2077,7 +2248,7 @@ namespace winrt::TerminalApp::implementation
         _rootPane->Restore(_zoomedPane);
         _zoomedPane = newFocus;
         _rootPane->Maximize(_zoomedPane);
-        Content(_zoomedPane->GetRootElement());
+        _SetContentRoot(_zoomedPane->GetRootElement());
     }
 
     // Method Description:
@@ -2117,7 +2288,7 @@ namespace winrt::TerminalApp::implementation
         _rootPane->Maximize(_zoomedPane);
         // Update the tab header to show the magnifying glass
         _tabStatus.IsPaneZoomed(true);
-        Content(_zoomedPane->GetRootElement());
+        _SetContentRoot(_zoomedPane->GetRootElement());
     }
     void Tab::ExitZoom()
     {
@@ -2128,7 +2299,7 @@ namespace winrt::TerminalApp::implementation
         _zoomedPane = nullptr;
         // Update the tab header to hide the magnifying glass
         _tabStatus.IsPaneZoomed(false);
-        Content(_rootPane->GetRootElement());
+        _SetContentRoot(_rootPane->GetRootElement());
     }
 
     bool Tab::IsZoomed()

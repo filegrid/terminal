@@ -35,6 +35,14 @@ namespace winrt::TerminalApp::implementation
         std::shared_ptr<Pane> DetachPane();
         void AttachPane(std::shared_ptr<Pane> pane);
 
+        // Installs the command-level host inside this first-level node Tab.
+        // These panes intentionally do not enter TerminalPage::_tabs.
+        void SetTerminalContentTabHost(std::vector<std::shared_ptr<Pane>> panes,
+                                       std::vector<winrt::hstring> titles,
+                                       std::vector<winrt::hstring> icons,
+                                       bool iconButtons,
+                                       bool dockBottom);
+
         void AttachColorPicker(winrt::TerminalApp::ColorPickupFlyout& colorPicker);
 
         std::pair<std::shared_ptr<Pane>, std::shared_ptr<Pane>> SplitPane(winrt::Microsoft::Terminal::Settings::Model::SplitDirection splitType,
@@ -171,6 +179,15 @@ namespace winrt::TerminalApp::implementation
         std::shared_ptr<Pane> _rootPane{ nullptr };
         std::shared_ptr<Pane> _activePane{ nullptr };
         std::shared_ptr<Pane> _zoomedPane{ nullptr };
+        // Each first-level Tab owns its content wrapper. TerminalPage only
+        // attaches Tab::Content(); it never owns a global terminal host.
+        winrt::Windows::UI::Xaml::Controls::Grid _contentWrapper{ nullptr };
+        winrt::Windows::UI::Xaml::Controls::Grid _terminalContentHost{ nullptr };
+        winrt::Microsoft::UI::Xaml::Controls::TabView _commandTabView{ nullptr };
+        std::vector<std::shared_ptr<Pane>> _commandTabPanes;
+        std::vector<winrt::hstring> _commandTabTitles;
+        std::vector<winrt::hstring> _commandTabIcons;
+        std::vector<winrt::Windows::UI::Xaml::Controls::Button> _commandTabButtons;
 
         winrt::Microsoft::Terminal::Settings::Model::IconStyle _lastIconStyle;
         winrt::hstring _lastIconPath{};
@@ -219,6 +236,8 @@ namespace winrt::TerminalApp::implementation
         winrt::Windows::UI::Xaml::Controls::TextBox::LayoutUpdated_revoker _tabRenameBoxLayoutUpdatedRevoker;
 
         void _Setup();
+        void _SetContentRoot(const winrt::Windows::UI::Xaml::FrameworkElement& root);
+        void _ActivateTerminalContentCommandTab(size_t index);
 
         SafeDispatcherTimer _bellIndicatorTimer;
         void _BellIndicatorTimerTick(const Windows::Foundation::IInspectable& sender, const Windows::Foundation::IInspectable& e);

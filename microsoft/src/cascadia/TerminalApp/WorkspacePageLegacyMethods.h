@@ -49,6 +49,10 @@
         WT_WORKSPACE_EXT_API bool _RemoveWorkspaceDefinitionById(std::wstring_view workspaceId);
         WT_WORKSPACE_EXT_API bool _SaveWorkspaceEditorState();
         WT_WORKSPACE_EXT_API winrt::Windows::UI::Xaml::UIElement _BuildWorkspaceManagerContent();
+        // Host-only prototype. It deliberately owns no workspace data and has
+        // no Core/Glue/runtime integration.
+        winrt::Windows::UI::Xaml::UIElement _BuildWorkspaceMultiWindowDemo();
+        WT_WORKSPACE_EXT_API void _ConfigureTerminalContentWrapper(const winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace& workspace);
         WT_WORKSPACE_EXT_API winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace* _SelectedWorkspaceForEditing() noexcept;
         WT_WORKSPACE_EXT_API const winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace* _SelectedWorkspaceForEditing() const noexcept;
         WT_WORKSPACE_EXT_API winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace* _SelectedCurrentWorkspaceForEditingPtr() noexcept;

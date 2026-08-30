@@ -4348,7 +4348,7 @@ add_custom_command(OUTPUT "${_terminal_app_pri}"
 
 set(_terminal_app_sources
     init.cpp AppCommandlineArgs.cpp Commandline.cpp CommandPaletteItems.cpp Jumplist.cpp LanguageProfileNotifier.cpp
-    MinMaxCloseControl.cpp Remoting.cpp PaletteItemTemplateSelector.cpp Tab.cpp TaskbarState.cpp TerminalPage.cpp TabManagement.cpp
+    MinMaxCloseControl.cpp Remoting.cpp PaletteItemTemplateSelector.cpp Tab.cpp TaskbarState.cpp TerminalPage.cpp WorkspaceMultiWindowDemo.cpp WorkspaceCommandTabHost.cpp TabManagement.cpp
     ActionPreviewHandlers.cpp TerminalTabStatus.cpp TitlebarControl.cpp TabRowControl.cpp TabHeaderControl.cpp HighlightedTextControl.cpp
     ColorPickupFlyout.cpp CommandPalette.cpp FilteredCommand.cpp Pane.cpp Pane.LayoutSizeNode.cpp DebugTapConnection.cpp AppKeyBindings.cpp
     ShortcutActionDispatch.cpp AboutDialog.cpp App.cpp AppActionHandlers.cpp AppLogic.cpp ContentManager.cpp TerminalWindow.cpp
@@ -4367,7 +4367,7 @@ list(APPEND _terminal_app_sources "${_terminal_app_source_root}/../fzf/fzf.cpp"
 set_source_files_properties("${_terminal_app_source_root}/../TerminalSettingsModel/Workspace.cpp"
     PROPERTIES
         OBJECT_DEPENDS
-            "${_workspace_root}/src/glue/workspace/WorkspaceModel.cpp;${_workspace_root}/src/core/workspace/WorkspaceCore.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreManagerStorage.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreNavigation.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreEditor.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreEditorState.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreLaunch.cpp;${_workspace_root}/src/core/workspace/WorkspaceCorePersistence.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreRuntime.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreRuntimeOps.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreStateManager.cpp;${_workspace_root}/src/core/workspace/deprecated/WorkspaceCaptureDeprecated.cpp;${_workspace_root}/src/glue/workspace/WorkspacePaletteHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeConversionHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeEditorStateMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeStartupMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadePersistenceMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceUtilityHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceStartupColorLogic.cpp"
+            "${_workspace_root}/src/glue/workspace/WorkspaceModel.cpp;${_workspace_root}/src/core/workspace/WorkspaceCore.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreMultiWindow.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreManagerStorage.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreNavigation.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreEditor.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreEditorState.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreLaunch.cpp;${_workspace_root}/src/core/workspace/WorkspaceCorePersistence.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreRuntime.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreRuntimeOps.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreStateManager.cpp;${_workspace_root}/src/core/workspace/deprecated/WorkspaceCaptureDeprecated.cpp;${_workspace_root}/src/glue/workspace/WorkspacePaletteHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeConversionHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeEditorStateMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeStartupMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadePersistenceMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceUtilityHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceStartupColorLogic.cpp"
 )
 # The legacy page is likewise a single intentional aggregation TU. Track its
 # implementation fragments explicitly so an edited Glue fragment cannot be
@@ -5046,7 +5046,7 @@ set_source_files_properties(
     "${_workspace_root}/src/glue/workspace/dll/WorkspaceModelWrapper.cpp"
     PROPERTIES
         OBJECT_DEPENDS
-            "${_workspace_root}/src/core/workspace/ExtCoreApi.h;${_workspace_root}/src/glue/workspace/WorkspaceApi.h;${_workspace_root}/src/glue/workspace/WorkspaceDataTypes.h;${_workspace_root}/src/glue/workspace/WorkspaceRuntimeTypes.h;${_workspace_root}/src/glue/workspace/WorkspaceEditorTypes.h;${_workspace_root}/src/glue/workspace/WorkspaceModel.cpp;${_workspace_root}/src/core/workspace/WorkspaceCore.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreManagerStorage.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreNavigation.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreEditor.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreEditorState.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreLaunch.cpp;${_workspace_root}/src/core/workspace/WorkspaceCorePersistence.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreRuntime.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreRuntimeOps.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreStateManager.cpp;${_workspace_root}/src/core/workspace/deprecated/WorkspaceCaptureDeprecated.cpp;${_workspace_root}/src/glue/workspace/WorkspacePaletteHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeConversionHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeEditorStateMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeStartupMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadePersistenceMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceUtilityHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceStartupColorLogic.cpp"
+            "${_workspace_root}/src/core/workspace/ExtCoreApi.h;${_workspace_root}/src/glue/workspace/WorkspaceApi.h;${_workspace_root}/src/glue/workspace/WorkspaceDataTypes.h;${_workspace_root}/src/glue/workspace/WorkspaceRuntimeTypes.h;${_workspace_root}/src/glue/workspace/WorkspaceEditorTypes.h;${_workspace_root}/src/glue/workspace/WorkspaceModel.cpp;${_workspace_root}/src/core/workspace/WorkspaceCore.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreMultiWindow.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreManagerStorage.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreNavigation.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreEditor.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreEditorState.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreLaunch.cpp;${_workspace_root}/src/core/workspace/WorkspaceCorePersistence.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreRuntime.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreRuntimeOps.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreStateManager.cpp;${_workspace_root}/src/core/workspace/deprecated/WorkspaceCaptureDeprecated.cpp;${_workspace_root}/src/glue/workspace/WorkspacePaletteHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeConversionHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeEditorStateMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeStartupMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadePersistenceMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceUtilityHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceStartupColorLogic.cpp"
 )
 
 target_compile_features(${_workspace_extension_target} PRIVATE cxx_std_20)
@@ -5055,6 +5055,14 @@ target_precompile_headers(${_workspace_extension_target} PRIVATE
 )
 
 target_include_directories(${_workspace_extension_target} PRIVATE
+    "${_native_cppwinrt_projection_root}"
+    "${_terminal_settings_adapter_projection_root}"
+    "${_terminal_app_reference_root}"
+    "${_terminal_settings_model_projection_root}"
+    "${_terminal_app_projection_root}"
+    "${_terminal_control_projection_root}"
+    "${_terminal_core_projection_root}"
+    "${_terminal_connection_projection_root}"
     "${_wil_package_dir}/include"
     "${_themehelpers_package_dir}/inc"
     "${_workspace_root}/src/glue/workspace/dll"
@@ -5233,9 +5241,10 @@ set(_workspace_chat_core_sources
     "${_workspace_root}/src/core/chat/WorkspaceChatStore.cpp"
     "${_workspace_root}/src/core/chat/WorkspaceStoragePaths.cpp"
     "${_workspace_root}/src/glue/chat/WorkspaceDiagnosticLog.cpp")
-add_library(${_workspace_chat_core_target} STATIC ${_workspace_chat_core_sources})
+add_library(${_workspace_chat_core_target} STATIC ${_workspace_chat_core_sources} "${_native_cppwinrt_projection_base}")
 target_compile_features(${_workspace_chat_core_target} PRIVATE cxx_std_20)
 target_include_directories(${_workspace_chat_core_target} PRIVATE
+    "${_native_cppwinrt_projection_root}"
     ${_ext_core_includes}
     "${_workspace_root}/src/core/chat"
     "${_workspace_root}/src/glue/chat"

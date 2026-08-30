@@ -19,6 +19,19 @@
             core.ShowTab = node.ShowTab;
             core.StartupDirectory = node.StartupDirectory;
             core.StartupAction = node.StartupAction;
+            core.Commands.reserve(node.Commands.size());
+            for (const auto& command : node.Commands)
+            {
+                core.Commands.emplace_back(terminal::workspace::WorkspaceNodeCommand{
+                    .Id = command.Id,
+                    .Icon = command.Icon,
+                    .Name = command.Name,
+                    .Command = command.Command,
+                });
+            }
+            core.MultiWindowPreference.DisplayMode = static_cast<terminal::workspace::WorkspaceWindowDisplayMode>(node.MultiWindowPreference.DisplayMode);
+            core.MultiWindowPreference.TabPlacement = static_cast<terminal::workspace::WorkspaceTabPlacement>(node.MultiWindowPreference.TabPlacement);
+            core.MultiWindowPreference.SplitWeights = node.MultiWindowPreference.SplitWeights;
             core.OperatingSystem = node.OperatingSystem;
             core.ShellType = node.ShellType;
             core.ShowInputPanel = node.ShowInputPanel;
@@ -39,6 +52,19 @@
             wrapped.ShowTab = node.ShowTab;
             wrapped.StartupDirectory = node.StartupDirectory;
             wrapped.StartupAction = node.StartupAction;
+            wrapped.Commands.reserve(node.Commands.size());
+            for (const auto& command : node.Commands)
+            {
+                wrapped.Commands.emplace_back(WorkspaceNodeCommand{
+                    .Id = command.Id,
+                    .Icon = command.Icon,
+                    .Name = command.Name,
+                    .Command = command.Command,
+                });
+            }
+            wrapped.MultiWindowPreference.DisplayMode = static_cast<WorkspaceWindowDisplayMode>(node.MultiWindowPreference.DisplayMode);
+            wrapped.MultiWindowPreference.TabPlacement = static_cast<WorkspaceTabPlacement>(node.MultiWindowPreference.TabPlacement);
+            wrapped.MultiWindowPreference.SplitWeights = node.MultiWindowPreference.SplitWeights;
             wrapped.OperatingSystem = node.OperatingSystem;
             wrapped.ShellType = node.ShellType;
             wrapped.ShowInputPanel = node.ShowInputPanel;

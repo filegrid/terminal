@@ -129,10 +129,67 @@
         for (const auto& resolvedNode : resolvedNodes)
         {
             const auto& node = workspace.Nodes.at(resolvedNode.NodeIndex);
-            state.PendingNodeIds.emplace_back(node.Id);
+            // Exactly one first-level Tab is created for each node. Command
+            // windows are children of that Tab's TerminalContentWrapper and
+            // must never consume this native-tab registration queue.
             state.PendingNodeInputVisibility.emplace_back(node.ShowInputPanel);
+            state.PendingNodeIds.emplace_back(node.Id);
         }
         return state;
+    }
+
+    std::vector<WorkspaceNodeCommandLaunch> WorkspaceManager::BuildNodeCommandLaunches(const Workspace& workspace,
+                                                                                         const size_t nodeIndex,
+                                                                                         const Model::CascadiaSettings& settings) const
+    {
+        std::vector<WorkspaceNodeCommandLaunch> launches;
+        if (nodeIndex >= workspace.Nodes.size())
+        {
+            return launches;
+        }
+
+        const auto& node = workspace.Nodes.at(nodeIndex);
+        const auto profile = _resolveNodeProfile(node, settings);
+        if (!profile)
+        {
+            return launches;
+        }
+
+        const auto isSshTransport = _isSshTransportNode(node, profile);
+        const auto isWslTransport = _isWslProfileSource(profile.Source().c_str()) ||
+                                    _isWslCommandline(profile.Commandline().c_str());
+        const auto commands = node.Commands.empty() ?
+                                  std::vector<WorkspaceNodeCommand>{ WorkspaceNodeCommand{ node.Id + L":legacy-command", node.Icon, node.Name, node.StartupAction } } :
+                                  node.Commands;
+        launches.reserve(commands.size());
+        for (const auto& command : commands)
+        {
+            Model::NewTerminalArgs terminalArgs;
+            terminalArgs.TabTitle(!command.Name.empty() ? command.Name : node.Name);
+            terminalArgs.SuppressApplicationTitle(node.UseNodeNameAsTabTitle);
+            terminalArgs.Profile(Utils::GuidToString(profile.Guid()));
+            if (isSshTransport)
+            {
+                terminalArgs.Commandline(profile.Commandline());
+                terminalArgs.StartingDirectory(profile.EvaluatedStartingDirectory());
+            }
+            else if (!isWslTransport && !node.StartupDirectory.empty())
+            {
+                terminalArgs.StartingDirectory(node.StartupDirectory);
+            }
+            if (const auto tabColor = ResolveWorkspaceNodeTabColor(workspace, nodeIndex, settings))
+            {
+                terminalArgs.TabColor(*tabColor);
+            }
+
+            auto startupInput = isSshTransport ? _buildSshStartupInput(node) :
+                                isWslTransport ? _buildWslStartupInput(node) : std::wstring{};
+            launches.emplace_back(WorkspaceNodeCommandLaunch{
+                .TerminalArgs = terminalArgs,
+                .StartupInput = _appendStartupCommand(std::move(startupInput), command.Command),
+            });
+        }
+        return launches;
     }
 
     WorkspaceOpenPlan PrepareWorkspaceForOpen(const std::wstring_view workspaceId,
@@ -262,58 +319,72 @@
         {
             const auto nodeIndex = resolvedNode.NodeIndex;
             const auto& node = workspace.Nodes.at(nodeIndex);
-            Model::NewTerminalArgs terminalArgs;
-
-            if (!node.Name.empty())
-            {
-                terminalArgs.TabTitle(node.Name);
-            }
-            terminalArgs.SuppressApplicationTitle(node.UseNodeNameAsTabTitle);
             const auto profile = resolvedNode.Profile;
 
-            const auto isSshTransport = _isSshTransportNode(node, profile);
-            const auto isWslTransport = [&]() noexcept {
-                if (!profile)
+            const auto commands = node.Commands.empty() ? std::vector<WorkspaceNodeCommand>{ WorkspaceNodeCommand{ node.Id + L":legacy-command", node.Icon, node.Name, node.StartupAction } } : node.Commands;
+            const auto launches = BuildNodeCommandLaunches(workspace, nodeIndex, settings);
+            // A multi-command node is one logical workspace node. In split mode
+            // its commands must therefore be created in the same tab, not as a
+            // series of unrelated tabs. Build a right-growing binary split: the
+            // first split reserves the aggregate size for all remaining panes;
+            // every following split divides that remainder. This preserves the
+            // configured absolute weights for two and three command windows.
+            auto weights = node.MultiWindowPreference.SplitWeights;
+            if (weights.size() != commands.size())
+            {
+                weights.assign(commands.size(), 1.0 / static_cast<double>(commands.size()));
+            }
+            for (size_t commandIndex = 0; commandIndex < commands.size(); ++commandIndex)
+            {
+                const auto displayMode = node.MultiWindowPreference.DisplayMode;
+                if (commandIndex >= launches.size())
                 {
-                    return false;
+                    continue;
                 }
-                return _isWslProfileSource(profile.Source().c_str()) ||
-                       _isWslCommandline(profile.Commandline().c_str());
-            }();
+                const auto& launch = launches[commandIndex];
+                const auto& terminalArgs = launch.TerminalArgs;
+                // INVARIANT: first-level native tabs are created from workspace
+                // nodes only. Commands never create native tabs, regardless of
+                // display mode or command count. TabHost owns command-level UI.
+                if (commandIndex == 0)
+                {
+                    Model::ActionAndArgs newTabAction;
+                    newTabAction.Action(ShortcutAction::NewTab);
+                    newTabAction.Args(Model::NewTabArgs{ terminalArgs });
+                    actions.emplace_back(std::move(newTabAction));
+                }
+                else if (displayMode == WorkspaceWindowDisplayMode::Split)
+                {
+                    // The active pane is the previous command's remaining
+                    // subtree. For three windows, the first split must give
+                    // the right subtree (windows 2 + 3) its combined share,
+                    // then the next split divides that subtree. Dividing each
+                    // command by a running global remainder produced the
+                    // wrong 3-pane proportions.
+                    const auto activeSubtreeWeight = std::accumulate(weights.begin() + commandIndex - 1, weights.end(), 0.0);
+                    const auto newSubtreeWeight = std::accumulate(weights.begin() + commandIndex, weights.end(), 0.0);
+                    const auto newPaneSize = static_cast<float>(std::clamp(newSubtreeWeight / activeSubtreeWeight, 0.05, 0.95));
+                    Model::ActionAndArgs splitAction;
+                    splitAction.Action(ShortcutAction::SplitPane);
+                    splitAction.Args(Model::SplitPaneArgs{ Model::SplitType::Manual, Model::SplitDirection::Right, newPaneSize, terminalArgs });
+                    actions.emplace_back(std::move(splitAction));
+                }
 
-            terminalArgs.Profile(Utils::GuidToString(profile.Guid()));
-            if (isSshTransport)
-            {
-                terminalArgs.Commandline(profile.Commandline());
-                // SSH itself is a local Windows process. Use the profile's
-                // evaluated directory so values such as %USERPROFILE% are not
-                // passed literally to CreateProcess as the working directory.
-                terminalArgs.StartingDirectory(profile.EvaluatedStartingDirectory());
-            }
-            else if (!isWslTransport && !node.StartupDirectory.empty())
-            {
-                terminalArgs.StartingDirectory(node.StartupDirectory);
-            }
+                // Tab-mode command hosts are deliberately not represented by
+                // native startup actions. TerminalContentWrapper consumes the
+                // node command list and owns their creation in TabHost.
+                if (displayMode == WorkspaceWindowDisplayMode::Tab && commandIndex > 0)
+                {
+                    continue;
+                }
 
-            if (const auto tabColor = ResolveWorkspaceNodeTabColor(workspace, nodeIndex, settings))
-            {
-                terminalArgs.TabColor(*tabColor);
-            }
-
-            Model::ActionAndArgs newTabAction;
-            newTabAction.Action(ShortcutAction::NewTab);
-            newTabAction.Args(Model::NewTabArgs{ terminalArgs });
-            actions.emplace_back(std::move(newTabAction));
-
-            auto startupInput = isSshTransport ? _buildSshStartupInput(node) :
-                                isWslTransport ? _buildWslStartupInput(node) : std::wstring{};
-            startupInput = _appendStartupCommand(std::move(startupInput), node.StartupAction);
-            if (!startupInput.empty())
-            {
-                Model::ActionAndArgs startupAction;
-                startupAction.Action(ShortcutAction::SendInput);
-                startupAction.Args(Model::SendInputArgs{ winrt::hstring{ startupInput } });
-                actions.emplace_back(std::move(startupAction));
+                if (!launch.StartupInput.empty())
+                {
+                    Model::ActionAndArgs startupAction;
+                    startupAction.Action(ShortcutAction::SendInput);
+                    startupAction.Args(Model::SendInputArgs{ winrt::hstring{ launch.StartupInput } });
+                    actions.emplace_back(std::move(startupAction));
+                }
             }
         }
         return actions;

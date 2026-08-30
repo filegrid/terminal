@@ -130,22 +130,22 @@
 
     void TerminalPage::_UpdateTerminalContentHostClip()
     {
-        if (!_terminalContentHost)
+        if (!_terminalContentWrapper)
         {
             return;
         }
 
-        const auto width = static_cast<float>(_terminalContentHost.ActualWidth());
-        const auto height = static_cast<float>(_terminalContentHost.ActualHeight());
+        const auto width = static_cast<float>(_terminalContentWrapper.ActualWidth());
+        const auto height = static_cast<float>(_terminalContentWrapper.ActualHeight());
         if (width <= 0.0f || height <= 0.0f)
         {
-            _terminalContentHost.Clip(nullptr);
+            _terminalContentWrapper.Clip(nullptr);
             return;
         }
 
         Media::RectangleGeometry clip{};
         clip.Rect(Windows::Foundation::Rect{ 0.0f, 0.0f, width, height });
-        _terminalContentHost.Clip(clip);
+        _terminalContentWrapper.Clip(clip);
     }
 
     void TerminalPage::_UpdateWorkspaceChatHeader()

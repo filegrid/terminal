@@ -7,6 +7,7 @@
 #include "AppLogic.h"
 #include "..\..\..\..\src\contracts\ExtCoreRuntimeClient.h"
 #include "..\..\..\..\src\core\chat\WorkspaceDiagnosticLog.h"
+#include "..\..\..\..\src\glue\workspace\WorkspaceLegacyApiBridge.h"
 
 #include <til/env.h>
 
@@ -182,6 +183,13 @@ namespace winrt::TerminalApp::implementation
             if (windowName.starts_with(workspaceWindowPrefix))
             {
                 _initialWorkspaceId = winrt::hstring{ windowName.substr(workspaceWindowPrefix.size()) };
+                // Resolve the definition at the only new-window boundary that
+                // still has the workspace identity, then hand the immutable
+                // snapshot to TerminalContentWrapper before tabs are created.
+                if (const auto workspace = ::terminal::workspace::LoadWorkspaceDefinition(_initialWorkspaceId.c_str()))
+                {
+                    _root->ConfigureTerminalContentWrapper(*workspace);
+                }
             }
             {
                 Json::Value payload{ Json::objectValue };

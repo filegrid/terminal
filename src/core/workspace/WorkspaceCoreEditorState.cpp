@@ -168,8 +168,21 @@
         WorkspaceStartupState state;
         if (const auto workspace = manager.FindById(workspaceId))
         {
-            state.PendingNodeIds = VisibleWorkspaceNodeIds(*workspace);
-            state.PendingNodeInputVisibility = VisibleWorkspaceNodeInputVisibility(*workspace);
+            for (const auto& nodeId : VisibleWorkspaceNodeIds(*workspace))
+            {
+                const auto nodeIndex = FindWorkspaceNodeIndexById(*workspace, nodeId);
+                if (!nodeIndex)
+                {
+                    continue;
+                }
+                const auto& node = workspace->Nodes.at(*nodeIndex);
+                const auto commandCount = std::max<size_t>(1, node.Commands.size());
+                for (size_t commandIndex = 0; commandIndex < commandCount; ++commandIndex)
+                {
+                    state.PendingNodeIds.emplace_back(nodeId);
+                    state.PendingNodeInputVisibility.emplace_back(node.ShowInputPanel);
+                }
+            }
         }
         return state;
     }
@@ -212,10 +225,10 @@
                                                   openInNewWindow,
                                                   currentWorkspaceId,
                                                   currentWorkspaceNeedsSave);
-        const auto startupState = WorkspaceStartupState{
-            .PendingNodeIds = VisibleWorkspaceNodeIds(loadedState.OpenPlan.TargetWorkspace),
-            .PendingNodeInputVisibility = VisibleWorkspaceNodeInputVisibility(loadedState.OpenPlan.TargetWorkspace),
-        };
+        WorkspaceManager targetWorkspaceManager;
+        targetWorkspaceManager.SetWorkspaces({ loadedState.OpenPlan.TargetWorkspace });
+        const auto startupState = PrepareWorkspaceStartupState(loadedState.OpenPlan.TargetWorkspace.Id,
+                                                               targetWorkspaceManager);
         const auto executionPlan = ResolveWorkspaceOpenExecutionPlan(loadedState.OpenPlan,
                                                                      !startupState.PendingNodeIds.empty(),
                                                                      hasTabsToReplace);
