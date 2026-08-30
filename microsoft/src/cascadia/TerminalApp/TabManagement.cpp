@@ -1109,10 +1109,23 @@ namespace winrt::TerminalApp::implementation
 
         try
         {
-            auto children = _terminalContentHost ? _terminalContentHost.Children() : _tabContent.Children();
+            // A selected first-level Tab contributes its complete wrapper
+            // directly to the page content slot.
+            if (!_terminalContentWrapper)
+            {
+                return;
+            }
+            auto children = _terminalContentWrapper.Children();
             children.Clear();
             if (const auto content = tab.Content())
             {
+                // The workspace command host may add the same top inset as
+                // the visual demo below. Reset it first when moving between
+                // a command-tab node and a normal terminal tab.
+                if (const auto element = content.try_as<FrameworkElement>())
+                {
+                    element.Margin(Thickness{});
+                }
                 children.Append(content);
             }
             _UpdateTerminalContentHostClip();

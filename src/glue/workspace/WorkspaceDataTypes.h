@@ -10,6 +10,34 @@
 
 namespace winrt::Microsoft::Terminal::Settings::Model::implementation
 {
+    struct WorkspaceNodeCommand
+    {
+        std::wstring Id;
+        std::wstring Icon;
+        std::wstring Name;
+        std::wstring Command;
+    };
+
+    enum class WorkspaceWindowDisplayMode
+    {
+        Split,
+        Tab,
+    };
+
+    enum class WorkspaceTabPlacement
+    {
+        TopLeft,
+        TopRight,
+        BottomRight,
+    };
+
+    struct WorkspaceMultiWindowPreference
+    {
+        WorkspaceWindowDisplayMode DisplayMode{ WorkspaceWindowDisplayMode::Split };
+        WorkspaceTabPlacement TabPlacement{ WorkspaceTabPlacement::TopLeft };
+        std::vector<double> SplitWeights;
+    };
+
     struct WorkspaceNode
     {
         std::wstring Id;
@@ -23,6 +51,10 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         bool ShowTab{ true };
         std::wstring StartupDirectory;
         std::wstring StartupAction;
+        // New command-list schema. Empty represents an unmigrated legacy node
+        // and is interpreted by Core as its single StartupAction command.
+        std::vector<WorkspaceNodeCommand> Commands;
+        WorkspaceMultiWindowPreference MultiWindowPreference;
         std::wstring OperatingSystem;
         std::wstring ShellType;
         bool ShowInputPanel{ false };

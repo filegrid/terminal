@@ -67,9 +67,11 @@
                 <RowDefinition x:Name="WorkspaceChatPanelRow"
                                Height="36" />
             </Grid.RowDefinitions>
-            <Grid x:Name="TerminalContentHost"
+            <!-- The selected first-level Tab owns its complete content
+                 wrapper. This page-level grid is only a slot for Tab.Content;
+                 it must not choose between terminal, web, or command hosts. -->
+            <Grid x:Name="TerminalContentWrapper"
                   Grid.Row="0"
-                  Canvas.ZIndex="0"
                   HorizontalAlignment="Stretch"
                   VerticalAlignment="Stretch" />
 

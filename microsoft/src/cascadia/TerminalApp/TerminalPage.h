@@ -121,6 +121,11 @@ namespace winrt::TerminalApp::implementation
 
         void SetSettings(Microsoft::Terminal::Settings::Model::CascadiaSettings settings, bool needRefreshUI);
 
+        // The window startup path resolves the workspace definition once and
+        // gives it to the content wrapper. The wrapper never reaches back
+        // into editor/runtime state while it is installing a command TabHost.
+        void ConfigureTerminalContentWrapper(const Microsoft::Terminal::Settings::Model::implementation::Workspace& workspace);
+
         void Create();
         Windows::UI::Xaml::Automation::Peers::AutomationPeer OnCreateAutomationPeer();
 
@@ -244,7 +249,7 @@ namespace winrt::TerminalApp::implementation
         Microsoft::UI::Xaml::Controls::TabView _tabView{ nullptr };
         TerminalApp::TabRowControl _tabRow{ nullptr };
         Windows::UI::Xaml::Controls::Grid _tabContent{ nullptr };
-        Windows::UI::Xaml::Controls::Grid _terminalContentHost{ nullptr };
+        Windows::UI::Xaml::Controls::Grid _terminalContentWrapper{ nullptr };
         Microsoft::UI::Xaml::Controls::SplitButton _newTabButton{ nullptr };
         winrt::TerminalApp::ColorPickupFlyout _tabColorPicker{ nullptr };
 
@@ -537,6 +542,7 @@ namespace winrt::TerminalApp::implementation
         void _OnTabCloseRequested(const IInspectable& sender, const Microsoft::UI::Xaml::Controls::TabViewTabCloseRequestedEventArgs& eventArgs);
         void _OnFirstLayout(const IInspectable& sender, const IInspectable& eventArgs);
         void _UpdatedSelectedTab(const winrt::TerminalApp::Tab& tab);
+        void _SetTerminalContentFromTab(const winrt::TerminalApp::Tab& tab);
         void _UpdateBackground(const winrt::Microsoft::Terminal::Settings::Model::Profile& profile);
 
         void _OnDispatchCommandRequested(const IInspectable& sender, const Microsoft::Terminal::Settings::Model::Command& command);

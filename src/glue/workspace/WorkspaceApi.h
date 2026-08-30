@@ -21,6 +21,15 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
 
     class WorkspaceManager;
 
+    // A command launch belongs to one workspace node. The host uses this to
+    // create child terminal hosts without turning commands into first-level
+    // TerminalApp::Tab instances.
+    struct WorkspaceNodeCommandLaunch
+    {
+        winrt::Microsoft::Terminal::Settings::Model::NewTerminalArgs TerminalArgs;
+        std::wstring StartupInput;
+    };
+
     class WorkspaceManager
     {
     public:
@@ -34,6 +43,9 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         const Workspace* FindById(std::wstring_view id) const noexcept;
         bool ReorderWorkspaceNodes(std::wstring_view workspaceId, const std::vector<std::wstring>& orderedNodeIds);
         std::vector<winrt::Microsoft::Terminal::Settings::Model::ActionAndArgs> BuildStartupActions(const Workspace& workspace, const winrt::Microsoft::Terminal::Settings::Model::CascadiaSettings& settings) const;
+        std::vector<WorkspaceNodeCommandLaunch> BuildNodeCommandLaunches(const Workspace& workspace,
+                                                                          size_t nodeIndex,
+                                                                          const winrt::Microsoft::Terminal::Settings::Model::CascadiaSettings& settings) const;
 
         std::vector<Workspace>& Workspaces() noexcept;
         const std::vector<Workspace>& Workspaces() const noexcept;

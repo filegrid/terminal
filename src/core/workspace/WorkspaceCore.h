@@ -15,6 +15,39 @@ namespace terminal::workspace
 {
     class WorkspaceManager;
 
+    // This is deliberately separate from a terminal title/runtime instance. A
+    // command identifies a configured window; its live title belongs to Glue's
+    // session state in the next phase.
+    struct WorkspaceNodeCommand
+    {
+        std::wstring Id;
+        std::wstring Icon;
+        std::wstring Name;
+        // An empty command is valid: it opens the selected profile unchanged.
+        std::wstring Command;
+    };
+
+    enum class WorkspaceWindowDisplayMode
+    {
+        Split,
+        Tab,
+    };
+
+    enum class WorkspaceTabPlacement
+    {
+        TopLeft,
+        TopRight,
+        BottomRight,
+    };
+
+    struct WorkspaceMultiWindowPreference
+    {
+        WorkspaceWindowDisplayMode DisplayMode{ WorkspaceWindowDisplayMode::Split };
+        WorkspaceTabPlacement TabPlacement{ WorkspaceTabPlacement::TopLeft };
+        // One entry per command. Core stores these in 5% increments.
+        std::vector<double> SplitWeights;
+    };
+
     struct WorkspaceNode
     {
         std::wstring Id;
@@ -27,7 +60,13 @@ namespace terminal::workspace
         std::wstring TabColor;
         bool ShowTab{ true };
         std::wstring StartupDirectory;
+        // Legacy single-command representation. It is read for migration;
+        // the next save writes Commands instead.
         std::wstring StartupAction;
+        // New ordered representation. Empty means use StartupAction as a
+        // compatible single command at read time.
+        std::vector<WorkspaceNodeCommand> Commands;
+        WorkspaceMultiWindowPreference MultiWindowPreference;
         std::wstring OperatingSystem;
         std::wstring ShellType;
         bool ShowInputPanel{ false };
@@ -421,6 +460,61 @@ namespace terminal::workspace
     };
 
     class WorkspaceStateManager;
+
+    constexpr size_t WorkspaceNodeMinCommandCount{ 1 };
+    constexpr size_t WorkspaceNodeMaxCommandCount{ 3 };
+    constexpr double WorkspaceSplitWeightStep{ 0.05 };
+
+    struct WorkspaceMultiWindowValidationResult
+    {
+        bool IsValid{ false };
+        std::wstring Message;
+    };
+
+    struct WorkspaceSplitLayoutResult
+    {
+        std::vector<double> WindowWidths;
+        bool RequiresHorizontalScroll{ false };
+    };
+
+    // Runtime-only state. This deliberately never belongs to WorkspaceNode's
+    // persisted command configuration: terminal title refreshes must not edit
+    // the user's configured command name or command line.
+    struct WorkspaceCommandRuntimeState
+    {
+        std::wstring CommandId;
+        std::wstring Title;
+        bool IsRunning{ false };
+    };
+
+    struct WorkspaceNodeSessionState
+    {
+        std::wstring ActiveCommandId;
+        std::vector<WorkspaceCommandRuntimeState> Commands;
+    };
+
+    // Returns the configured list, or a synthesized legacy command when the
+    // node still only has startupAction. Callers never need to branch on file
+    // schema while reading a node.
+    std::vector<WorkspaceNodeCommand> EffectiveWorkspaceNodeCommands(const WorkspaceNode& node);
+    WorkspaceMultiWindowValidationResult ValidateWorkspaceNodeMultiWindowConfig(const WorkspaceNode& node);
+    bool SetWorkspaceNodeCommands(WorkspaceNode& node, std::vector<WorkspaceNodeCommand> commands);
+    bool ReorderWorkspaceNodeCommands(WorkspaceNode& node, const std::vector<std::wstring>& orderedCommandIds);
+    bool SetWorkspaceNodeSplitWeights(WorkspaceNode& node, const std::vector<double>& weights);
+    bool ResizeWorkspaceNodeSplit(WorkspaceNode& node, size_t dividerIndex, double leftRatio);
+    WorkspaceSplitLayoutResult CalculateWorkspaceNodeSplitLayout(const WorkspaceNode& node,
+                                                                  double availableWidth,
+                                                                  double minimumWindowWidth);
+    bool SetWorkspaceCommandRuntimeTitle(const WorkspaceNode& node,
+                                         WorkspaceNodeSessionState& session,
+                                         std::wstring_view commandId,
+                                         std::wstring title);
+    bool SetWorkspaceNodeActiveCommand(const WorkspaceNode& node,
+                                       WorkspaceNodeSessionState& session,
+                                       std::wstring_view commandId);
+    std::wstring ResolveWorkspaceCommandDisplayName(const WorkspaceNodeCommand& command,
+                                                    const WorkspaceNodeSessionState& session);
+    void NormalizeWorkspaceNodeMultiWindowConfig(WorkspaceNode& node);
 
     bool ApplyVisibleWorkspaceNodeOrder(Workspace& workspace, const std::vector<WorkspaceNode>& orderedVisibleNodes);
     // Moves a visible editor node by one slot and keeps the persisted tab order

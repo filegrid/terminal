@@ -446,6 +446,10 @@ internal sealed class Program
                 yield return Path.Combine(outputDirectory, "res");
             }
 
+            // Workspace icon atlases are checked-in product resources. Do not
+            // depend on a generated bin/ext copy: the portable package must
+            // always take the canonical files directly from res/v1/assets.
+            yield return Path.Combine(_options.SourceRoot, "res");
             yield return Path.Combine(_options.SourceRoot, "ext", "res");
             yield return Path.Combine(_options.SourceRoot, "bin", "res");
         }

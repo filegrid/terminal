@@ -101,6 +101,7 @@
         const auto& openPlan = loadedOpenState.OpenPlan;
         const auto& startupState = loadedOpenState.StartupState;
         const auto& executionPlan = loadedOpenState.ExecutionPlan;
+        _ConfigureTerminalContentWrapper(openPlan.TargetWorkspace);
         auto startupActions = manager.BuildStartupActions(openPlan.TargetWorkspace, _settings);
         {
             Json::Value payload{ Json::objectValue };
@@ -230,6 +231,17 @@
             suspend = true;
         }
 
+        // Startup created one native Tab per workspace node. Each node Tab's
+        // wrapper now creates its own command-level host from node.Commands.
+        _ConfigureTerminalContentWrapper(openPlan.TargetWorkspace);
+
+        // The regular TerminalPage startup path installs this host itself.
+        // Opening a workspace in the current window has its own action loop,
+        // so it must do the same after all logical command tabs exist.
+        if (executionPlan.SetCurrentWorkspaceAfterActions)
+        {
+            CurrentWorkspaceId(workspaceId);
+        }
         if (executionPlan.FocusActiveContentAfterActions)
         {
             if (const auto& tabImpl{ _GetFocusedTabImpl() })
@@ -249,10 +261,6 @@
             }
         }
 
-        if (executionPlan.SetCurrentWorkspaceAfterActions)
-        {
-            CurrentWorkspaceId(workspaceId);
-        }
     }
 
     void TerminalPage::WorkspaceDefinitionsChanged()
