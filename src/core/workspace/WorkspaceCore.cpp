@@ -1205,10 +1205,16 @@ namespace terminal::workspace
             return _enumeratePersistedWorkspaceDirectories(path);
         }
 
-        std::wstring _serializeWorkspaceOrder(const std::vector<Workspace>& workspaces)
+        std::wstring _serializeWorkspaceOrder(const std::vector<Workspace>& workspaces, const bool demoEnabled)
         {
             std::wostringstream stream;
             stream << L"version: 1\n";
+            // Keep the default configuration minimal: the opt-in flag is only
+            // emitted after a user explicitly enables the demo entry.
+            if (demoEnabled)
+            {
+                stream << L"demo: true\n";
+            }
             if (!workspaces.empty())
             {
                 std::wstring serializedOrder;

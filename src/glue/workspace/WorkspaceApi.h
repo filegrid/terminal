@@ -50,9 +50,12 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         std::vector<Workspace>& Workspaces() noexcept;
         const std::vector<Workspace>& Workspaces() const noexcept;
         void SetWorkspaces(std::vector<Workspace> workspaces);
+        bool DemoEnabled() const noexcept;
+        void SetDemoEnabled(bool enabled) noexcept;
 
     private:
         std::vector<Workspace> _workspaces;
+        bool _demoEnabled{ false };
     };
 
     class WorkspaceStateManager;
