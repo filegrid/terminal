@@ -92,6 +92,16 @@
         _workspaces = std::move(workspaces);
     }
 
+    bool WorkspaceManager::DemoEnabled() const noexcept
+    {
+        return _demoEnabled;
+    }
+
+    void WorkspaceManager::SetDemoEnabled(const bool enabled) noexcept
+    {
+        _demoEnabled = enabled;
+    }
+
     std::wstring SanitizeWorkspaceDirectoryName(std::wstring_view value, std::wstring_view fallback) noexcept
     {
         return terminal::workspacepaths::SanitizeWorkspaceDirectoryName(value, fallback);

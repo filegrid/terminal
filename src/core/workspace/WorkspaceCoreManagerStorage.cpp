@@ -27,6 +27,30 @@
             return manager;
         }
 
+        // `workspaces.yaml` is the root-level configuration file. Missing or
+        // malformed values deliberately leave demos disabled.
+        if (const auto content = _readUtf8TextFile(path / std::filesystem::path{ terminal::workspacepaths::WorkspaceOrderFileName }))
+        {
+            std::wistringstream stream{ *content };
+            for (std::wstring line; std::getline(stream, line);)
+            {
+                const auto raw = std::wstring_view{ line };
+                const auto trimmed = _trim(_trimRight(raw));
+                const auto indent = raw.find_first_not_of(L' ');
+                if (trimmed.empty() || trimmed.starts_with(L"#") || (indent != std::wstring_view::npos && indent != 0))
+                {
+                    continue;
+                }
+
+                const auto [key, value] = _parseKeyValue(trimmed);
+                if (key == L"demo")
+                {
+                    manager.SetDemoEnabled(_parseBool(value, false));
+                    break;
+                }
+            }
+        }
+
         const auto persistedWorkspaces = _enumeratePersistedWorkspaceDirectories(path);
         if (!persistedWorkspaces.has_value())
         {
@@ -214,7 +238,7 @@
         }
 
         if (!_writeUtf8TextFile(path / std::filesystem::path{ terminal::workspacepaths::WorkspaceOrderFileName },
-                                _serializeWorkspaceOrder(_workspaces)))
+                                _serializeWorkspaceOrder(_workspaces, _demoEnabled)))
         {
             return false;
         }

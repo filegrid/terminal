@@ -336,9 +336,12 @@ namespace terminal::workspace
         std::vector<Workspace>& Workspaces() noexcept;
         const std::vector<Workspace>& Workspaces() const noexcept;
         void SetWorkspaces(std::vector<Workspace> workspaces);
+        bool DemoEnabled() const noexcept;
+        void SetDemoEnabled(bool enabled) noexcept;
 
     protected:
         std::vector<Workspace> _workspaces;
+        bool _demoEnabled{ false };
     };
 
     struct WorkspaceEditorLoadState

@@ -430,27 +430,56 @@
         }
         nav.FooterMenuItems().Append(openYamlItem);
 
-        auto webDemoItem = MUX::Controls::NavigationViewItem{};
-        webDemoItem.Content(box_value(L"Web Demo"));
-        webDemoItem.Tag(box_value(-3));
-        webDemoItem.SelectsOnInvoked(false);
+        // This is root configuration, not editable workspace state. Reload it
+        // here so navigation never depends on a stale editor-manager copy.
+        if (Microsoft::Terminal::Settings::Model::implementation::WorkspaceManager::Load().DemoEnabled())
         {
-            WUX::Controls::SymbolIcon icon{};
-            icon.Symbol(WUX::Controls::Symbol::World);
-            webDemoItem.Icon(icon);
-        }
-        nav.FooterMenuItems().Append(webDemoItem);
+            // The demos are opt-in developer tools. Keep one top-level entry
+            // so they do not compete with normal workspace actions.
+            auto demoItem = MUX::Controls::NavigationViewItem{};
+            demoItem.Content(box_value(L"Demo"));
+            demoItem.SelectsOnInvoked(false);
+            // NavigationView's footer expander glyph is easy to miss. Make
+            // the complete Demo row an expander as well, for both ordinary
+            // and double activation.
+            const auto toggleDemoExpansion = [demoItem]() {
+                demoItem.IsExpanded(!demoItem.IsExpanded());
+            };
+            demoItem.Tapped([toggleDemoExpansion](auto&&, auto&&) {
+                toggleDemoExpansion();
+            });
+            demoItem.DoubleTapped([toggleDemoExpansion](auto&&, auto&&) {
+                toggleDemoExpansion();
+            });
+            {
+                WUX::Controls::SymbolIcon icon{};
+                icon.Symbol(WUX::Controls::Symbol::View);
+                demoItem.Icon(icon);
+            }
 
-        auto multiWindowDemoItem = MUX::Controls::NavigationViewItem{};
-        multiWindowDemoItem.Content(box_value(L"多窗口 Demo"));
-        multiWindowDemoItem.Tag(box_value(-4));
-        multiWindowDemoItem.SelectsOnInvoked(false);
-        {
-            WUX::Controls::SymbolIcon icon{};
-            icon.Symbol(WUX::Controls::Symbol::View);
-            multiWindowDemoItem.Icon(icon);
+            auto webDemoItem = MUX::Controls::NavigationViewItem{};
+            webDemoItem.Content(box_value(L"Web Demo"));
+            webDemoItem.Tag(box_value(-3));
+            webDemoItem.SelectsOnInvoked(false);
+            {
+                WUX::Controls::SymbolIcon icon{};
+                icon.Symbol(WUX::Controls::Symbol::World);
+                webDemoItem.Icon(icon);
+            }
+            demoItem.MenuItems().Append(webDemoItem);
+
+            auto multiWindowDemoItem = MUX::Controls::NavigationViewItem{};
+            multiWindowDemoItem.Content(box_value(L"多窗口 Demo"));
+            multiWindowDemoItem.Tag(box_value(-4));
+            multiWindowDemoItem.SelectsOnInvoked(false);
+            {
+                WUX::Controls::SymbolIcon icon{};
+                icon.Symbol(WUX::Controls::Symbol::View);
+                multiWindowDemoItem.Icon(icon);
+            }
+            demoItem.MenuItems().Append(multiWindowDemoItem);
+            nav.FooterMenuItems().Append(demoItem);
         }
-        nav.FooterMenuItems().Append(multiWindowDemoItem);
 
         if (_workspaceExtension->WorkspaceManagerNavSelection() >= 1000)
         {

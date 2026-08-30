@@ -314,6 +314,7 @@
                 workspaces.emplace_back(_toCoreWorkspace(workspace));
             }
             core.SetWorkspaces(std::move(workspaces));
+            core.SetDemoEnabled(manager.DemoEnabled());
             return core;
         }
 
@@ -327,6 +328,7 @@
                 workspaces.emplace_back(_fromCoreWorkspace(workspace));
             }
             wrapped.SetWorkspaces(std::move(workspaces));
+            wrapped.SetDemoEnabled(manager.DemoEnabled());
             return wrapped;
         }
 
