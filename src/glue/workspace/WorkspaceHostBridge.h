@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "../../contracts/GluePageHostContract.h"
+#include "../contracts/GluePageHostContract.h"
 #include "WorkspaceLegacyApiBridge.h"
 
 namespace winrt::TerminalApp::implementation

@@ -5,7 +5,7 @@
 #include "TerminalWindow.h"
 
 #include "AppLogic.h"
-#include "..\..\..\..\src\contracts\ExtCoreRuntimeClient.h"
+#include "..\..\..\..\src\glue\contracts\ExtCoreRuntimeClient.h"
 #include "..\..\..\..\src\core\chat\WorkspaceDiagnosticLog.h"
 #include "..\..\..\..\src\glue\workspace\WorkspaceLegacyApiBridge.h"
 

@@ -66,9 +66,31 @@ namespace winrt::TerminalApp::implementation
                 }
                 if (!launch.StartupInput.empty())
                 {
-                    if (const auto control = pane->GetTerminalControl(); control && control.Connection())
+                    if (const auto control = pane->GetTerminalControl())
                     {
-                        control.Connection().WriteInput(winrt_wstring_to_array_view(launch.StartupInput));
+                        // Each command window owns its startup input. Do not
+                        // route it through a workspace-wide queue or another
+                        // pane's lifecycle.
+                        const auto sent = std::make_shared<bool>(false);
+                        const auto sendWhenConnected = [weakControl{ winrt::make_weak(control) }, input{ launch.StartupInput }, sent](const auto& sender, const auto&) {
+                            if (*sent)
+                            {
+                                return;
+                            }
+                            const auto coreState = sender.template try_as<winrt::Microsoft::Terminal::Control::ICoreState>();
+                            using winrt::Microsoft::Terminal::TerminalConnection::ConnectionState;
+                            if (!coreState || coreState.ConnectionState() < ConnectionState::Connected || coreState.ConnectionState() >= ConnectionState::Closed)
+                            {
+                                return;
+                            }
+                            if (const auto strongControl = weakControl.get())
+                            {
+                                strongControl.SendInput(winrt::hstring{ input });
+                                *sent = true;
+                            }
+                        };
+                        control.ConnectionStateChanged(sendWhenConnected);
+                        sendWhenConnected(control, nullptr);
                     }
                 }
                 panes.emplace_back(std::move(pane));

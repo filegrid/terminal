@@ -11,6 +11,22 @@
 #include <unordered_set>
 #include <vector>
 
+#include "mirror/MirrorTypes.h"
+#include "mirror/MirrorEventStore.h"
+#include "mirror/MirrorNodeSession.h"
+#include "mirror/MirrorNodeRecorder.h"
+#include "mirror/MirrorCheckpoint.h"
+#include "mirror/MirrorControlLease.h"
+#include "mirror/MirrorRecoveryPlanner.h"
+#include "mirror/MirrorAuthorization.h"
+#include "mirror/MirrorReducer.h"
+#include "mirror/MirrorRegistry.h"
+#include "mirror/MirrorDirectoryProjection.h"
+#include "mirror/MirrorConfiguration.h"
+#include "mirror/MirrorRelayProtocol.h"
+#include "mirror/MirrorTerminalProtocol.h"
+#include "mirror/MirrorRouteDispatcher.h"
+
 namespace terminal::workspace
 {
     class WorkspaceManager;
@@ -67,6 +83,7 @@ namespace terminal::workspace
         // compatible single command at read time.
         std::vector<WorkspaceNodeCommand> Commands;
         WorkspaceMultiWindowPreference MultiWindowPreference;
+        WorkspaceNodeMirrorConfiguration Mirror;
         std::wstring OperatingSystem;
         std::wstring ShellType;
         bool ShowInputPanel{ false };

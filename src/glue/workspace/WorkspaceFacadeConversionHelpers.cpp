@@ -32,6 +32,7 @@
             core.MultiWindowPreference.DisplayMode = static_cast<terminal::workspace::WorkspaceWindowDisplayMode>(node.MultiWindowPreference.DisplayMode);
             core.MultiWindowPreference.TabPlacement = static_cast<terminal::workspace::WorkspaceTabPlacement>(node.MultiWindowPreference.TabPlacement);
             core.MultiWindowPreference.SplitWeights = node.MultiWindowPreference.SplitWeights;
+            core.Mirror = node.Mirror;
             core.OperatingSystem = node.OperatingSystem;
             core.ShellType = node.ShellType;
             core.ShowInputPanel = node.ShowInputPanel;
@@ -65,6 +66,7 @@
             wrapped.MultiWindowPreference.DisplayMode = static_cast<WorkspaceWindowDisplayMode>(node.MultiWindowPreference.DisplayMode);
             wrapped.MultiWindowPreference.TabPlacement = static_cast<WorkspaceTabPlacement>(node.MultiWindowPreference.TabPlacement);
             wrapped.MultiWindowPreference.SplitWeights = node.MultiWindowPreference.SplitWeights;
+            wrapped.Mirror = node.Mirror;
             wrapped.OperatingSystem = node.OperatingSystem;
             wrapped.ShellType = node.ShellType;
             wrapped.ShowInputPanel = node.ShowInputPanel;

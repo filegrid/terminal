@@ -5,7 +5,7 @@
 #include "pch.h"
 #include "AboutDialog.h"
 #include "AboutDialog.g.cpp"
-#include "../../../../src/generated/ExtBuildVersion.h"
+#include "../../../../src/core/generated/ExtBuildVersion.h"
 
 using namespace winrt;
 using namespace winrt::Microsoft::Terminal::Settings::Model;

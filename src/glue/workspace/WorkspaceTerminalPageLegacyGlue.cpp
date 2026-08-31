@@ -3,7 +3,7 @@
 
 #include "pch.h"
 #include "TerminalPage.h"
-#include "../../contracts/GluePageHostContract.h"
+#include "../contracts/GluePageHostContract.h"
 
 #include <TerminalCore/ControlKeyStates.hpp>
 #include <TerminalThemeHelpers.h>

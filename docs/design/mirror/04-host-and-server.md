@@ -2,26 +2,31 @@
 
 ## 1. 代码边界与目录建议
 
-本模块不要求本次变更立即落地；以下是实施时推荐的文件边界。现有 `microsoft/src/cascadia/TerminalConnection` 不应引入 WebSocket 依赖。
+本模块不要求本次变更立即落地；以下是实施时推荐的文件边界。Mirror 领域实现全部收敛到 `src/core/workspace/mirror/`，现有 `microsoft/src/cascadia/TerminalConnection` 不应引入 WebSocket 依赖。
 
 ```text
+src/core/workspace/mirror/
+├─ MirrorNodeSession.h/.cpp
+├─ MirrorWindowSession.h/.cpp
+├─ MirrorEventStore.h/.cpp
+├─ MirrorCheckpoint.h/.cpp
+├─ MirrorRecoveryPlanner.h/.cpp
+├─ MirrorControlLease.h/.cpp
+├─ MirrorAuthorization.h/.cpp
+├─ MirrorEffects.h
+├─ MirrorReducer.h/.cpp
+├─ MirrorRegistry.h/.cpp
+└─ MirrorRelayProtocol.h/.cpp       # terminal-server 72-byte RelayFrame envelope
+
 microsoft/src/cascadia/
 ├─ TerminalConnection/
 │  ├─ IMirrorableTerminalConnection.h     # 最小能力/订阅端口
 │  ├─ ConptyConnection.h/.cpp             # 仅 tap 与 input adapter 接线
 │  └─ ConptyConnection.idl                # 不对外暴露网络细节
-├─ TerminalMirror/
-│  ├─ MirrorSessionRegistry.h/.cpp
-│  ├─ MirrorSession.h/.cpp
-│  ├─ ReplayStore.h/.cpp
-│  ├─ InputArbiter.h/.cpp
-│  ├─ MirrorTokenStore.h/.cpp
-│  ├─ MirrorWebSocketGateway.h/.cpp
-│  └─ MirrorDiagnostics.h/.cpp
 ├─ TerminalApp/
 │  ├─ TerminalPage.*                      # 命令、地址 UI、Tab 生命周期
 │  └─ MirrorFlyout.*                      # 纯 UI
-└─ UnitTests_Mirror/
+└─ UnitTests_WorkspaceMirror/
    ├─ ReplayStoreTests.cpp
    ├─ InputArbiterTests.cpp
    └─ ProtocolTests.cpp

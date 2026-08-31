@@ -14,7 +14,7 @@
 #include "LaunchPositionRequest.g.h"
 #include "Toast.h"
 #include "WindowsPackageManagerFactory.h"
-#include "..\..\..\..\src\contracts\GluePageHostContract.h"
+#include "..\..\..\..\src\glue\contracts\GluePageHostContract.h"
 #include "WorkspacePageLegacyIncludes.h"
 
 #define DECLARE_ACTION_HANDLER(action) void _Handle##action(const IInspectable& sender, const Microsoft::Terminal::Settings::Model::ActionEventArgs& args);

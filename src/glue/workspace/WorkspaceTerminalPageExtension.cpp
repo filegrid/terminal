@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 #include "pch.h"
-#include "../../contracts/GluePageHostContract.h"
+#include "../contracts/GluePageHostContract.h"
 #include "WorkspaceApi.h"
 #include "WorkspaceExtLoader.h"
 #include "WorkspaceManagerPaneContent.h"

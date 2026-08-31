@@ -1,6 +1,6 @@
 #pragma once
 
-#include "..\..\..\..\src\contracts\GluePageStateTypes.h"
+#include "..\..\..\..\src\glue\contracts\GluePageStateTypes.h"
 
 namespace winrt::TerminalApp::implementation
 {

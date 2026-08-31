@@ -56,10 +56,15 @@ internal sealed class Program
         public void Run()
         {
             Directory.CreateDirectory(_options.Destination);
-            var package = new FileInfo(_options.PackagePath);
-            if (!package.Exists)
+            var packageMap = new FileInfo(_options.PackageMapPath);
+            if (!packageMap.Exists)
             {
-                throw new InvalidOperationException($"Could not find the terminal package at {package.FullName}.");
+                throw new InvalidOperationException($"Could not find the product package map at {packageMap.FullName}.");
+            }
+            var manifestFile = new FileInfo(_options.ManifestPath);
+            if (!manifestFile.Exists)
+            {
+                throw new InvalidOperationException($"Could not find the product manifest at {manifestFile.FullName}.");
             }
             var xamlPackage = new FileInfo(_options.XamlPackagePath);
             if (!xamlPackage.Exists)
@@ -72,9 +77,9 @@ internal sealed class Program
 
             try
             {
-                var manifest = ReadPackageManifest(package.FullName);
+                var manifest = ReadPackageManifestFile(manifestFile.FullName);
                 var xamlManifest = ReadPackageManifest(xamlPackage.FullName);
-                var version = manifest.Version;
+                var version = Options.ReadVersionFile(_options.VersionFile);
                 var architecture = manifest.ProcessorArchitecture;
                 var distributionName = $"{manifest.Name}_{version}_{architecture}";
                 var terminalDirectoryName = $"terminal-{version}";
@@ -84,7 +89,7 @@ internal sealed class Program
                     throw new InvalidOperationException($"{xamlPackage.FullName} is not built for {architecture}.");
                 }
 
-                var baseZip = EnsureBaseDistributionZip(package, xamlPackage, terminalDirectoryName);
+                var baseZip = EnsureBaseDistributionZip(packageMap, xamlPackage, terminalDirectoryName);
                 var outputZip = Path.Combine(tempRoot, distributionName + ".zip");
                 File.Copy(baseZip, outputZip, true);
                 OverlayWorkspaceExtensionRuntime(outputZip, terminalDirectoryName);
@@ -113,13 +118,13 @@ internal sealed class Program
             }
         }
 
-        private string EnsureBaseDistributionZip(FileInfo package, FileInfo xamlPackage, string terminalDirectoryName)
+        private string EnsureBaseDistributionZip(FileInfo packageMap, FileInfo xamlPackage, string terminalDirectoryName)
         {
             var cacheRoot = GetCacheRoot();
             Directory.CreateDirectory(cacheRoot);
 
             var layoutNeedsPortableFiles = _options.PortableMode && !_options.SingleFileOutput;
-            var cacheKey = ComputeCacheKey(package, xamlPackage, layoutNeedsPortableFiles);
+            var cacheKey = ComputeCacheKey(packageMap, xamlPackage, layoutNeedsPortableFiles);
             var cacheDirectory = Path.Combine(cacheRoot, cacheKey);
             var baseZip = Path.Combine(cacheDirectory, "base.zip");
             if (File.Exists(baseZip))
@@ -134,7 +139,7 @@ internal sealed class Program
             {
                 var terminalRoot = Path.Combine(stagingDirectory, terminalDirectoryName);
                 var xamlRoot = Path.Combine(stagingDirectory, "xaml");
-                ZipFile.ExtractToDirectory(package.FullName, terminalRoot);
+                PopulateTerminalRootFromPackageMap(packageMap.FullName, terminalRoot);
                 ZipFile.ExtractToDirectory(xamlPackage.FullName, xamlRoot);
 
                 PrepareTerminalLayout(terminalRoot, xamlRoot);
@@ -166,14 +171,14 @@ internal sealed class Program
             return Path.Combine(_options.SourceRoot, "microsoft", "tmp", "portable-package-cache");
         }
 
-        private string ComputeCacheKey(FileInfo package, FileInfo xamlPackage, bool layoutNeedsPortableFiles)
+        private string ComputeCacheKey(FileInfo packageMap, FileInfo xamlPackage, bool layoutNeedsPortableFiles)
         {
             var payload = string.Join('|',
             [
                 CacheFormatVersion,
-                package.FullName,
-                package.Length.ToString(),
-                package.LastWriteTimeUtc.Ticks.ToString(),
+                packageMap.FullName,
+                packageMap.Length.ToString(),
+                packageMap.LastWriteTimeUtc.Ticks.ToString(),
                 xamlPackage.FullName,
                 xamlPackage.Length.ToString(),
                 xamlPackage.LastWriteTimeUtc.Ticks.ToString(),
@@ -201,6 +206,30 @@ internal sealed class Program
                 identity.Attribute("ProcessorArchitecture")?.Value ?? string.Empty);
         }
 
+        private PackageManifest ReadPackageManifestFile(string manifestPath)
+        {
+            var document = XDocument.Load(manifestPath);
+            var identity = document.Descendants().FirstOrDefault(element => string.Equals(element.Name.LocalName, "Identity", StringComparison.Ordinal))
+                ?? throw new InvalidOperationException($"Could not read package identity from {manifestPath}.");
+            return new PackageManifest(identity.Attribute("Name")?.Value ?? string.Empty, identity.Attribute("Version")?.Value ?? string.Empty, identity.Attribute("ProcessorArchitecture")?.Value ?? string.Empty);
+        }
+
+        private static void PopulateTerminalRootFromPackageMap(string packageMapPath, string terminalRoot)
+        {
+            foreach (var rawLine in File.ReadLines(packageMapPath))
+            {
+                var line = rawLine.Trim();
+                if (line.Length == 0 || line.StartsWith('[')) continue;
+                var separator = line.IndexOf("\" \"", StringComparison.Ordinal);
+                if (line.Length < 5 || line[0] != '\"' || separator < 1 || line[^1] != '\"') throw new InvalidOperationException($"Invalid package-map line: {rawLine}");
+                var source = line[1..separator];
+                var target = line[(separator + 3)..^1];
+                var destination = Path.GetFullPath(Path.Combine(terminalRoot, target));
+                if (!destination.StartsWith(Path.GetFullPath(terminalRoot) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException($"Unsafe package-map destination: {target}");
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                File.Copy(source, destination, true);
+            }
+        }
         private void PrepareTerminalLayout(string terminalRoot, string xamlRoot)
         {
             foreach (var file in Directory.EnumerateFiles(terminalRoot, "*.xml", SearchOption.TopDirectoryOnly))
@@ -378,8 +407,7 @@ internal sealed class Program
         {
             var candidateDirectories = new[]
             {
-                Path.Combine(outputDirectory, "res"),
-                Path.Combine(_options.SourceRoot, "bin", "res")
+                Path.Combine(outputDirectory, "res")
             };
 
             foreach (var candidateDirectory in candidateDirectories.Distinct(StringComparer.OrdinalIgnoreCase))
@@ -451,7 +479,6 @@ internal sealed class Program
             // always take the canonical files directly from res/v1/assets.
             yield return Path.Combine(_options.SourceRoot, "res");
             yield return Path.Combine(_options.SourceRoot, "ext", "res");
-            yield return Path.Combine(_options.SourceRoot, "bin", "res");
         }
 
         private void CreateDistributionZip(string terminalRoot, string terminalDirectoryName, string outputZip)
@@ -704,9 +731,11 @@ internal sealed class Program
 """;
     }
 
-    private sealed class Options
-    {
-        public required string PackagePath { get; init; }
+        private sealed class Options
+        {
+            public required string PackageMapPath { get; init; }
+            public required string ManifestPath { get; init; }
+            public required string VersionFile { get; init; }
         public required string XamlPackagePath { get; init; }
         public required string Platform { get; init; }
         public required string Configuration { get; init; }
@@ -744,7 +773,9 @@ internal sealed class Program
 
             return new Options
             {
-                PackagePath = GetRequired(values, "--package"),
+                PackageMapPath = GetRequired(values, "--package-map"),
+                ManifestPath = GetRequired(values, "--manifest"),
+                VersionFile = GetRequired(values, "--version-file"),
                 XamlPackagePath = GetRequired(values, "--xaml-package"),
                 Platform = GetRequired(values, "--platform"),
                 Configuration = GetRequired(values, "--configuration"),
@@ -764,6 +795,22 @@ internal sealed class Program
             return values.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
                 ? value
                 : throw new ArgumentException($"Missing required argument {key}");
+        }
+
+        internal static string ReadVersionFile(string path)
+        {
+            if (!File.Exists(path))
+            {
+                throw new InvalidOperationException($"Could not find the version file at {path}.");
+            }
+
+            var version = File.ReadAllText(path).Trim();
+            if (string.IsNullOrEmpty(version))
+            {
+                throw new InvalidOperationException($"The version file at {path} is empty.");
+            }
+
+            return version;
         }
     }
 

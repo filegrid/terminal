@@ -4,5 +4,5 @@ using PendingTerminalOutputCapture = winrt::TerminalApp::implementation::Pending
 using TerminalCaptureState = winrt::TerminalApp::implementation::TerminalCaptureState;
 using WorkspaceNodeRuntimeState = winrt::TerminalApp::implementation::WorkspaceNodeRuntimeState;
 
-#include "..\..\..\..\src\contracts\GluePageContractApi.h"
+#include "..\..\..\..\src\glue\contracts\GluePageContractApi.h"
 #include "WorkspacePageLegacyPublicMethods.h"
