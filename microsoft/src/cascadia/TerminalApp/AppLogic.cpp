@@ -6,7 +6,7 @@
 #include "AppLogic.g.cpp"
 #include "SettingsLoadEventArgs.h"
 #include "..\..\..\..\src\core\chat\WorkspaceDiagnosticLog.h"
-#include "..\..\..\..\src\contracts\ExtCoreRuntimeClient.h"
+#include "..\..\..\..\src\glue\contracts\ExtCoreRuntimeClient.h"
 
 #include <WtExeUtils.h>
 #include <wil/token_helpers.h>

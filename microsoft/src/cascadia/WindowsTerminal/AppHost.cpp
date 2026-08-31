@@ -12,6 +12,7 @@
 #include "WindowEmperor.h"
 #include "../types/inc/utils.hpp"
 #include "../../../../src/core/chat/WorkspaceDiagnosticLog.h"
+#include "../../../../src/glue/contracts/ExtCoreRuntimeClient.h"
 
 using namespace winrt::Windows::UI;
 using namespace winrt::Windows::UI::Composition;
@@ -1291,6 +1292,13 @@ void AppHost::_WindowMoved()
 void AppHost::_CloseRequested(const winrt::Windows::Foundation::IInspectable& /*sender*/,
                               const winrt::Windows::Foundation::IInspectable& /*args*/)
 {
+    // CloseWindowRequested is raised only after all close confirmation has
+    // completed. Remove the runtime record now instead of leaving this
+    // workspace online until TerminalWindow's eventual destruction/timeout.
+    if (const auto windowId = _windowLogic.WindowProperties().WindowId(); windowId != 0)
+    {
+        terminal::extcore::RuntimeClient::Shared().RemovePersistedWorkspaceWindowState(windowId);
+    }
     PostMessageW(_windowManager->GetMainWindow(), WindowEmperor::WM_CLOSE_TERMINAL_WINDOW, 0, reinterpret_cast<LPARAM>(this));
 }
 

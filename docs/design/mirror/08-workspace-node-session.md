@@ -148,7 +148,7 @@ flowchart LR
 
 ## 7. 与现有 Workspace 的 Core 集成
 
-现有设计中 `WorkspaceCore` 已以 `WorkspaceNodeCommand.id` 管理 1～3 个命令、布局和 `WorkspaceNodeSessionState`；Mirror 的 Node/Window session、event store、checkpoint index、lease 与恢复计划直接实现为 `src/core/workspace` 的领域能力。`TerminalPage` / `TerminalPageBase` 仅提供 workspace runtime 接线入口；Core 不依赖 ConPTY 或 WebView，而是通过 port 输出 effect：
+现有设计中 `WorkspaceCore` 已以 `WorkspaceNodeCommand.id` 管理 1～3 个命令、布局和 `WorkspaceNodeSessionState`；Mirror 的 Node/Window session、event store、checkpoint index、lease 与恢复计划直接实现为 `src/core/workspace/mirror/` 的领域模块。禁止在 `src/core/workspace` 根目录增加 `WorkspaceCoreMirror.*` 这类聚合实现文件；按 `MirrorNodeSession`、`MirrorEventStore`、`MirrorCheckpoint`、`MirrorRecoveryPlanner`、`MirrorControlLease`、`MirrorAuthorization`、`MirrorReducer` 等职责分文件。`TerminalPage` / `TerminalPageBase` 仅提供 workspace runtime 接线入口；Core 不依赖 ConPTY 或 WebView，而是通过 port 输出 effect：
 
 ```cpp
 class IWorkspaceNodeMirrorRuntime {

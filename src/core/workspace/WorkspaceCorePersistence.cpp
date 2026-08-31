@@ -223,6 +223,9 @@
                lhs.ShellType == rhs.ShellType &&
                lhs.ShowInputPanel == rhs.ShowInputPanel &&
                lhs.UseNodeNameAsTabTitle == rhs.UseNodeNameAsTabTitle &&
+               lhs.Mirror.Mode == rhs.Mirror.Mode &&
+               lhs.Mirror.MaximumEvents == rhs.Mirror.MaximumEvents &&
+               lhs.Mirror.MaximumCheckpoints == rhs.Mirror.MaximumCheckpoints &&
                (lhs.ConnectionRef.empty() || rhs.ConnectionRef.empty() || lhs.ConnectionRef == rhs.ConnectionRef);
     }
 

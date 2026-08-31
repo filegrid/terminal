@@ -17,7 +17,7 @@ flowchart LR
 
 ### Phase 0 — 契约与原型验证
 
-**交付**：`IMirrorableTerminalConnection`、协议 schema、`ReplayStore` 和 `InputArbiter` 的纯单元测试；不修改 UI/网络。
+**交付**：`src/core/workspace/mirror/` 下分文件的 `MirrorTypes`、`MirrorEventStore`、`MirrorCheckpoint`、`MirrorRecoveryPlanner`、`MirrorControlLease`、`MirrorAuthorization`、`MirrorReducer` 与协议 schema 的纯单元测试；不修改 UI/网络。
 
 **门禁**：给定输出流可稳定编号、环缓冲正确驱逐、重复/过期 lease 永不调用 fake input sink；编译不新增 `TerminalConnection → WebSocket` 依赖。
 

@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "../chat/WorkspaceChatStateHelpers.h"
+#include "../../core/chat/WorkspaceChatStateHelpers.h"
 
 namespace terminal::workspace
 {

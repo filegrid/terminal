@@ -14,20 +14,26 @@ artifacts are written to `bin/`.
 Use a regular PowerShell session. The CMake configuration locates the compiler
 and Windows SDK tools; a Developer Command Prompt is not required.
 
-## Configure and build
+## Build
+
+Run builds from the repository root. The default command is the complete
+product package (`full`):
 
 ```powershell
-cmake -S . -B .\build
+cmake --build build
 ```
 
-After configuration, choose exactly one supported package target:
+The supported explicit targets are:
 
 ```powershell
-# Core / Glue-only changes that do not alter the Host payload
-cmake --build .\build --config Release --target ext
+# Complete portable package (same as the default build)
+cmake --build build --target full
 
-# Any Host, XAML, tab, packaging, or final-product change
-cmake --build .\build --config Release --target full
+# Core / Glue-only changes that do not alter the Host payload
+cmake --build build --target ext
+
+# Complete portable package plus an installable MSIX directly in bin/
+cmake --build build --target msix
 ```
 
 ## Mandatory architecture and build rules
@@ -83,10 +89,12 @@ updates Ext/Glue. It is invalid for a Host-affecting change because it can leave
 the portable package with an old Host. `full` rebuilds and packages the complete
 product.
 
-Only `ext` and `full` are supported developer build targets. Both produce a
-portable artifact in `bin/`. Do **not** invoke individual compilation, library,
-DLL, executable, MSIX, or packaging-subtargets (for example `TerminalAppLib`,
-`WindowsTerminal`, `Ext`, or `ninja` targets) as a delivery or validation path.
+Only `full`, `ext`, and `msix` are supported developer build targets. `full` is
+the default CMake build and produces a portable artifact in `bin/`; `msix`
+performs `full` first and then adds the installable MSIX. Do **not** invoke
+individual compilation, library, DLL, executable, or packaging-subtargets (for
+example `TerminalAppLib`, `WindowsTerminal`, `Ext`, or `ninja` targets) as a
+delivery or validation path.
 Those targets can compile successfully while leaving `bin/` unchanged or with an
 older Host payload. A source change is not ready to run until either `ext` or
 `full` has completed successfully and emitted a new file under `bin/`.
@@ -100,13 +108,13 @@ Use `ext` only for the eligible Ext/Glue path. To rebuild the complete product
 graph and regenerate the portable artifact, run:
 
 ```powershell
-cmake --build .\build --config Release --target full
+cmake --build build --target full
 ```
 
-For a debug build, use:
+To create the installable MSIX in `bin/`, run:
 
 ```powershell
-cmake --build .\build --config Debug --target full
+cmake --build build --target msix
 ```
 
 ## Outputs
@@ -115,6 +123,7 @@ The portable single-file outputs are written to `bin/`:
 
 - `WindowsTerminalPortableGeekEdition_System_<version>_<arch>.exe`
 - `WindowsTerminalPortableGeekEdition_System_Debug_<version>_<arch>.exe`
+- `WindowsTerminalPortableGeekEdition_System_<version>_<arch>.msix` (only with `msix`)
 
 Only these final files should be used to validate portable startup behavior.
 Intermediate executables, `wt.exe`, `OpenConsole.exe`, MSIX files, and files

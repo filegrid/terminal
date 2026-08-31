@@ -1,16 +1,16 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-#include "pch.h"
+#include "../../../microsoft/src/cascadia/UnitTests_SettingsModel/pch.h"
 
 #include <til/mutex.h>
 #include <til/throttled_func.h>
 
-#include "../TerminalSettingsModel/ApplicationState.h"
-#include "../TerminalSettingsModel/CascadiaSettings.h"
-#include "../TerminalSettingsModel/Workspace.h"
-#include "../../types/inc/utils.hpp"
-#include "../../../../src/core/workspace/WorkspaceCore.h"
+#include "../../../microsoft/src/cascadia/TerminalSettingsModel/ApplicationState.h"
+#include "../../../microsoft/src/cascadia/TerminalSettingsModel/CascadiaSettings.h"
+#include "../../../microsoft/src/cascadia/TerminalSettingsModel/Workspace.h"
+#include "../../../microsoft/src/types/inc/utils.hpp"
+#include "../../../src/core/workspace/WorkspaceCore.h"
 
 using namespace Microsoft::Console;
 using namespace winrt::Microsoft::Terminal::Settings::Model;
@@ -1719,4 +1719,5 @@ namespace SettingsModelUnitTests
         VERIFY_ARE_EQUAL(0.55, loadedNode.MultiWindowPreference.SplitWeights[0]);
         VERIFY_ARE_EQUAL(0.45, loadedNode.MultiWindowPreference.SplitWeights[1]);
     }
+
 }

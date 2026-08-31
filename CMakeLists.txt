@@ -74,24 +74,25 @@ set(PORTABLE_MAKEPRI_PATH "C:/Program Files (x86)/Windows Kits/10/bin/10.0.22621
 set(_workspace_root "${CMAKE_SOURCE_DIR}")
 set(_openconsole_root "${CMAKE_SOURCE_DIR}/microsoft")
 set(_portable_output_root "${_workspace_root}/bin")
-set(_portable_package_root "${_portable_output_root}/msix")
-set(_portable_terminal_package "${_portable_package_root}/CascadiaPackage_0.0.1.0_${PORTABLE_PLATFORM}.msix")
 set(_portable_xaml_package "${_openconsole_root}/packages/Microsoft.UI.Xaml.2.8.4/tools/AppX/${PORTABLE_PLATFORM}/Release/Microsoft.UI.Xaml.2.8.appx")
 set(_portable_xaml_pri "${_openconsole_root}/packages/Microsoft.UI.Xaml.2.8.4/lib/uap10.0/Microsoft.UI.Xaml.pri")
 set(_ext_version_file "${_workspace_root}/VERSION")
-set(_ext_generated_root "${_workspace_root}/src/generated")
+set(_ext_generated_root "${_workspace_root}/src/core/generated")
 set(_ext_generated_version_header "${_ext_generated_root}/ExtBuildVersion.h")
 set(_ext_generate_version_script "${_workspace_root}/tools/cmake/GenerateExtBuildVersion.cmake")
 
 if(NOT EXISTS "${_ext_version_file}")
     file(WRITE "${_ext_version_file}" "0.0.1\n")
 endif()
+file(READ "${_ext_version_file}" _portable_version_text)
+string(STRIP "${_portable_version_text}" _portable_version_text)
+set(_portable_product_version "${_portable_version_text}")
+set(_portable_msix_configuration_suffix "$<$<NOT:$<CONFIG:Release>>:_$<CONFIG>>")
+set(_portable_terminal_package "${_portable_output_root}/WindowsTerminalPortableGeekEdition_System${_portable_msix_configuration_suffix}_${_portable_product_version}_${PORTABLE_PLATFORM}.msix")
 
 file(TO_NATIVE_PATH "${_workspace_root}" _workspace_root_native)
 file(TO_NATIVE_PATH "${_openconsole_root}" _openconsole_root_native)
 file(TO_NATIVE_PATH "${_portable_output_root}" _portable_output_root_native)
-file(TO_NATIVE_PATH "${_portable_package_root}" _portable_package_root_native)
-file(TO_NATIVE_PATH "${_portable_terminal_package}" _portable_terminal_package_native)
 file(TO_NATIVE_PATH "${_portable_xaml_package}" _portable_xaml_package_native)
 file(TO_NATIVE_PATH "${_openconsole_root}/bin/${PORTABLE_PLATFORM}" _openconsole_bin_root_native)
 string(REGEX REPLACE "[/\\\\]+$" "" _openconsole_bin_root_native_base "${_openconsole_bin_root_native}")
@@ -2934,24 +2935,15 @@ add_custom_command(
     VERBATIM
     COMMENT "Generating Microsoft.Terminal.UI.pri"
 )
-set(_ui_helpers_svg_stamp "${_ui_helpers_generation_root}/workspace-svg.stamp")
-add_custom_command(
-    OUTPUT "${_ui_helpers_svg_stamp}"
-    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${_workspace_root}/tools/workspace-icons/Generate-WorkspaceSvgIcons.ps1" -OutputRoot "${_workspace_root}/bin/res/workspace-icons"
-    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${_workspace_root}/bin/res/workspace-icons" "${_ui_helpers_output_root}/res/workspace-icons"
-    COMMAND "${CMAKE_COMMAND}" -E touch "${_ui_helpers_svg_stamp}"
-    DEPENDS "${_workspace_root}/tools/workspace-icons/Generate-WorkspaceSvgIcons.ps1"
-    VERBATIM
-    COMMENT "Generating and copying UIHelpers workspace SVG resources"
-)
 
-set_source_files_properties("${_ui_helpers_winmd}" "${_ui_helpers_pri}" "${_ui_helpers_projection_header}" "${_ui_helpers_mux_header}" "${_ui_helpers_svg_stamp}" PROPERTIES GENERATED TRUE HEADER_FILE_ONLY TRUE)
+
+set_source_files_properties("${_ui_helpers_winmd}" "${_ui_helpers_pri}" "${_ui_helpers_projection_header}" "${_ui_helpers_mux_header}" PROPERTIES GENERATED TRUE HEADER_FILE_ONLY TRUE)
 add_library(${_ui_helpers_target} SHARED
     "${_ui_helpers_source_root}/init.cpp" "${_ui_helpers_source_root}/pch.cpp"
     "${_ui_helpers_source_root}/Converters.cpp" "${_ui_helpers_source_root}/IconPathConverter.cpp"
     "${_ui_helpers_source_root}/ResourceString.cpp" "${_ui_helpers_source_root}/TextMenuFlyout.cpp"
     "${_ui_helpers_module_cpp}" "${_ui_helpers_source_root}/Microsoft.Terminal.UI.def"
-    "${_ui_helpers_winmd}" "${_ui_helpers_pri}" "${_ui_helpers_svg_stamp}" "${_native_cppwinrt_projection_base}"
+    "${_ui_helpers_winmd}" "${_ui_helpers_pri}" "${_native_cppwinrt_projection_base}"
 )
 target_compile_features(${_ui_helpers_target} PRIVATE cxx_std_20)
 target_precompile_headers(${_ui_helpers_target} PRIVATE "${_ui_helpers_source_root}/pch.h")
@@ -3632,10 +3624,10 @@ set(_terminal_settings_adapter_source_root "${_openconsole_root}/src/cascadia/Te
 set(_terminal_settings_adapter_projection_root "${CMAKE_BINARY_DIR}/terminal-settings-adapter-projection")
 set(_terminal_settings_adapter_projection_header "${_terminal_settings_adapter_projection_root}/winrt/Microsoft.Terminal.Settings.Model.h")
 set(_terminal_settings_adapter_winmds
-    "${_openconsole_root}/bin/${PORTABLE_PLATFORM}/$<CONFIG>/Microsoft.Terminal.Control/Microsoft.Terminal.Control.winmd"
-    "${_openconsole_root}/bin/${PORTABLE_PLATFORM}/$<CONFIG>/TerminalCore/Microsoft.Terminal.Core.winmd"
-    "${_openconsole_root}/bin/${PORTABLE_PLATFORM}/$<CONFIG>/Microsoft.Terminal.Settings.Model/Microsoft.Terminal.Settings.Model.winmd"
-    "${_openconsole_root}/bin/${PORTABLE_PLATFORM}/$<CONFIG>/TerminalConnection/Microsoft.Terminal.TerminalConnection.winmd"
+    "${_terminal_control_winmd}"
+    "${_terminal_core_winmd}"
+    "${_terminal_settings_model_winmd}"
+    "${_terminal_connection_winmd}"
     "${_openconsole_root}/packages/Microsoft.UI.Xaml.2.8.4/lib/uap10.0/Microsoft.UI.Xaml.winmd"
     "${_openconsole_root}/packages/Microsoft.Web.WebView2.1.0.1661.34/lib/Microsoft.Web.WebView2.Core.winmd"
 )
@@ -3643,10 +3635,10 @@ add_custom_command(
     OUTPUT "${_terminal_settings_adapter_projection_header}"
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${_terminal_settings_adapter_projection_root}"
     COMMAND "${_cppwinrt_path}"
-        -input "${_openconsole_root}/bin/${PORTABLE_PLATFORM}/$<CONFIG>/Microsoft.Terminal.Control/Microsoft.Terminal.Control.winmd"
-        -input "${_openconsole_root}/bin/${PORTABLE_PLATFORM}/$<CONFIG>/TerminalCore/Microsoft.Terminal.Core.winmd"
-        -input "${_openconsole_root}/bin/${PORTABLE_PLATFORM}/$<CONFIG>/Microsoft.Terminal.Settings.Model/Microsoft.Terminal.Settings.Model.winmd"
-        -input "${_openconsole_root}/bin/${PORTABLE_PLATFORM}/$<CONFIG>/TerminalConnection/Microsoft.Terminal.TerminalConnection.winmd"
+        -input "${_terminal_control_winmd}"
+        -input "${_terminal_core_winmd}"
+        -input "${_terminal_settings_model_winmd}"
+        -input "${_terminal_connection_winmd}"
         -input "${_openconsole_root}/packages/Microsoft.UI.Xaml.2.8.4/lib/uap10.0/Microsoft.UI.Xaml.winmd"
         -input "${_openconsole_root}/packages/Microsoft.Web.WebView2.1.0.1661.34/lib/Microsoft.Web.WebView2.Core.winmd"
         -reference "${PORTABLE_WINDOWS_TARGET_PLATFORM_VERSION}"
@@ -3698,7 +3690,14 @@ set_target_properties(${_terminal_settings_adapter_target} PROPERTIES
     INTERPROCEDURAL_OPTIMIZATION FALSE
     ARCHIVE_OUTPUT_DIRECTORY "${_native_product_output_root}/TerminalSettingsAppAdapterLib"
 )
-add_dependencies(${_terminal_settings_adapter_target} ${_terminal_settings_model_target})
+# The adapter's generated projection directly consumes these WinMDs. Keep the
+# producer dependencies explicit so the packaged full build never relies on
+# stale bin outputs.
+add_dependencies(${_terminal_settings_adapter_target}
+    ${_terminal_control_target}
+    ${_terminal_core_target}
+    ${_terminal_connection_target}
+    ${_terminal_settings_model_target})
 
 set(_ui_markdown_target UIMarkdown)
 set(_ui_markdown_source_root "${_openconsole_root}/src/cascadia/UIMarkdown")
@@ -4357,7 +4356,7 @@ set(_terminal_app_sources
 list(TRANSFORM _terminal_app_sources PREPEND "${_terminal_app_source_root}/")
 list(APPEND _terminal_app_sources "${_terminal_app_source_root}/../fzf/fzf.cpp"
     "${_terminal_app_source_root}/../TerminalSettingsModel/Workspace.cpp"
-    "${_workspace_root}/src/contracts/ExtCoreRuntimeClient.cpp"
+    "${_workspace_root}/src/glue/contracts/ExtCoreRuntimeClient.cpp"
     "${_workspace_root}/src/glue/workspace/WorkspaceTerminalPageLegacyGlue.cpp"
     "${_terminal_app_module_cpp}" "${_terminal_app_xaml_provider_cpp}" "${_terminal_app_xaml_typeinfo}" "${_terminal_app_xaml_typeinfo_impl}")
 # Workspace.cpp is an intentional include-wrapper for the split workspace
@@ -4367,8 +4366,10 @@ list(APPEND _terminal_app_sources "${_terminal_app_source_root}/../fzf/fzf.cpp"
 set_source_files_properties("${_terminal_app_source_root}/../TerminalSettingsModel/Workspace.cpp"
     PROPERTIES
         OBJECT_DEPENDS
-            "${_workspace_root}/src/glue/workspace/WorkspaceModel.cpp;${_workspace_root}/src/core/workspace/WorkspaceCore.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreMultiWindow.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreManagerStorage.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreNavigation.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreEditor.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreEditorState.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreLaunch.cpp;${_workspace_root}/src/core/workspace/WorkspaceCorePersistence.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreRuntime.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreRuntimeOps.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreStateManager.cpp;${_workspace_root}/src/core/workspace/deprecated/WorkspaceCaptureDeprecated.cpp;${_workspace_root}/src/glue/workspace/WorkspacePaletteHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeConversionHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeEditorStateMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeStartupMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadePersistenceMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceUtilityHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceStartupColorLogic.cpp"
+            "${_workspace_root}/src/glue/workspace/WorkspaceModel.cpp;${_workspace_root}/src/core/workspace/WorkspaceCore.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorCore.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorTypes.h;${_workspace_root}/src/core/workspace/mirror/MirrorEventStore.h;${_workspace_root}/src/core/workspace/mirror/MirrorEventStore.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorCheckpoint.h;${_workspace_root}/src/core/workspace/mirror/MirrorCheckpoint.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorRecoveryPlanner.h;${_workspace_root}/src/core/workspace/mirror/MirrorRecoveryPlanner.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorControlLease.h;${_workspace_root}/src/core/workspace/mirror/MirrorControlLease.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorNodeSession.h;${_workspace_root}/src/core/workspace/mirror/MirrorNodeSession.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreMultiWindow.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreManagerStorage.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreNavigation.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreEditor.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreEditorState.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreLaunch.cpp;${_workspace_root}/src/core/workspace/WorkspaceCorePersistence.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreRuntime.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreRuntimeOps.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreStateManager.cpp;${_workspace_root}/src/core/workspace/deprecated/WorkspaceCaptureDeprecated.cpp;${_workspace_root}/src/glue/workspace/WorkspacePaletteHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeConversionHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeEditorStateMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeStartupMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadePersistenceMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceUtilityHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceStartupColorLogic.cpp"
 )
+set_property(SOURCE "${_terminal_app_source_root}/../TerminalSettingsModel/Workspace.cpp" APPEND PROPERTY OBJECT_DEPENDS
+    "${_workspace_root}/src/core/workspace/mirror/MirrorAuthorization.h;${_workspace_root}/src/core/workspace/mirror/MirrorAuthorization.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorReducer.h;${_workspace_root}/src/core/workspace/mirror/MirrorReducer.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorRegistry.h;${_workspace_root}/src/core/workspace/mirror/MirrorRegistry.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorDirectoryProjection.h;${_workspace_root}/src/core/workspace/mirror/MirrorDirectoryProjection.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorConfiguration.h;${_workspace_root}/src/core/workspace/mirror/MirrorConfiguration.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorRelayProtocol.h;${_workspace_root}/src/core/workspace/mirror/MirrorRelayProtocol.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorTerminalProtocol.h;${_workspace_root}/src/core/workspace/mirror/MirrorTerminalProtocol.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorRouteDispatcher.h;${_workspace_root}/src/core/workspace/mirror/MirrorRouteDispatcher.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorNodeRecorder.h;${_workspace_root}/src/core/workspace/mirror/MirrorNodeRecorder.cpp")
 # The legacy page is likewise a single intentional aggregation TU. Track its
 # implementation fragments explicitly so an edited Glue fragment cannot be
 # silently omitted from an incremental TerminalApp build.
@@ -4535,9 +4536,9 @@ function(add_windows_terminal_sxs_manifest manifest_name winmd_path implementati
     set(_windows_terminal_sxs_manifests "${_windows_terminal_sxs_manifests}" PARENT_SCOPE)
     set(_windows_terminal_sxs_link_inputs "${_windows_terminal_sxs_link_inputs}" PARENT_SCOPE)
 endfunction()
-add_windows_terminal_sxs_manifest("Microsoft.Terminal.Control" "${_terminal_control_dll_winmd}" ${_terminal_control_target})
+add_windows_terminal_sxs_manifest("Microsoft.Terminal.Control" "${_terminal_control_winmd}" ${_terminal_control_target})
 add_windows_terminal_sxs_manifest("Microsoft.Terminal.TerminalConnection" "${_terminal_connection_winmd}" ${_terminal_connection_target})
-add_windows_terminal_sxs_manifest("Microsoft.Terminal.Settings.Model" "${_terminal_settings_model_dll_winmd}" ${_terminal_settings_model_target})
+add_windows_terminal_sxs_manifest("Microsoft.Terminal.Settings.Model" "${_terminal_settings_model_winmd}" ${_terminal_settings_model_target})
 add_windows_terminal_sxs_manifest("Microsoft.Terminal.UI" "${_ui_helpers_winmd}" ${_ui_helpers_target})
 add_windows_terminal_sxs_manifest("TerminalApp" "${_terminal_app_winmd}" ${_terminal_app_target})
 add_windows_terminal_sxs_manifest("Microsoft.Terminal.Settings.Editor" "${_terminal_settings_editor_winmd}" ${_terminal_settings_editor_target})
@@ -4595,12 +4596,15 @@ set(_settings_model_unit_tests_target SettingsModelUnitTests)
 set(_settings_model_unit_tests_root "${_openconsole_root}/src/cascadia/UnitTests_SettingsModel")
 set(_settings_model_unit_tests_source_names
     ProfileTests ColorSchemeTests KeyBindingsTests CommandTests DeserializationTests NewTabMenuTests
-    SerializationTests TerminalSettingsTests ThemeTests MediaResourceTests WorkspaceTests pch)
+    SerializationTests TerminalSettingsTests ThemeTests MediaResourceTests pch)
 set(_settings_model_unit_tests_sources)
 foreach(_settings_model_unit_tests_source_name IN LISTS _settings_model_unit_tests_source_names)
     list(APPEND _settings_model_unit_tests_sources "${_settings_model_unit_tests_root}/${_settings_model_unit_tests_source_name}.cpp")
 endforeach()
 list(APPEND _settings_model_unit_tests_sources "${_openconsole_root}/src/cascadia/TerminalSettingsAppAdapterLib/TerminalSettings.cpp")
+list(APPEND _settings_model_unit_tests_sources "${_workspace_root}/tests/core/workspace/mirror/MirrorCoreTests.cpp")
+list(APPEND _settings_model_unit_tests_sources "${_workspace_root}/tests/core/workspace/WorkspaceCoreTests.cpp")
+list(APPEND _settings_model_unit_tests_sources "${_workspace_root}/tests/core/workspace/WorkspaceCoreBehaviorTests.cpp")
 add_library(${_settings_model_unit_tests_target} SHARED
     ${_settings_model_unit_tests_sources}
     "${_settings_model_unit_tests_root}/KeyChordTestSupport.cpp")
@@ -5046,8 +5050,10 @@ set_source_files_properties(
     "${_workspace_root}/src/glue/workspace/dll/WorkspaceModelWrapper.cpp"
     PROPERTIES
         OBJECT_DEPENDS
-            "${_workspace_root}/src/core/workspace/ExtCoreApi.h;${_workspace_root}/src/glue/workspace/WorkspaceApi.h;${_workspace_root}/src/glue/workspace/WorkspaceDataTypes.h;${_workspace_root}/src/glue/workspace/WorkspaceRuntimeTypes.h;${_workspace_root}/src/glue/workspace/WorkspaceEditorTypes.h;${_workspace_root}/src/glue/workspace/WorkspaceModel.cpp;${_workspace_root}/src/core/workspace/WorkspaceCore.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreMultiWindow.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreManagerStorage.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreNavigation.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreEditor.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreEditorState.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreLaunch.cpp;${_workspace_root}/src/core/workspace/WorkspaceCorePersistence.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreRuntime.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreRuntimeOps.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreStateManager.cpp;${_workspace_root}/src/core/workspace/deprecated/WorkspaceCaptureDeprecated.cpp;${_workspace_root}/src/glue/workspace/WorkspacePaletteHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeConversionHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeEditorStateMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeStartupMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadePersistenceMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceUtilityHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceStartupColorLogic.cpp"
+            "${_workspace_root}/src/core/workspace/ExtCoreApi.h;${_workspace_root}/src/glue/workspace/WorkspaceApi.h;${_workspace_root}/src/glue/workspace/WorkspaceDataTypes.h;${_workspace_root}/src/glue/workspace/WorkspaceRuntimeTypes.h;${_workspace_root}/src/glue/workspace/WorkspaceEditorTypes.h;${_workspace_root}/src/glue/workspace/WorkspaceModel.cpp;${_workspace_root}/src/core/workspace/WorkspaceCore.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorCore.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorTypes.h;${_workspace_root}/src/core/workspace/mirror/MirrorEventStore.h;${_workspace_root}/src/core/workspace/mirror/MirrorEventStore.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorCheckpoint.h;${_workspace_root}/src/core/workspace/mirror/MirrorCheckpoint.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorRecoveryPlanner.h;${_workspace_root}/src/core/workspace/mirror/MirrorRecoveryPlanner.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorControlLease.h;${_workspace_root}/src/core/workspace/mirror/MirrorControlLease.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorNodeSession.h;${_workspace_root}/src/core/workspace/mirror/MirrorNodeSession.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreMultiWindow.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreManagerStorage.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreNavigation.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreEditor.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreEditorState.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreLaunch.cpp;${_workspace_root}/src/core/workspace/WorkspaceCorePersistence.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreRuntime.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreRuntimeOps.cpp;${_workspace_root}/src/core/workspace/WorkspaceCoreStateManager.cpp;${_workspace_root}/src/core/workspace/deprecated/WorkspaceCaptureDeprecated.cpp;${_workspace_root}/src/glue/workspace/WorkspacePaletteHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeConversionHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeEditorStateMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeStartupMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadePersistenceMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceFacadeMethods.cpp;${_workspace_root}/src/glue/workspace/WorkspaceUtilityHelpers.cpp;${_workspace_root}/src/glue/workspace/WorkspaceStartupColorLogic.cpp"
 )
+set_property(SOURCE "${_workspace_root}/src/glue/workspace/dll/WorkspaceModelWrapper.cpp" APPEND PROPERTY OBJECT_DEPENDS
+    "${_workspace_root}/src/core/workspace/mirror/MirrorAuthorization.h;${_workspace_root}/src/core/workspace/mirror/MirrorAuthorization.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorReducer.h;${_workspace_root}/src/core/workspace/mirror/MirrorReducer.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorRegistry.h;${_workspace_root}/src/core/workspace/mirror/MirrorRegistry.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorDirectoryProjection.h;${_workspace_root}/src/core/workspace/mirror/MirrorDirectoryProjection.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorConfiguration.h;${_workspace_root}/src/core/workspace/mirror/MirrorConfiguration.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorRelayProtocol.h;${_workspace_root}/src/core/workspace/mirror/MirrorRelayProtocol.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorTerminalProtocol.h;${_workspace_root}/src/core/workspace/mirror/MirrorTerminalProtocol.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorRouteDispatcher.h;${_workspace_root}/src/core/workspace/mirror/MirrorRouteDispatcher.cpp;${_workspace_root}/src/core/workspace/mirror/MirrorNodeRecorder.h;${_workspace_root}/src/core/workspace/mirror/MirrorNodeRecorder.cpp")
 
 target_compile_features(${_workspace_extension_target} PRIVATE cxx_std_20)
 target_precompile_headers(${_workspace_extension_target} PRIVATE
@@ -5318,6 +5324,7 @@ set(_portable_cmake_dir "${_workspace_root}/tools/portable/cmake")
 set(_portable_timed_command_script "${_portable_cmake_dir}/RunTimedCommand.cmake")
 set(_portable_timing_dir "${CMAKE_BINARY_DIR}/portable-timing")
 set(_product_package_build_root "${CMAKE_BINARY_DIR}/product-package/$<CONFIG>")
+set(_product_terminal_package "${_product_package_build_root}/CascadiaPackage_0.0.1.0_${PORTABLE_PLATFORM}.msix")
 set(_product_manifest "${_product_package_build_root}/AppxManifest.xml")
 set(_product_pri_config "${_product_package_build_root}/priconfig.xml")
 set(_product_resources_pri "${_product_package_build_root}/resources.pri")
@@ -5554,7 +5561,7 @@ set_property(TARGET ${_glue_extension_target} PROPERTY RULE_LAUNCH_LINK
     "\"${CMAKE_COMMAND}\" -DSTEP_NAME=glue-extension-link -P \"${_portable_timed_command_script}\" --"
 )
 
-add_custom_target(full
+add_custom_target(full ALL
     COMMAND ${CMAKE_COMMAND}
         -DSTEP_NAME=native-product-foundation
         -DSTEP_WORKING_DIRECTORY=${_workspace_root}
@@ -5573,7 +5580,7 @@ add_custom_target(full
         -P "${_portable_timed_command_script}"
         --
         "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}" --config "$<CONFIG>" --target terminal-wt terminal-elevate-shim "${_shell_extension_target}"
-    COMMAND "${CMAKE_COMMAND}" -E make_directory "${_product_package_build_root}" "${_portable_package_root}"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${_product_package_build_root}"
     COMMAND "${_dotnet_path}" "${_portable_tool_dll}" generate-manifest
         --source-manifest "${_product_source_manifest}"
         --output-manifest "${_product_manifest}"
@@ -5599,10 +5606,6 @@ add_custom_target(full
         --platform "${PORTABLE_PLATFORM}"
         --manifest "${_product_manifest}"
         --resources-pri "${_product_resources_pri}"
-    COMMAND "${_portable_makeappx_path}" pack
-        /f "${_product_package_map}"
-        /p "${_portable_terminal_package}"
-        /o
     COMMAND ${CMAKE_COMMAND}
         -DSTEP_NAME=extension-containers-full
         -DSTEP_WORKING_DIRECTORY=${_workspace_root}
@@ -5615,7 +5618,9 @@ add_custom_target(full
         -P "${_portable_timed_command_script}"
         --
         "${_dotnet_path}" "${_portable_tool_dll}"
-        --package "${_portable_terminal_package_native}"
+        --package-map "${_product_package_map}"
+        --manifest "${_product_manifest}"
+        --version-file "${_ext_version_file}"
         --xaml-package "${_portable_xaml_package_native}"
         --platform "${PORTABLE_PLATFORM}"
         --configuration "$<CONFIG>"
@@ -5636,14 +5641,25 @@ add_custom_target(full
 )
 add_dependencies(full product-xaml-runtime)
 
-add_custom_target(ext ALL
+add_custom_target(msix
+    COMMAND "${_portable_makeappx_path}" pack /f "${_product_package_map}" /p "${_product_terminal_package}" /o
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_product_terminal_package}" "${_portable_terminal_package}"
+    DEPENDS full
+    USES_TERMINAL
+    VERBATIM
+    COMMENT "Creating installable MSIX at ${_portable_terminal_package}"
+)
+
+add_custom_target(ext
     COMMAND ${CMAKE_COMMAND}
         -DSTEP_NAME=ext-repack
         -DSTEP_WORKING_DIRECTORY=${_workspace_root}
         -P "${_portable_timed_command_script}"
         --
         "${_dotnet_path}" "${_portable_tool_dll}"
-        --package "${_portable_terminal_package_native}"
+        --package-map "${_product_package_map}"
+        --manifest "${_product_manifest}"
+        --version-file "${_ext_version_file}"
         --xaml-package "${_portable_xaml_package_native}"
         --platform "${PORTABLE_PLATFORM}"
         --configuration "$<CONFIG>"
@@ -5668,6 +5684,9 @@ add_custom_target(ext ALL
 # their local definitions. Keep only the single directory-level brand token.
 get_property(_portable_build_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
 foreach(_portable_build_target IN LISTS _portable_build_targets)
+    if(NOT _portable_build_target STREQUAL "full")
+        set_property(TARGET "${_portable_build_target}" PROPERTY EXCLUDE_FROM_ALL TRUE)
+    endif()
     get_target_property(_portable_target_definitions "${_portable_build_target}" COMPILE_DEFINITIONS)
     if(_portable_target_definitions)
         list(REMOVE_ITEM _portable_target_definitions WT_BRANDING_DEV)

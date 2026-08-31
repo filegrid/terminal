@@ -14,7 +14,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "../core/chat/WorkspaceChatStateHelpers.h"
+#include "../../core/chat/WorkspaceChatStateHelpers.h"
 #include "GluePageStateTypes.h"
 #include <winrt/base.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>

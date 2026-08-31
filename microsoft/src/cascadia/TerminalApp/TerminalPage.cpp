@@ -24,7 +24,7 @@
 #include "SnippetsPaneContent.h"
 #include "TabRowControl.h"
 #include "TerminalSettingsCache.h"
-#include "..\..\..\..\src\contracts\GluePageHostContract.h"
+#include "..\..\..\..\src\glue\contracts\GluePageHostContract.h"
 
 #include "LaunchPositionRequest.g.cpp"
 #include "RenameWindowRequestedArgs.g.cpp"

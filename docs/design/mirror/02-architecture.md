@@ -2,7 +2,7 @@
 
 ## 1. 架构原则
 
-1. **Core 是唯一控制平面和状态权威。** Node Mirror Session、窗口事件日志、检查点索引、恢复规划、控制租约、Node 布局快照和协议 DTO 均实现于 `src/core/workspace`；任何 Glue/Host/WebView 都不能绕过 Core 直接决定状态或控制权。
+1. **Core 是唯一控制平面和状态权威。** Node Mirror Session、窗口事件日志、检查点索引、恢复规划、控制租约、Node 布局快照和协议 DTO 均实现于 `src/core/workspace/mirror/`；任何 Glue/Host/WebView 都不能绕过 Core 直接决定状态或控制权。镜像相关 Core 代码不得散落在 `src/core/workspace` 根目录。
 2. **旁路而非劫持。** Terminal 原有输出链 `ConPTY → _OutputThread → TerminalOutput → TermControl` 保持可用，即便 recorder/gateway 故障也不受影响。
 3. **Glue/Host 只接线和显示。** `TerminalConnection` 只提供原始 I/O tap 与写入适配；Glue 只把 Node 启动、ConPTY 和 Core effect 连接起来；Host/WebView 只显示 Core projection、发送 intent；HTTP/WebSocket 不进入 WinRT Connection 类型。
 4. **一个逻辑发布者。** 每个 Node Session 由 Core 的串行状态机处理输出、状态变化和控制权，因而可分配全序 `nodeSeq` 和各 window `windowSeq` 并简化恢复。
@@ -39,7 +39,30 @@ flowchart TB
   ARB -->|validated UTF-16 input| CP
 ```
 
-### 2.1 模块职责
+### 2.1 Core 文件边界
+
+所有 Mirror Core 文件位于 `src/core/workspace/mirror/`，按模块拆分；根目录的 `WorkspaceCore.*` 只保留对外 facade 或调用入口，不承载 Mirror 状态、算法或存储实现。
+
+```text
+src/core/workspace/mirror/
+├─ MirrorTypes.h                         # 强类型 ID、DTO、枚举、不可变 projection
+├─ MirrorNodeSession.h/.cpp              # Node 级状态机、nodeSeq、窗口集合、生命周期
+├─ MirrorWindowSession.h/.cpp            # commandId 对应窗口状态与 windowSeq
+├─ MirrorEvent.h                         # Input/Output/Resize/Title/Exit/checkpoint 事件模型
+├─ MirrorEventStore.h/.cpp               # 有界事件环、gap、保留与读取范围
+├─ MirrorCheckpoint.h/.cpp               # checkpoint 索引、有效性、状态快照元数据
+├─ MirrorRecoveryPlanner.h/.cpp          # baseline/resume/replay 批次规划
+├─ MirrorControlLease.h/.cpp             # 申请、授予、续期、撤销与竞争规则
+├─ MirrorAuthorization.h/.cpp            # capability/policy 投影的 Core 最终校验
+├─ MirrorEffects.h                        # 对 Glue/Agent Adapter 的 write/publish/disconnect effect
+├─ MirrorReducer.h/.cpp                  # intent/event → 新状态 + effects 的纯 reducer
+├─ MirrorRegistry.h/.cpp                 # nodeId/sessionId 查找与运行期注册
+└─ MirrorSerialization.h/.cpp            # versioned Core DTO 编码边界（不含网络 I/O）
+```
+
+依赖方向必须单向：`Types/Event/Effects` → `EventStore/Checkpoint/Lease/Authorization` → `WindowSession/RecoveryPlanner` → `NodeSession/Reducer/Registry`。任何模块都不得依赖 `TerminalApp`、`WebView`、Tauri、HTTP/WebSocket 或 ConPTY 头文件；这些均在 Glue 的 adapter 中实现。
+
+### 2.2 模块职责
 
 | 模块 | 责任 | 不负责 |
 | --- | --- | --- |
@@ -60,8 +83,8 @@ sequenceDiagram
   participant P as ConPTY
   participant C as ConptyConnection
   participant T as MirrorTap
-  participant A as MirrorAgent
-  participant R as ReplayStore
+  participant A as Workspace Core
+  participant R as WindowEventStore
   participant W as WebSocket
   participant X as xterm.js
   P->>C: UTF-8 bytes
@@ -74,12 +97,12 @@ sequenceDiagram
   X->>X: term.write(bytes)
 ```
 
-`CopyOutput` 必须在 UTF-8 转换前取得 bytes，以避免坏 UTF-8、代理对和编码往返改变数据。它只复制至固定容量的 MPSC 队列；如果队列满，设置 `outputGap` 标记并返回。下一次 Agent 获取控制后将要求所有受影响客户端重新基线，而不能拖慢 `_OutputThread()`。
+`CopyOutput` 必须在 UTF-8 转换前取得 bytes，以避免坏 UTF-8、代理对和编码往返改变数据。它只复制至固定容量的 MPSC 队列；如果队列满，向 Core 投递 `outputGap` 并返回。Core 要求所有受影响客户端重新基线，而不能拖慢 `_OutputThread()`。
 
 ### 3.2 加入与恢复
 
 ```text
-Client                Gateway / Agent                       ReplayStore
+Client                Server / PC Adapter                    Core EventStore
   | hello(token, lastSeq?) |                                     |
   |----------------------->| authenticate / authorize            |
   |                        |----- read baseline + range ------->|
@@ -92,7 +115,7 @@ Client                Gateway / Agent                       ReplayStore
   |<-----------------------|                                     |
 ```
 
-为保证基线和增量之间没有竞态，Agent 在同一串行执行器中完成：冻结当前 `headSeq` → 复制基线/所需范围 → 将客户端标记为 `catchingUp` → 发送至 `headSeq` → 切换为 `live`。`live` 前产生的帧只追加到该客户端的待发队列。若其待发队列超限，关闭连接并让客户端重连，不进行无限堆积。
+为保证基线和增量之间没有竞态，Core 在同一串行状态机中完成：冻结当前 `headSeq` → 复制基线/所需范围 → 将客户端标记为 `catchingUp` → 生成发送 effect 至 `headSeq` → 切换为 `live`。Server/PC Adapter 执行 effect；`live` 前产生的帧只追加到该客户端的待发队列。若其待发队列超限，Adapter 上报结果，Core 决定关闭连接并让客户端重连，不进行无限堆积。
 
 ## 4. 会话状态模型
 

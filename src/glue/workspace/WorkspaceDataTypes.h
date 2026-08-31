@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "../../core/workspace/mirror/MirrorTypes.h"
+
 namespace winrt::Microsoft::Terminal::Settings::Model::implementation
 {
     struct WorkspaceNodeCommand
@@ -55,6 +57,7 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         // and is interpreted by Core as its single StartupAction command.
         std::vector<WorkspaceNodeCommand> Commands;
         WorkspaceMultiWindowPreference MultiWindowPreference;
+        terminal::workspace::WorkspaceNodeMirrorConfiguration Mirror;
         std::wstring OperatingSystem;
         std::wstring ShellType;
         bool ShowInputPanel{ false };

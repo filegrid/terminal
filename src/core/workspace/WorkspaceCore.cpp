@@ -961,6 +961,11 @@ namespace terminal::workspace
                     try { node.MultiWindowPreference.SplitWeights.emplace_back(std::stod(item)); } catch (...) { node.MultiWindowPreference.SplitWeights.clear(); break; }
                 }
             }
+            else if (ApplyWorkspaceMirrorConfigurationField(node.Mirror, key, value))
+            {
+                // Mirror configuration is implemented in the mirror Core
+                // module; this legacy parser only delegates the field.
+            }
             else if (key == L"operatingSystem")
             {
                 node.OperatingSystem = value;
@@ -1429,6 +1434,12 @@ namespace terminal::workspace
                 }
                 stream << L"\n";
             }
+            if (serializedNode.Mirror.Mode == WorkspaceNodeMirrorMode::NodeSession)
+            {
+                stream << L"mirrorMode: " << WorkspaceMirrorModeToString(serializedNode.Mirror.Mode) << L"\n";
+                stream << L"mirrorMaximumEvents: " << serializedNode.Mirror.MaximumEvents << L"\n";
+                stream << L"mirrorMaximumCheckpoints: " << serializedNode.Mirror.MaximumCheckpoints << L"\n";
+            }
             if (!node.OperatingSystem.empty())
             {
                 stream << L"operatingSystem: " << _quote(node.OperatingSystem) << L"\n";
@@ -1644,4 +1655,5 @@ namespace terminal::workspace
     #include "WorkspaceCoreEditor.cpp"
 
     #include "WorkspaceCoreRuntime.cpp"
+    #include "mirror/MirrorCore.cpp"
 }
