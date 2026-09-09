@@ -85,16 +85,6 @@ static void EnsureNativeArchitecture()
 
 int __stdcall wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int nCmdShow)
 {
-    // Use the WebView2 Fixed Runtime shipped with the portable payload. The
-    // system Evergreen runtime on this machine is older than Edge and its
-    // renderer exits while loading qq.com. A fixed runtime also makes WebView
-    // behavior reproducible without changing the user's system installation.
-    const auto runtimeDirectory = std::filesystem::path{ wil::GetModuleFileNameW<std::wstring>(nullptr) }.parent_path() / L"WebView2Runtime";
-    if (std::filesystem::is_directory(runtimeDirectory))
-    {
-        SetEnvironmentVariableW(L"WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", runtimeDirectory.c_str());
-    }
-
     TraceLoggingRegister(g_hWindowsTerminalProvider);
     ::Microsoft::Console::ErrorReporting::EnableFallbackFailureReporting(g_hWindowsTerminalProvider);
 
