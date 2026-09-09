@@ -8,6 +8,7 @@
 #include "MirrorTerminalProtocol.h"
 
 #include <functional>
+#include <span>
 
 namespace terminal::workspace
 {
@@ -25,6 +26,16 @@ namespace terminal::workspace
                            std::wstring_view clientId,
                            uint64_t nowMilliseconds,
                            std::vector<WorkspaceMirrorRelayFrame>& outbound);
+
+        // The terminal host calls this after receiving ConPTY output. Core
+        // records the bytes once, then fans the resulting sequenced events to
+        // every currently bound server route. This deliberately keeps output
+        // fan-out out of the ConPTY callback and out of terminal-server.
+        bool RecordOutputAndBuildEffects(std::wstring_view commandId,
+                                         std::vector<uint8_t> bytes,
+                                         uint64_t timestampMilliseconds,
+                                         std::span<const WorkspaceMirrorRelayFrame> routes,
+                                         std::vector<WorkspaceMirrorRelayFrame>& outbound);
 
     private:
         bool _emitRecovery(const WorkspaceMirrorRelayFrame& inbound,

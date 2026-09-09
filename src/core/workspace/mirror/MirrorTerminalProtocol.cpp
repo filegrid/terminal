@@ -52,8 +52,12 @@ namespace
 
     bool _toUtf8(const std::wstring_view value, std::vector<uint8_t>& output)
     {
+        if (value.empty())
+        {
+            return true;
+        }
         const auto size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, value.data(), gsl::narrow<int>(value.size()), nullptr, 0, nullptr, nullptr);
-        if (size < 0 || size > UINT16_MAX) return false;
+        if (size <= 0 || size > UINT16_MAX) return false;
         const auto begin = output.size();
         output.resize(begin + gsl::narrow<size_t>(size));
         return !size || WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, value.data(), gsl::narrow<int>(value.size()), reinterpret_cast<char*>(output.data() + begin), size, nullptr, nullptr) == size;
@@ -61,8 +65,13 @@ namespace
 
     bool _fromUtf8(const std::span<const uint8_t> value, std::wstring& output)
     {
+        if (value.empty())
+        {
+            output.clear();
+            return true;
+        }
         const auto size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, reinterpret_cast<const char*>(value.data()), gsl::narrow<int>(value.size()), nullptr, 0);
-        if (size < 0) return false;
+        if (size <= 0) return false;
         output.resize(gsl::narrow<size_t>(size));
         return !size || MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, reinterpret_cast<const char*>(value.data()), gsl::narrow<int>(value.size()), output.data(), size) == size;
     }

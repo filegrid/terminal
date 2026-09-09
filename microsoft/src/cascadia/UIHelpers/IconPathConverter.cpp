@@ -36,6 +36,24 @@ namespace winrt::Microsoft::Terminal::UI::implementation
     {
         std::filesystem::path _workspaceIconLogPath()
         {
+            wchar_t* portableRootValue = nullptr;
+            size_t portableRootLength = 0;
+            std::wstring portableRoot;
+            if (_wdupenv_s(&portableRootValue, &portableRootLength, L"WT_PORTABLE_ROOT") == 0 && portableRootValue && portableRootLength > 0)
+            {
+                portableRoot.assign(portableRootValue);
+            }
+
+            if (portableRootValue)
+            {
+                free(portableRootValue);
+            }
+
+            if (!portableRoot.empty())
+            {
+                return std::filesystem::path{ portableRoot } / L".wt" / L"logs" / L"workspace-chat-diagnostics.jsonl";
+            }
+
             wchar_t* userProfileValue = nullptr;
             size_t userProfileLength = 0;
             std::wstring userProfile;

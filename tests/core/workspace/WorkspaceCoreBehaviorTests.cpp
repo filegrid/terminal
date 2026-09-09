@@ -1554,7 +1554,7 @@ namespace SettingsModelUnitTests
 
         std::ifstream saved{ temp.path / L"Compat" / L"Legacy node" / L"tab.yaml", std::ios::binary };
         const std::string text{ std::istreambuf_iterator<char>{ saved }, std::istreambuf_iterator<char>{} };
-        VERIFY_IS_TRUE(text.rfind("version: 2\n", 0) == 0);
+        VERIFY_IS_TRUE(text.rfind("version: 3\n", 0) == 0);
         VERIFY_IS_TRUE(text.find("commands:") != std::string::npos);
         VERIFY_IS_TRUE(text.find("startupAction:") == std::string::npos);
 
@@ -1608,7 +1608,7 @@ namespace SettingsModelUnitTests
             "version: 1\n"
             "commands: |\n"
             "  api|workspace-icon://color/terminal|API|pwsh -NoLogo\\|Write-Host api\n"
-            "  web|workspace-icon://color/code|Web|\n"
+            "  web|workspace-icon://color/code|Web||webview|https://example.com\n"
             "  worker|workspace-icon://color/terminal|Worker|npm run worker\n"
             "multiWindowMode: tab\n"
             "tabPlacement: bottom-right\n"
@@ -1627,7 +1627,8 @@ namespace SettingsModelUnitTests
         const auto& node = loaded.Workspaces().front().Nodes.front();
         VERIFY_ARE_EQUAL(3u, gsl::narrow_cast<unsigned int>(node.Commands.size()));
         VERIFY_IS_TRUE(node.Commands[0].Command == L"pwsh -NoLogo|Write-Host api");
-        VERIFY_IS_TRUE(node.Commands[1].Command.empty());
+        VERIFY_IS_TRUE(node.Commands[1].WindowType == workspace_core::WorkspaceNodeCommand::Type::WebView);
+        VERIFY_IS_TRUE(node.Commands[1].WebUrl == L"https://example.com");
         VERIFY_IS_TRUE(node.MultiWindowPreference.DisplayMode == workspace_core::WorkspaceWindowDisplayMode::Tab);
         VERIFY_IS_TRUE(node.MultiWindowPreference.TabPlacement == workspace_core::WorkspaceTabPlacement::BottomRight);
         VERIFY_ARE_EQUAL(0.3, node.MultiWindowPreference.SplitWeights[0]);
@@ -1644,8 +1645,11 @@ namespace SettingsModelUnitTests
         VERIFY_IS_FALSE(workspace_core::SetWorkspaceNodeCommands(node, {
             { L"same", {}, {}, {} }, { L"same", {}, {}, {} },
         }));
+        VERIFY_IS_TRUE(workspace_core::SetWorkspaceNodeCommands(node, {
+            { L"1", {}, {}, {} }, { L"2", {}, {}, {} }, { L"3", {}, {}, {} }, { L"4", {}, {}, {} }, { L"5", {}, {}, {} },
+        }));
         VERIFY_IS_FALSE(workspace_core::SetWorkspaceNodeCommands(node, {
-            { L"1", {}, {}, {} }, { L"2", {}, {}, {} }, { L"3", {}, {}, {} }, { L"4", {}, {}, {} },
+            { L"1", {}, {}, {} }, { L"2", {}, {}, {} }, { L"3", {}, {}, {} }, { L"4", {}, {}, {} }, { L"5", {}, {}, {} }, { L"6", {}, {}, {} },
         }));
     }
 

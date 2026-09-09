@@ -16,19 +16,19 @@ Origin: https://terminal.local
 
 ## 2. 帧目录
 
-| 方向 | 类型 | 必填字段 | 说明 |
-| --- | --- | --- | --- |
-| C→S | `hello` | `type`, `protocol`, `resumeSeq?` | upgrade 后首帧，5 秒内必须到达。 |
-| S→C | `welcome` | `session`, `permissions`, `headSeq`, `cols`, `rows`, `sync` | 告知本次采用 `resume` 或 `baseline`。 |
-| S→C | `baseline` | `baseSeq`, `format`, `state` | 可序列化 terminal state snapshot；首版格式为 `wt-terminal-state.v1`。 |
-| S→C | `output` | binary header: seq, flags | 实时/补发的终端 bytes。 |
-| C→S | `requestControl` | `requestId` | 申请 lease。 |
-| S→C | `controlState` | `holder?`, `leaseExpiresAt?`, `reason?` | 所有客户端都收到。 |
-| C→S | `input` | `leaseId`, `text` | UTF-16 文本，最大 64 KiB。 |
-| S→C | `inputRejected` | `reason` | 无效/过期 lease、限流等。 |
-| S→C | `resize` | `cols`, `rows`, `generation` | Host 尺寸变化通知。 |
-| 双向 | `ping` / `pong` | `nonce` | 应用层活性与延迟测量。 |
-| S→C | `error` / `sessionClosed` | `code`, `message` | 可展示、可机器处理的结束信息。 |
+| 方向 | 类型                          | 必填字段                                                                | 说明                                                                   |
+| ---- | ----------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| C→S | `hello`                     | `type`, `protocol`, `resumeSeq?`                                  | upgrade 后首帧，5 秒内必须到达。                                       |
+| S→C | `welcome`                   | `session`, `permissions`, `headSeq`, `cols`, `rows`, `sync` | 告知本次采用`resume` 或 `baseline`。                               |
+| S→C | `baseline`                  | `baseSeq`, `format`, `state`                                      | 可序列化 terminal state snapshot；首版格式为`wt-terminal-state.v1`。 |
+| S→C | `output`                    | binary header: seq, flags                                               | 实时/补发的终端 bytes。                                                |
+| C→S | `requestControl`            | `requestId`                                                           | 申请 lease。                                                           |
+| S→C | `controlState`              | `holder?`, `leaseExpiresAt?`, `reason?`                           | 所有客户端都收到。                                                     |
+| C→S | `input`                     | `leaseId`, `text`                                                   | UTF-16 文本，最大 64 KiB。                                             |
+| S→C | `inputRejected`             | `reason`                                                              | 无效/过期 lease、限流等。                                              |
+| S→C | `resize`                    | `cols`, `rows`, `generation`                                      | Host 尺寸变化通知。                                                    |
+| 双向 | `ping` / `pong`           | `nonce`                                                               | 应用层活性与延迟测量。                                                 |
+| S→C | `error` / `sessionClosed` | `code`, `message`                                                   | 可展示、可机器处理的结束信息。                                         |
 
 ## 3. 编码
 
@@ -121,21 +121,21 @@ sequenceDiagram
 
 令牌只以随机 256 bit secret 形式生成，服务端只存 SHA-256/HMAC 哈希和权限元数据。令牌类型：
 
-| 类型 | 权限 | 用途 | 默认 TTL |
-| --- | --- | --- | --- |
-| View | `view` | 二屏/观众链接 | 15 分钟 |
-| Control request | `view`, `request-control` | 可申请、需 Host 批准 | 5 分钟 |
-| Direct control | `view`, `control` | 受信任嵌入客户端 | 2 分钟 |
+| 类型            | 权限                          | 用途                 | 默认 TTL |
+| --------------- | ----------------------------- | -------------------- | -------- |
+| View            | `view`                      | 二屏/观众链接        | 15 分钟  |
+| Control request | `view`, `request-control` | 可申请、需 Host 批准 | 5 分钟   |
+| Direct control  | `view`, `control`         | 受信任嵌入客户端     | 2 分钟   |
 
 令牌一经用于握手即绑定 client connection，默认不可重复兑换；Host 可手动生成新的 View 链接。令牌字符串不得进入 telemetry、异常、URL query、浏览器 history 或截图诊断。
 
 ## 7. 协议错误处理
 
-| 情况 | 服务端动作 | 客户端动作 |
-| --- | --- | --- |
-| 5 秒未 hello | close 1008 | 显示协议错误。 |
-| 非法 JSON/未知必填类型 | `error malformed-frame` 后 close 1002 | 停止重试。 |
-| seq 缺口 | 接受 `resync`，回 baseline | 暂停 write，保留连接。 |
-| 慢客户端 | `error slow-client` 后 close 1013 | 指数退避 1/2/4…30 秒。 |
-| token 过期 | close 1008，无细节 | 要求用户重新打开链接。 |
-| Host 关闭会话 | `sessionClosed` 后 close 1000 | 只读历史留在页面，提供关闭。 |
+| 情况                   | 服务端动作                              | 客户端动作                   |
+| ---------------------- | --------------------------------------- | ---------------------------- |
+| 5 秒未 hello           | close 1008                              | 显示协议错误。               |
+| 非法 JSON/未知必填类型 | `error malformed-frame` 后 close 1002 | 停止重试。                   |
+| seq 缺口               | 接受`resync`，回 baseline             | 暂停 write，保留连接。       |
+| 慢客户端               | `error slow-client` 后 close 1013     | 指数退避 1/2/4…30 秒。      |
+| token 过期             | close 1008，无细节                      | 要求用户重新打开链接。       |
+| Host 关闭会话          | `sessionClosed` 后 close 1000         | 只读历史留在页面，提供关闭。 |

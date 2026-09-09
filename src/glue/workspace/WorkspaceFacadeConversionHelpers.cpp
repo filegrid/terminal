@@ -27,6 +27,8 @@
                     .Icon = command.Icon,
                     .Name = command.Name,
                     .Command = command.Command,
+                    .WindowType = static_cast<terminal::workspace::WorkspaceNodeCommand::Type>(command.WindowType),
+                    .WebUrl = command.WebUrl,
                 });
             }
             core.MultiWindowPreference.DisplayMode = static_cast<terminal::workspace::WorkspaceWindowDisplayMode>(node.MultiWindowPreference.DisplayMode);
@@ -61,6 +63,8 @@
                     .Icon = command.Icon,
                     .Name = command.Name,
                     .Command = command.Command,
+                    .WindowType = static_cast<WorkspaceNodeCommand::Type>(command.WindowType),
+                    .WebUrl = command.WebUrl,
                 });
             }
             wrapped.MultiWindowPreference.DisplayMode = static_cast<WorkspaceWindowDisplayMode>(node.MultiWindowPreference.DisplayMode);

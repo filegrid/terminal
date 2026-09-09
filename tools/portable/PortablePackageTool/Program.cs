@@ -532,6 +532,7 @@ internal sealed class Program
 
                 File.Copy(launcherPath, outputExe);
                 AppendPayload(outputExe, outputZip);
+                WritePortableLaunchScript(outputExe);
             }
             finally
             {
@@ -540,6 +541,35 @@ internal sealed class Program
                     Directory.Delete(publishDirectory, true);
                 }
             }
+        }
+
+        private static void WritePortableLaunchScript(string portableExecutable)
+        {
+            var outputDirectory = Path.GetDirectoryName(portableExecutable)!;
+            var scriptPath = Path.Combine(outputDirectory, "Start-WindowsTerminalPortable.vbs");
+            var legacyScriptPath = Path.Combine(outputDirectory, "Start-WindowsTerminalPortable.cmd");
+            var executableName = Path.GetFileName(portableExecutable);
+            if (File.Exists(legacyScriptPath))
+            {
+                File.Delete(legacyScriptPath);
+            }
+
+            File.WriteAllText(
+                scriptPath,
+                "Option Explicit\r\n" +
+                "Dim shell, fileSystem, scriptDirectory, portableRoot, command, argument\r\n" +
+                "Set shell = CreateObject(\"WScript.Shell\")\r\n" +
+                "Set fileSystem = CreateObject(\"Scripting.FileSystemObject\")\r\n" +
+                "scriptDirectory = fileSystem.GetParentFolderName(WScript.ScriptFullName)\r\n" +
+                "portableRoot = fileSystem.BuildPath(scriptDirectory, \"portable-data\")\r\n" +
+                "If Not fileSystem.FolderExists(portableRoot) Then fileSystem.CreateFolder(portableRoot)\r\n" +
+                "shell.Environment(\"Process\")(\"WT_PORTABLE_ROOT\") = portableRoot\r\n" +
+                "command = Chr(34) & fileSystem.BuildPath(scriptDirectory, \"" + executableName + "\") & Chr(34) & \" --portable-root \" & Chr(34) & portableRoot & Chr(34)\r\n" +
+                "For Each argument In WScript.Arguments\r\n" +
+                "    command = command & \" \" & Chr(34) & Replace(argument, Chr(34), Chr(34) & Chr(34)) & Chr(34)\r\n" +
+                "Next\r\n" +
+                "shell.Run command, 0, False\r\n",
+                new UTF8Encoding(false));
         }
 
         private void AppendPayload(string outputExe, string outputZip)

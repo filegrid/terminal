@@ -176,12 +176,11 @@
                     continue;
                 }
                 const auto& node = workspace->Nodes.at(*nodeIndex);
-                const auto commandCount = std::max<size_t>(1, node.Commands.size());
-                for (size_t commandIndex = 0; commandIndex < commandCount; ++commandIndex)
-                {
-                    state.PendingNodeIds.emplace_back(nodeId);
-                    state.PendingNodeInputVisibility.emplace_back(node.ShowInputPanel);
-                }
+                // The startup queue is consumed by native first-level Tabs.
+                // Command panes are hosted inside that Tab, so one queue
+                // entry per node is required regardless of command count.
+                state.PendingNodeIds.emplace_back(nodeId);
+                state.PendingNodeInputVisibility.emplace_back(node.ShowInputPanel);
             }
         }
         return state;

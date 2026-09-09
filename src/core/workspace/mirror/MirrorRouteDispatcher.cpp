@@ -67,6 +67,13 @@
             outbound.emplace_back(std::move(pong));
             return true;
         }
+        // Route lifetime belongs to terminal-server. A close notification has
+        // no terminal effect by itself, but it is a valid terminal-host event
+        // and must not be treated as a tunnel protocol failure.
+        if (inbound.Kind == WorkspaceMirrorRelayFrameKind::RouteClose)
+        {
+            return true;
+        }
         if (inbound.Kind != WorkspaceMirrorRelayFrameKind::TerminalIntent) return false;
         WorkspaceMirrorTerminalMessage request;
         if (!DecodeWorkspaceMirrorTerminalMessage(inbound.Payload, request)) return false;
@@ -78,5 +85,52 @@
             return _emitMessage(inbound, { .Kind = WorkspaceMirrorTerminalMessageKind::Rejected, .CommandId = request.CommandId, .Text = L"input-rejected" }, outbound);
         }
         if (_inputEffectSink) _inputEffectSink(effect);
+        return true;
+    }
+
+    bool WorkspaceMirrorRouteDispatcher::RecordOutputAndBuildEffects(const std::wstring_view commandId,
+                                                                       std::vector<uint8_t> bytes,
+                                                                       const uint64_t timestampMilliseconds,
+                                                                       const std::span<const WorkspaceMirrorRelayFrame> routes,
+                                                                       std::vector<WorkspaceMirrorRelayFrame>& outbound)
+    {
+        if (!_recorder || !_recorder->Enabled())
+        {
+            return false;
+        }
+
+        const auto previousHead = _recorder->Snapshot().HeadSequence;
+        if (!_recorder->RecordOutput(commandId, std::move(bytes), timestampMilliseconds))
+        {
+            return false;
+        }
+
+        const auto snapshot = _recorder->Snapshot();
+        const auto* window = FindWorkspaceMirrorWindow(snapshot, commandId);
+        if (!window)
+        {
+            return false;
+        }
+        for (const auto& event : window->Events)
+        {
+            if (event.Sequence <= previousHead || event.Kind != WorkspaceMirrorEventKind::Output)
+            {
+                continue;
+            }
+            for (const auto& route : routes)
+            {
+                if (!_emitMessage(route,
+                                  { .Kind = WorkspaceMirrorTerminalMessageKind::Output,
+                                    .CommandId = std::wstring{ commandId },
+                                    .Sequence = event.Sequence,
+                                    .Rows = event.Rows,
+                                    .Columns = event.Columns,
+                                    .Bytes = event.Bytes },
+                                  outbound))
+                {
+                    return false;
+                }
+            }
+        }
         return true;
     }

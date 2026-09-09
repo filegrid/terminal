@@ -38,10 +38,15 @@ namespace winrt::TerminalApp::implementation
         // Installs the command-level host inside this first-level node Tab.
         // These panes intentionally do not enter TerminalPage::_tabs.
         void SetTerminalContentTabHost(std::vector<std::shared_ptr<Pane>> panes,
+                                       std::vector<winrt::Windows::UI::Xaml::UIElement> roots,
                                        std::vector<winrt::hstring> titles,
                                        std::vector<winrt::hstring> icons,
                                        bool iconButtons,
                                        bool dockBottom);
+        // Replaces the node's initial terminal content with a configured
+        // browser window. This keeps a WebView workspace command inside the
+        // same first-level workspace Tab.
+        void SetTerminalContentWebView(winrt::hstring url);
 
         void AttachColorPicker(winrt::TerminalApp::ColorPickupFlyout& colorPicker);
 
@@ -183,11 +188,14 @@ namespace winrt::TerminalApp::implementation
         // attaches Tab::Content(); it never owns a global terminal host.
         winrt::Windows::UI::Xaml::Controls::Grid _contentWrapper{ nullptr };
         winrt::Windows::UI::Xaml::Controls::Grid _terminalContentHost{ nullptr };
+        winrt::Windows::UI::Xaml::Controls::Grid _commandTabPrewarmHost{ nullptr };
         winrt::Microsoft::UI::Xaml::Controls::TabView _commandTabView{ nullptr };
         std::vector<std::shared_ptr<Pane>> _commandTabPanes;
+        std::vector<winrt::Windows::UI::Xaml::UIElement> _commandTabRoots;
         std::vector<winrt::hstring> _commandTabTitles;
         std::vector<winrt::hstring> _commandTabIcons;
         std::vector<winrt::Windows::UI::Xaml::Controls::Button> _commandTabButtons;
+        size_t _activeCommandTabIndex{};
 
         winrt::Microsoft::Terminal::Settings::Model::IconStyle _lastIconStyle;
         winrt::hstring _lastIconPath{};

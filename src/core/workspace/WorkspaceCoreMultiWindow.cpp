@@ -97,7 +97,7 @@
         const auto commands = EffectiveWorkspaceNodeCommands(node);
         if (commands.size() < WorkspaceNodeMinCommandCount || commands.size() > WorkspaceNodeMaxCommandCount)
         {
-            return { false, L"A workspace node must contain one to three commands." };
+            return { false, L"A workspace node must contain one to five commands." };
         }
         std::unordered_set<std::wstring> ids;
         for (const auto& command : commands)
@@ -105,6 +105,10 @@
             if (command.Id.empty() || !ids.emplace(command.Id).second)
             {
                 return { false, L"Each workspace command needs a unique id." };
+            }
+            if (command.WindowType == WorkspaceNodeCommand::Type::WebView && command.WebUrl.empty())
+            {
+                return { false, L"Each WebView window needs a URL." };
             }
         }
         return { true, {} };
@@ -132,6 +136,14 @@
         }
         node.MultiWindowPreference.SplitWeights = _quantizeSplitWeights(
             node.MultiWindowPreference.SplitWeights, node.Commands.size());
+        if (std::any_of(node.Commands.begin(), node.Commands.end(), [](const auto& command) {
+                return command.WindowType == WorkspaceNodeCommand::Type::WebView;
+            }))
+        {
+            // Browser content is hosted by the command Tab host. It cannot be
+            // represented by Terminal's native split-pane tree.
+            node.MultiWindowPreference.DisplayMode = WorkspaceWindowDisplayMode::Tab;
+        }
         _syncLegacyCommandFields(node);
     }
 

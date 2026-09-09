@@ -18,6 +18,12 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         std::wstring Icon;
         std::wstring Name;
         std::wstring Command;
+        enum class Type
+        {
+            Terminal,
+            WebView,
+        } WindowType{ Type::Terminal };
+        std::wstring WebUrl;
     };
 
     enum class WorkspaceWindowDisplayMode
