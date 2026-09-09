@@ -47,10 +47,6 @@ internal static class ProductPackageMapGenerator
 
         AddDirectory(files, Path.Combine(repoRoot, "microsoft", "res", "terminal", "images-Dev"), "Images");
         AddDirectory(files, Path.Combine(repoRoot, "res", "web"), @"res\web");
-        // The portable launcher selects this Fixed Runtime before it constructs
-        // XAML. Keep the browser engine with the payload rather than depending
-        // on an arbitrary (and potentially stale) machine-wide Evergreen copy.
-        AddDirectoryRecursive(files, Path.Combine(repoRoot, "res", "webview2-runtime", platform), "WebView2Runtime");
         AddDirectory(files, Path.Combine(packageRoot, "ProfileIcons"), "ProfileIcons");
         AddDirectory(files, Path.Combine(packageRoot, "ProfileGeneratorIcons"), "ProfileGeneratorIcons");
         files.Add((RequireFile(Path.Combine(repoRoot, "microsoft", "src", "cascadia", "TerminalSettingsModel", "defaults.json")), "defaults.json"));
@@ -67,9 +63,9 @@ internal static class ProductPackageMapGenerator
         files.Add((resourcesPri, "resources.pri"));
         files.Add((RequireFile(Path.Combine(repoRoot, "microsoft", "packages", "Microsoft.WindowsPackageManager.ComInterop.1.8.1911", "lib", "Microsoft.Management.Deployment.winmd")), "Microsoft.Management.Deployment.winmd"));
 
-        if (files.Count < 256)
+        if (files.Count != 256)
         {
-            throw new InvalidOperationException($"Expected at least 256 package payload files, found {files.Count}.");
+            throw new InvalidOperationException($"Expected 256 package payload files, found {files.Count}.");
         }
         var duplicateTargets = files.GroupBy(item => item.Target, StringComparer.OrdinalIgnoreCase).Where(group => group.Count() != 1).ToArray();
         if (duplicateTargets.Length != 0)
@@ -94,19 +90,6 @@ internal static class ProductPackageMapGenerator
         foreach (var source in Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.TopDirectoryOnly).OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
         {
             files.Add((RequireFile(source), targetDirectory + "\\" + Path.GetFileName(source)));
-        }
-    }
-
-    private static void AddDirectoryRecursive(List<(string Source, string Target)> files, string sourceDirectory, string targetDirectory)
-    {
-        if (!Directory.Exists(sourceDirectory))
-        {
-            throw new InvalidOperationException($"Could not find package input directory {sourceDirectory}.");
-        }
-        foreach (var source in Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.AllDirectories).OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
-        {
-            var relativePath = Path.GetRelativePath(sourceDirectory, source);
-            files.Add((RequireFile(source), Path.Combine(targetDirectory, relativePath)));
         }
     }
 
