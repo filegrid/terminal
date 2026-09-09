@@ -15,6 +15,10 @@
 #include "mirror/MirrorEventStore.h"
 #include "mirror/MirrorNodeSession.h"
 #include "mirror/MirrorNodeRecorder.h"
+#include "mirror/MirrorNodeAgent.h"
+#include "mirror/MirrorDeviceTunnelSession.h"
+#include "mirror/MirrorDeviceTunnelClient.h"
+#include "mirror/MirrorDeviceEnrollment.h"
 #include "mirror/MirrorCheckpoint.h"
 #include "mirror/MirrorControlLease.h"
 #include "mirror/MirrorRecoveryPlanner.h"
@@ -41,6 +45,14 @@ namespace terminal::workspace
         std::wstring Name;
         // An empty command is valid: it opens the selected profile unchanged.
         std::wstring Command;
+        // Terminal is the compatible default for the original four-field
+        // command schema. WebView commands render WebUrl instead of a shell.
+        enum class Type
+        {
+            Terminal,
+            WebView,
+        } WindowType{ Type::Terminal };
+        std::wstring WebUrl;
     };
 
     enum class WorkspaceWindowDisplayMode
@@ -482,7 +494,7 @@ namespace terminal::workspace
     class WorkspaceStateManager;
 
     constexpr size_t WorkspaceNodeMinCommandCount{ 1 };
-    constexpr size_t WorkspaceNodeMaxCommandCount{ 3 };
+    constexpr size_t WorkspaceNodeMaxCommandCount{ 5 };
     constexpr double WorkspaceSplitWeightStep{ 0.05 };
 
     struct WorkspaceMultiWindowValidationResult

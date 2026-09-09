@@ -31,7 +31,7 @@ function formatLocalTimestamp(date = new Date()) {
 }
 
 function resolveLogsDirectory() {
-    const home = process.env.USERPROFILE || os.homedir();
+    const home = process.env.WT_PORTABLE_ROOT || process.env.USERPROFILE || os.homedir();
     return path.join(home, '.wt', 'logs');
 }
 

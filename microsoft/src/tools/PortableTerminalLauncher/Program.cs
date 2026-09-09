@@ -14,6 +14,8 @@ internal static class Program
     private const string FooterMagic = "WTPORT01";
     private const string MainExecutableName = "WindowsTerminal.exe";
     private const string SettingsDirectoryOverrideEnvironmentVariable = "WT_SETTINGS_DIR_OVERRIDE";
+    private const string PortableRootArgument = "--portable-root";
+    private const string PortableRootEnvironmentVariable = "WT_PORTABLE_ROOT";
     private const string UiLanguageOverrideEnvironmentVariable = "WT_UI_LANGUAGE_OVERRIDE";
     private const string FixedEnglishMarker = "english";
     private const string FixedEnglishLocaleMarker = "en-us";
@@ -23,19 +25,20 @@ internal static class Program
     {
         try
         {
+            var launchOptions = ParseLaunchOptions(args);
             var launcherPath = GetLauncherPath();
             var payloadInfo = ReadPayloadInfo(launcherPath);
-            var extractionRoot = EnsureExtractedPayload(launcherPath, payloadInfo);
+            var extractionRoot = EnsureExtractedPayload(launcherPath, payloadInfo, launchOptions.PortableRoot);
             var terminalPath = FindMainExecutable(extractionRoot);
 
             var startInfo = new ProcessStartInfo
             {
                 FileName = terminalPath,
-                Arguments = JoinArguments(args),
+                Arguments = JoinArguments(launchOptions.TerminalArguments),
                 WorkingDirectory = Environment.CurrentDirectory,
                 UseShellExecute = false
             };
-            startInfo.EnvironmentVariables[SettingsDirectoryOverrideEnvironmentVariable] = GetInstalledSettingsRoot();
+            ConfigurePortableDataRoot(startInfo, launchOptions.PortableRoot);
             ApplyOptionalLanguageOverride(startInfo, launcherPath);
 
             if (Process.Start(startInfo) == null)
@@ -47,8 +50,89 @@ internal static class Program
         }
         catch (Exception ex)
         {
+            if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(PortableRootEnvironmentVariable)))
+            {
+                TryWritePortableLaunchError(ex);
+                return Marshal.GetHRForException(ex);
+            }
+
             MessageBox.Show(ex.Message, "Windows Terminal Portable", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return Marshal.GetHRForException(ex);
+        }
+    }
+
+    private static LaunchOptions ParseLaunchOptions(string[] args)
+    {
+        var terminalArguments = new System.Collections.Generic.List<string>();
+        string portableRoot = null;
+        var parseLauncherArguments = true;
+
+        for (var index = 0; index < args.Length; index++)
+        {
+            var argument = args[index];
+            if (parseLauncherArguments && string.Equals(argument, "--", StringComparison.Ordinal))
+            {
+                parseLauncherArguments = false;
+                terminalArguments.Add(argument);
+                continue;
+            }
+
+            if (parseLauncherArguments && string.Equals(argument, PortableRootArgument, StringComparison.OrdinalIgnoreCase))
+            {
+                if (++index >= args.Length || string.IsNullOrWhiteSpace(args[index]))
+                {
+                    throw new ArgumentException(PortableRootArgument + " requires a directory path.");
+                }
+
+                if (portableRoot != null)
+                {
+                    throw new ArgumentException(PortableRootArgument + " may be specified only once.");
+                }
+
+                portableRoot = Path.GetFullPath(args[index]);
+                continue;
+            }
+
+            const string portableRootArgumentPrefix = "--portable-root=";
+            if (parseLauncherArguments && argument.StartsWith(portableRootArgumentPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                if (portableRoot != null || argument.Length == portableRootArgumentPrefix.Length)
+                {
+                    throw new ArgumentException(PortableRootArgument + " requires one directory path.");
+                }
+
+                portableRoot = Path.GetFullPath(argument.Substring(portableRootArgumentPrefix.Length));
+                continue;
+            }
+
+            terminalArguments.Add(argument);
+        }
+
+        if (portableRoot == null)
+        {
+            var environmentRoot = Environment.GetEnvironmentVariable(PortableRootEnvironmentVariable);
+            if (!string.IsNullOrWhiteSpace(environmentRoot))
+            {
+                portableRoot = Path.GetFullPath(environmentRoot);
+            }
+        }
+
+        return new LaunchOptions(portableRoot, terminalArguments.ToArray());
+    }
+
+    private static void TryWritePortableLaunchError(Exception exception)
+    {
+        try
+        {
+            var root = Environment.GetEnvironmentVariable(PortableRootEnvironmentVariable);
+            if (!string.IsNullOrWhiteSpace(root))
+            {
+                Directory.CreateDirectory(root);
+                File.WriteAllText(Path.Combine(root, "launcher-error.log"), exception.ToString());
+            }
+        }
+        catch
+        {
         }
     }
 
@@ -89,19 +173,31 @@ internal static class Program
         return terminalPath;
     }
 
-    private static string GetInstalledSettingsRoot()
+    private static void ConfigurePortableDataRoot(ProcessStartInfo startInfo, string portableRoot)
     {
-        return Path.Combine(
+        if (portableRoot != null)
+        {
+            var settingsRoot = Path.Combine(portableRoot, ".wt");
+            Directory.CreateDirectory(settingsRoot);
+            startInfo.EnvironmentVariables[SettingsDirectoryOverrideEnvironmentVariable] = settingsRoot;
+            // Keep Windows' actual profile variables intact. Changing USERPROFILE
+            // makes shell APIs look for standard profile folders that do not exist
+            // under a portable root. Workspace persistence uses this explicit value.
+            startInfo.EnvironmentVariables[PortableRootEnvironmentVariable] = portableRoot;
+            return;
+        }
+
+        startInfo.EnvironmentVariables[SettingsDirectoryOverrideEnvironmentVariable] = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Packages",
             "Microsoft.WindowsTerminal_8wekyb3d8bbwe",
             "LocalState");
     }
 
-    private static string EnsureExtractedPayload(string launcherPath, PayloadInfo payloadInfo)
+    private static string EnsureExtractedPayload(string launcherPath, PayloadInfo payloadInfo, string portableRoot)
     {
         var cacheKey = ComputeCacheKey(launcherPath);
-        var cacheRoot = GetCacheRoot(cacheKey);
+        var cacheRoot = GetCacheRoot(cacheKey, portableRoot);
         var payloadRoot = Path.Combine(cacheRoot, "p");
         var completionSentinel = Path.Combine(cacheRoot, "c");
 
@@ -111,7 +207,12 @@ internal static class Program
         }
         catch (UnauthorizedAccessException)
         {
-            return ExtractPayloadFallback(launcherPath, payloadInfo, cacheKey);
+            if (portableRoot == null)
+            {
+                return ExtractPayloadFallback(launcherPath, payloadInfo, cacheKey);
+            }
+
+            throw;
         }
 
         using (var mutex = new Mutex(false, @"Local\WindowsTerminalPortable_" + cacheKey))
@@ -157,11 +258,21 @@ internal static class Program
                     // turn that transient condition into a user-facing launch
                     // error: expand this invocation into an isolated fallback
                     // directory and start from there instead.
-                    return ExtractPayloadFallback(launcherPath, payloadInfo, cacheKey);
+                    if (portableRoot == null)
+                    {
+                        return ExtractPayloadFallback(launcherPath, payloadInfo, cacheKey);
+                    }
+
+                    throw;
                 }
                 catch (IOException)
                 {
-                    return ExtractPayloadFallback(launcherPath, payloadInfo, cacheKey);
+                    if (portableRoot == null)
+                    {
+                        return ExtractPayloadFallback(launcherPath, payloadInfo, cacheKey);
+                    }
+
+                    throw;
                 }
                 finally
                 {
@@ -241,12 +352,17 @@ internal static class Program
         }
     }
 
-    private static string GetCacheRoot(string cacheKey)
+    private static string GetCacheRoot(string cacheKey, string portableRoot)
     {
         const int CacheKeyPrefixLength = 12;
         var shortCacheKey = cacheKey.Length > CacheKeyPrefixLength ?
             cacheKey.Substring(0, CacheKeyPrefixLength) :
             cacheKey;
+
+        if (portableRoot != null)
+        {
+            return Path.Combine(portableRoot, "payload", shortCacheKey);
+        }
 
         return Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -360,5 +476,17 @@ internal static class Program
 
         public long Offset { get; private set; }
         public long Length { get; private set; }
+    }
+
+    private struct LaunchOptions
+    {
+        public LaunchOptions(string portableRoot, string[] terminalArguments)
+        {
+            PortableRoot = portableRoot;
+            TerminalArguments = terminalArguments;
+        }
+
+        public string PortableRoot { get; private set; }
+        public string[] TerminalArguments { get; private set; }
     }
 }

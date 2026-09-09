@@ -2999,6 +2999,14 @@ namespace winrt::TerminalApp::implementation
             }
         }
 
+        // A window close does not remove tabs through _RemoveTab(), so do not
+        // rely on the XAML tree's eventual destruction to close ConPTY child
+        // processes. In particular, an ssh.exe process may otherwise retain
+        // its transport long enough to leave a live sshd session remotely.
+        for (const auto& tab : _tabs)
+        {
+            tab.Shutdown();
+        }
         CloseWindowRequested.raise(*this, nullptr);
     }
 
@@ -3025,6 +3033,12 @@ namespace winrt::TerminalApp::implementation
             }
         }
 
+        // See CloseWindow(): post-quit teardown must explicitly close live
+        // terminal connections instead of depending on UI object lifetime.
+        for (const auto& tab : _tabs)
+        {
+            tab.Shutdown();
+        }
         QuitRequested.raise(nullptr, nullptr);
     }
 
@@ -3618,7 +3632,9 @@ namespace winrt::TerminalApp::implementation
 
         std::shared_ptr<Pane> TerminalPage::_MakeTerminalPane(const NewTerminalArgs& newTerminalArgs,
                                                               const winrt::TerminalApp::Tab& sourceTab,
-                                                              TerminalConnection::ITerminalConnection existingConnection)
+                                                              TerminalConnection::ITerminalConnection existingConnection,
+                                                              const bool registerWorkspaceNodeRuntimeState,
+                                                              const winrt::hstring& startingDirectoryOverride)
         {
             // First things first - Check for making a pane from content ID.
             if (newTerminalArgs &&
@@ -3656,6 +3672,14 @@ namespace winrt::TerminalApp::implementation
                 controlSettings = Settings::TerminalSettings::CreateWithNewTerminalArgs(_settings, newTerminalArgs);
             }
 
+            // Command tabs are not created through the normal startup-action
+            // pipeline. Apply their node directory after profile resolution so
+            // it cannot be replaced by the active pane's profile settings.
+            if (!startingDirectoryOverride.empty())
+            {
+                controlSettings.DefaultSettings()->StartingDirectory(startingDirectoryOverride);
+            }
+
             // Try to handle auto-elevation
             if (_maybeElevate(newTerminalArgs, controlSettings, profile))
             {
@@ -3686,7 +3710,10 @@ namespace winrt::TerminalApp::implementation
             }
 
             const auto control = _CreateNewControlAndContent(controlSettings, connection);
-            _workspaceExtension->OnTerminalControlCreated(control, newTerminalArgs);
+            if (registerWorkspaceNodeRuntimeState)
+            {
+                _workspaceExtension->OnTerminalControlCreated(control, newTerminalArgs);
+            }
 
             if (hasSessionId)
             {

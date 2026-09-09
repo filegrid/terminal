@@ -62,6 +62,12 @@ namespace terminal::workspacepaths
 
     inline std::filesystem::path ResolveWorkspaceRootPath()
     {
+        const auto portableRoot = _getEnvironmentVariable(L"WT_PORTABLE_ROOT");
+        if (!portableRoot.empty())
+        {
+            return std::filesystem::path{ portableRoot } / L".wt";
+        }
+
         const auto userProfile = _getEnvironmentVariable(L"USERPROFILE");
         if (!userProfile.empty())
         {

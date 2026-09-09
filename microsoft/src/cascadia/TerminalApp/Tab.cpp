@@ -8,6 +8,7 @@
 #include "Tab.g.cpp"
 #include "Utils.h"
 #include "AppLogic.h"
+#include <winrt/Microsoft.Web.WebView2.Core.h>
 #include "../../types/inc/ColorFix.hpp"
 
 using namespace winrt;
@@ -126,23 +127,28 @@ namespace winrt::TerminalApp::implementation
     }
 
     void Tab::SetTerminalContentTabHost(std::vector<std::shared_ptr<Pane>> panes,
+                                        std::vector<WUX::UIElement> roots,
                                         std::vector<winrt::hstring> titles,
                                         std::vector<winrt::hstring> icons,
                                         const bool iconButtons,
                                         const bool dockBottom)
     {
-        if (panes.empty() || panes.size() != titles.size() || panes.size() != icons.size())
+        if (panes.empty() || panes.size() != roots.size() || panes.size() != titles.size() || panes.size() != icons.size())
         {
             return;
         }
 
         _commandTabPanes = std::move(panes);
+        _commandTabRoots = std::move(roots);
         _commandTabTitles = std::move(titles);
         _commandTabIcons = std::move(icons);
         _commandTabButtons.clear();
 
         auto host = WUX::Controls::Grid{};
         _terminalContentHost = WUX::Controls::Grid{};
+        _commandTabPrewarmHost = WUX::Controls::Grid{};
+        _commandTabPrewarmHost.Opacity(0.0);
+        _commandTabPrewarmHost.IsHitTestVisible(false);
         if (!iconButtons)
         {
             WUX::Controls::RowDefinition tabRow;
@@ -156,6 +162,8 @@ namespace winrt::TerminalApp::implementation
             _commandTabView.IsAddTabButtonVisible(false);
             WUX::Controls::Grid::SetRow(_commandTabView, 0);
             host.Children().Append(_commandTabView);
+            WUX::Controls::Grid::SetRow(_commandTabPrewarmHost, 1);
+            host.Children().Append(_commandTabPrewarmHost);
             WUX::Controls::Grid::SetRow(_terminalContentHost, 1);
             host.Children().Append(_terminalContentHost);
         }
@@ -164,6 +172,7 @@ namespace winrt::TerminalApp::implementation
             // Right-side modes intentionally use compact vertical icon buttons,
             // not a second horizontal TabView.
             _commandTabView = nullptr;
+            host.Children().Append(_commandTabPrewarmHost);
             host.Children().Append(_terminalContentHost);
             auto buttons = WUX::Controls::StackPanel{};
             buttons.Orientation(WUX::Controls::Orientation::Vertical);
@@ -214,7 +223,7 @@ namespace winrt::TerminalApp::implementation
                 button.PointerExited([weakThis = get_weak(), index](const auto& sender, const auto&) {
                     if (const auto tab = weakThis.get())
                     {
-                        sender.as<WUX::Controls::Button>().Opacity(tab->_activePane == tab->_commandTabPanes[index] ? 1.0 : 0.55);
+                        sender.as<WUX::Controls::Button>().Opacity(tab->_activeCommandTabIndex == index ? 1.0 : 0.55);
                     }
                 });
                 button.Click([weakThis = get_weak(), index](const auto&, const auto&) {
@@ -225,6 +234,20 @@ namespace winrt::TerminalApp::implementation
                 });
                 _commandTabButtons.emplace_back(button);
                 buttons.Children().Append(button);
+            }
+        }
+
+        // A TermControl starts its connection from its first layout pass. Keep
+        // inactive terminal panes in a transparent prewarm layer so all
+        // terminal command windows start independently without covering the
+        // switch controls. WebView2 must instead be attached when selected:
+        // in an invisible prewarm layer it may not receive Loaded, leaving its
+        // configured navigation pending forever.
+        for (size_t index = 1; index < _commandTabPanes.size(); ++index)
+        {
+            if (_commandTabPanes[index])
+            {
+                _commandTabPrewarmHost.Children().Append(_commandTabRoots[index]);
             }
         }
         _contentWrapper.Children().Clear();
@@ -264,17 +287,107 @@ namespace winrt::TerminalApp::implementation
         Content(_contentWrapper);
     }
 
+    void Tab::SetTerminalContentWebView(winrt::hstring url)
+    {
+        auto host = WUX::Controls::Grid{};
+        auto webView = MUX::Controls::WebView2{};
+        webView.HorizontalAlignment(WUX::HorizontalAlignment::Stretch);
+        webView.VerticalAlignment(WUX::VerticalAlignment::Stretch);
+        host.Tag(webView);
+        auto status = WUX::Controls::TextBlock{};
+        status.Visibility(WUX::Visibility::Collapsed);
+        status.HorizontalAlignment(WUX::HorizontalAlignment::Center);
+        status.VerticalAlignment(WUX::VerticalAlignment::Center);
+        host.Children().Append(webView);
+        host.Children().Append(status);
+        webView.CoreWebView2Initialized([webView, status, url](auto&&, const auto& args) {
+            if (SUCCEEDED(args.Exception()))
+            {
+                const auto core = webView.CoreWebView2();
+                core.Navigate(url);
+            }
+            else
+            {
+                status.Visibility(WUX::Visibility::Collapsed);
+            }
+        });
+        webView.Loaded([webView, status](auto&&, auto&&) -> winrt::fire_and_forget {
+            try
+            {
+                co_await webView.EnsureCoreWebView2Async();
+            }
+            catch (const winrt::hresult_error&)
+            {
+                status.Visibility(WUX::Visibility::Collapsed);
+            }
+        });
+        webView.NavigationCompleted([status](auto&&, const auto& args) {
+            status.Visibility(args.IsSuccess() ? WUX::Visibility::Collapsed : WUX::Visibility::Visible);
+            if (!args.IsSuccess())
+            {
+                status.Visibility(WUX::Visibility::Collapsed);
+            }
+        });
+        // Keep the same active-WebView marker that the multi-command host
+        // uses. Tab::Focus is invoked by the outer TerminalPage after a
+        // pointer interaction; without this marker it focuses the stale
+        // terminal control and immediately closes a WebView popup/flyout.
+        _commandTabPanes = { nullptr };
+        _commandTabRoots = { host };
+        _activeCommandTabIndex = 0;
+        _terminalContentHost = WUX::Controls::Grid{};
+        _contentWrapper.Children().Clear();
+        _contentWrapper.Children().Append(host);
+        Content(_contentWrapper);
+    }
+
     void Tab::_ActivateTerminalContentCommandTab(const size_t index)
     {
-        if (index >= _commandTabPanes.size())
+        if (index >= _commandTabRoots.size())
         {
             return;
         }
         const auto& pane = _commandTabPanes[index];
-        _terminalContentHost.Children().Clear();
-        _terminalContentHost.Children().Append(pane->GetRootElement());
-        _activePane = pane;
-        pane->SetActive();
+        // Do not clear and re-add the content host here. WebView2 owns a
+        // composition surface which can turn blank after it is repeatedly
+        // removed from and added back to the Xaml tree (in particular after
+        // an in-page navigation). Keep an activated WebView in this stable
+        // host and switch visibility instead.
+        for (size_t paneIndex = 0; paneIndex < _commandTabRoots.size(); ++paneIndex)
+        {
+            const auto root = _commandTabRoots[paneIndex];
+            uint32_t prewarmIndex{};
+            uint32_t contentIndex{};
+            if (paneIndex == index)
+            {
+                if (_commandTabPrewarmHost.Children().IndexOf(root, prewarmIndex))
+                {
+                    _commandTabPrewarmHost.Children().RemoveAt(prewarmIndex);
+                }
+                if (!_terminalContentHost.Children().IndexOf(root, contentIndex))
+                {
+                    _terminalContentHost.Children().Append(root);
+                }
+                root.Visibility(WUX::Visibility::Visible);
+            }
+            else if (_terminalContentHost.Children().IndexOf(root, contentIndex))
+            {
+                // Once a root has been made visible, never reparent it.
+                // This is essential for WebView2 to retain its render target
+                // and navigation state.
+                root.Visibility(WUX::Visibility::Collapsed);
+            }
+            else if (_commandTabPanes[paneIndex] && !_commandTabPrewarmHost.Children().IndexOf(root, prewarmIndex))
+            {
+                _commandTabPrewarmHost.Children().Append(root);
+            }
+        }
+        _activeCommandTabIndex = index;
+        if (pane)
+        {
+            _activePane = pane;
+            pane->SetActive();
+        }
         for (size_t buttonIndex = 0; buttonIndex < _commandTabButtons.size(); ++buttonIndex)
         {
             _commandTabButtons[buttonIndex].Opacity(buttonIndex == index ? 1.0 : 0.55);
@@ -483,6 +596,24 @@ namespace winrt::TerminalApp::implementation
         ASSERT_UI_THREAD();
 
         _focusState = focusState;
+
+        // A workspace WebView command is not a Pane. Retaining the preceding
+        // terminal pane as _activePane is necessary for terminal bookkeeping,
+        // but it must not receive focus while the browser command is visible.
+        // Forwarding the request to WebView2, rather than dropping it, gives
+        // browser-owned menus the same focus lifecycle as a normal browser.
+        if (_activeCommandTabIndex < _commandTabPanes.size() && !_commandTabPanes[_activeCommandTabIndex])
+        {
+            const auto root = _commandTabRoots[_activeCommandTabIndex];
+            if (const auto host = root.try_as<WUX::FrameworkElement>())
+            {
+                if (const auto webView = host.Tag().try_as<MUX::Controls::WebView2>())
+                {
+                    webView.Focus(focusState);
+                }
+            }
+            return;
+        }
 
         if (_focused())
         {
@@ -1344,7 +1475,14 @@ namespace winrt::TerminalApp::implementation
                 co_await wil::resume_foreground(dispatcher);
                 if (const auto tab{ weakThisCopy.get() })
                 {
-                    if (tab->_focused())
+                    // A terminal command remains alive behind a workspace
+                    // WebView so it can be restored when commands switch.
+                    // Its focus-follow-mouse request is asynchronous, and
+                    // must not steal focus back from a browser popup after
+                    // the pointer has entered the WebView surface.
+                    const auto activeCommandIsWebView = tab->_activeCommandTabIndex < tab->_commandTabPanes.size() &&
+                                                        !tab->_commandTabPanes[tab->_activeCommandTabIndex];
+                    if (tab->_focused() && !activeCommandIsWebView)
                     {
                         sender.Focus(FocusState::Pointer);
                     }

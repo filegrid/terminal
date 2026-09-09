@@ -711,19 +711,23 @@
         auto commandHeaderText = makeSectionTitle(L"命令窗口");
         commandHeaderText.VerticalAlignment(VerticalAlignment::Center);
         commandHeader.Children().Append(commandHeaderText);
+        auto commandActions = StackPanel{};
+        commandActions.Orientation(Orientation::Horizontal);
+        commandActions.Spacing(4);
+        commandActions.VerticalAlignment(VerticalAlignment::Center);
+        Grid::SetColumn(commandActions, 1);
         auto addCommandButton = Button{};
         addCommandButton.Width(30);
         addCommandButton.Height(30);
         addCommandButton.MinWidth(30);
         addCommandButton.MinHeight(30);
         addCommandButton.Padding(ThicknessHelper::FromLengths(0, 0, 0, 0));
-        addCommandButton.VerticalAlignment(VerticalAlignment::Center);
         auto addCommandIcon = SymbolIcon{};
         addCommandIcon.Symbol(Symbol::Add);
         addCommandButton.Content(addCommandIcon);
         Grid::SetColumn(addCommandButton, 1);
         ToolTipService::SetToolTip(addCommandButton, box_value(L"添加命令窗口"));
-        addCommandButton.IsEnabled(_workspaceEditorEditMode && (node.Commands.empty() || node.Commands.size() < 3));
+        addCommandButton.IsEnabled(_workspaceEditorEditMode && (node.Commands.empty() || node.Commands.size() < 5));
         addCommandButton.Click([weakThis{ get_weak() }, nodeIndex](auto&&, auto&&) {
             if (auto self{ weakThis.get() })
             {
@@ -735,7 +739,7 @@
                         target.Commands.emplace_back(Microsoft::Terminal::Settings::Model::implementation::WorkspaceNodeCommand{
                             target.Id + L":legacy-command", target.Icon, target.Name, target.StartupAction });
                     }
-                    if (target.Commands.size() < 3)
+                    if (target.Commands.size() < 5)
                     {
                         target.Commands.emplace_back(Microsoft::Terminal::Settings::Model::implementation::WorkspaceNodeCommand{
                             target.Id + L":command-" + std::to_wstring(target.Commands.size() + 1), {}, L"未命名命令", {} });
@@ -746,7 +750,46 @@
                 }
             }
         });
-        commandHeader.Children().Append(addCommandButton);
+        commandActions.Children().Append(addCommandButton);
+        auto addWebViewButton = Button{};
+        addWebViewButton.Width(30);
+        addWebViewButton.Height(30);
+        addWebViewButton.MinWidth(30);
+        addWebViewButton.MinHeight(30);
+        addWebViewButton.Padding(ThicknessHelper::FromLengths(0, 0, 0, 0));
+        auto addWebViewIcon = SymbolIcon{};
+        addWebViewIcon.Symbol(Symbol::World);
+        addWebViewButton.Content(addWebViewIcon);
+        ToolTipService::SetToolTip(addWebViewButton, box_value(L"添加 WebView 窗口"));
+        addWebViewButton.IsEnabled(_workspaceEditorEditMode && (node.Commands.empty() || node.Commands.size() < 5));
+        addWebViewButton.Click([weakThis{ get_weak() }, nodeIndex](auto&&, auto&&) {
+            if (auto self{ weakThis.get() })
+            {
+                if (auto* workspace = self->_SelectedWorkspaceForEditing(); workspace && nodeIndex < workspace->Nodes.size())
+                {
+                    auto& target = workspace->Nodes.at(nodeIndex);
+                    if (target.Commands.empty())
+                    {
+                        target.Commands.emplace_back(Microsoft::Terminal::Settings::Model::implementation::WorkspaceNodeCommand{
+                            target.Id + L":legacy-command", target.Icon, target.Name, target.StartupAction });
+                    }
+                    if (target.Commands.size() < 5)
+                    {
+                        Microsoft::Terminal::Settings::Model::implementation::WorkspaceNodeCommand webView{
+                            target.Id + L":command-" + std::to_wstring(target.Commands.size() + 1), {}, L"WebView", {} };
+                        webView.WindowType = Microsoft::Terminal::Settings::Model::implementation::WorkspaceNodeCommand::Type::WebView;
+                        webView.WebUrl = L"https://";
+                        target.Commands.emplace_back(std::move(webView));
+                        target.MultiWindowPreference.DisplayMode = Microsoft::Terminal::Settings::Model::implementation::WorkspaceWindowDisplayMode::Tab;
+                        target.MultiWindowPreference.SplitWeights.assign(target.Commands.size(), 1.0 / target.Commands.size());
+                        self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
+                        self->_RebuildWorkspaceManagerTab();
+                    }
+                }
+            }
+        });
+        commandActions.Children().Append(addWebViewButton);
+        commandHeader.Children().Append(commandActions);
         nodeRoot.Children().Append(commandHeader);
 
         const auto commands = node.Commands.empty() ? std::vector<Microsoft::Terminal::Settings::Model::implementation::WorkspaceNodeCommand>{
@@ -824,8 +867,9 @@
             nameBox.MinWidth(0);
             nameBox.IsEnabled(_workspaceEditorEditMode);
             auto commandBox = TextBox{};
-            commandBox.PlaceholderText(L"启动命令，例如 codex --resume（可为空）");
-            commandBox.Text(command.Command);
+            const auto isWebView = command.WindowType == Microsoft::Terminal::Settings::Model::implementation::WorkspaceNodeCommand::Type::WebView;
+            commandBox.PlaceholderText(isWebView ? L"Web URL，例如 https://example.com" : L"启动命令，例如 codex --resume（可为空）");
+            commandBox.Text(isWebView ? command.WebUrl : command.Command);
             commandBox.MinWidth(160);
             commandBox.HorizontalAlignment(HorizontalAlignment::Stretch);
             commandBox.IsEnabled(_workspaceEditorEditMode);
@@ -843,7 +887,15 @@
                         if (commandIndex < target.Commands.size())
                         {
                             target.Commands.at(commandIndex).Name = nameBox.Text().c_str();
-                            target.Commands.at(commandIndex).Command = commandBox.Text().c_str();
+                            auto& edited = target.Commands.at(commandIndex);
+                            if (edited.WindowType == Microsoft::Terminal::Settings::Model::implementation::WorkspaceNodeCommand::Type::WebView)
+                            {
+                                edited.WebUrl = commandBox.Text().c_str();
+                            }
+                            else
+                            {
+                                edited.Command = commandBox.Text().c_str();
+                            }
                             self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
                         }
                     }

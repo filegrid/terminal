@@ -935,9 +935,17 @@ namespace terminal::workspace
                         field.push_back(L'\\');
                     }
                     fields.emplace_back(std::move(field));
-                    if (fields.size() == 4)
+                    // v2 command records have four fields. v3 adds the
+                    // window type and WebView URL while retaining v2 reads.
+                    if (fields.size() == 4 || fields.size() == 6)
                     {
-                        commands.emplace_back(WorkspaceNodeCommand{ std::move(fields[0]), std::move(fields[1]), std::move(fields[2]), std::move(fields[3]) });
+                        WorkspaceNodeCommand command{ std::move(fields[0]), std::move(fields[1]), std::move(fields[2]), std::move(fields[3]) };
+                        if (fields.size() == 6)
+                        {
+                            command.WindowType = fields[4] == L"webview" ? WorkspaceNodeCommand::Type::WebView : WorkspaceNodeCommand::Type::Terminal;
+                            command.WebUrl = std::move(fields[5]);
+                        }
+                        commands.emplace_back(std::move(command));
                     }
                 }
                 node.Commands = std::move(commands);
@@ -1372,9 +1380,9 @@ namespace terminal::workspace
             }
             NormalizeWorkspaceNodeMultiWindowConfig(serializedNode);
             std::wostringstream stream;
-            // v2 introduces the ordered commands and multi-window preference
-            // fields. Readers intentionally continue to accept v1 nodes.
-            stream << L"version: 2\n";
+            // v3 introduces typed command windows. Readers continue to
+            // accept v1/v2 nodes and their four-field command records.
+            stream << L"version: 3\n";
             if (!node.ConnectionRef.empty())
             {
                 stream << L"connectionRef: " << _quote(node.ConnectionRef) << L"\n";
@@ -1419,7 +1427,9 @@ namespace terminal::workspace
                     serialized.append(escape(command.Id)); serialized.push_back(L'|');
                     serialized.append(escape(command.Icon)); serialized.push_back(L'|');
                     serialized.append(escape(command.Name)); serialized.push_back(L'|');
-                    serialized.append(escape(command.Command));
+                    serialized.append(escape(command.Command)); serialized.push_back(L'|');
+                    serialized.append(command.WindowType == WorkspaceNodeCommand::Type::WebView ? L"webview" : L"terminal"); serialized.push_back(L'|');
+                    serialized.append(escape(command.WebUrl));
                 }
                 _writeMultilineValue(stream, L"", L"commands", serialized);
                 stream << L"multiWindowMode: " << (serializedNode.MultiWindowPreference.DisplayMode == WorkspaceWindowDisplayMode::Tab ? L"tab" : L"split") << L"\n";

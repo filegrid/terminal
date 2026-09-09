@@ -117,7 +117,7 @@ namespace winrt::TerminalApp::implementation
             addCommandIcon.Symbol(Symbol::Add);
             addCommand.Content(addCommandIcon);
             ToolTipService::SetToolTip(addCommand, box_value(L"添加命令窗口"));
-            addCommand.IsEnabled(state->Commands.size() < 3);
+            addCommand.IsEnabled(state->Commands.size() < 5);
             addCommand.Click([state, rebuild](auto&&, auto&&) {
                 state->Commands.push_back({ L"+", L"未命名命令", L"", L"未命名终端" });
                 state->Weights.assign(state->Commands.size(), 1.0 / static_cast<double>(state->Commands.size()));
