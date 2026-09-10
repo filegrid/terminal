@@ -4,10 +4,10 @@
 
 ## Improved: workspace WebView stability and interaction
 
-- Workspace web commands and the workspace manager now use the native WebView2 CompositionController instead of the XAML `WebView2` control.
+- Improved the native web host used by workspace web commands and workspace management.
 - Fixed the web rendering layer covering top-right/bottom-right command icons and workspace close controls; icon spacing has returned to its original layout.
 - Completed mouse-input forwarding, focus handoff, and close lifecycle handling so a terminal pane does not take focus back from a web page.
-- Added diagnostic logging for WebView creation, navigation, sizing, visibility, mouse input, focus, and process failures to investigate intermittent exits or load failures.
+- Workspace node-tab titles can no longer enter transient rename mode by double-click or command; titles are managed by the workspace configuration.
 
 ## Added: workspace node command subtabs
 
@@ -18,6 +18,6 @@ Workspace nodes can now contain up to five command windows. The windows remain w
 - Terminal command windows start independently and are not restarted when switching subtabs.
 - Add a WebView command window to embed a local or intranet web tool, such as code-server/codev at `http://127.0.0.1:8080`.
 - Adding a WebView automatically selects Tab mode; WebView windows are not supported in split mode.
-- The workspace command configuration format is now v3, while reading remains compatible with legacy single-command and v2 configurations.
+- Existing workspace command configurations remain supported.
 
 For instructions and a codev integration example, see the [workspace node command subtabs guide](workspace-node-command-subtabs.md).

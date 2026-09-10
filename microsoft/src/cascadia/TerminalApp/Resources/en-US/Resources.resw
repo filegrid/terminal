@@ -1263,4 +1263,62 @@
   <data name="WorkspaceEditor_IconFamilyOutline" xml:space="preserve"><value>Outline</value></data>
   <data name="WorkspaceEditor_IconFamilyDuotone" xml:space="preserve"><value>Duotone</value></data>
   <data name="WorkspaceEditor_IconFamilySharp" xml:space="preserve"><value>Sharp</value></data>
+  <data name="WorkspaceUi_ChooseColor" xml:space="preserve"><value>Choose color</value></data>
+  <data name="WorkspaceUi_Confirm" xml:space="preserve"><value>OK</value></data>
+  <data name="WorkspaceUi_Cancel" xml:space="preserve"><value>Cancel</value></data>
+  <data name="WorkspaceUi_DeleteNode" xml:space="preserve"><value>Delete node</value></data>
+  <data name="WorkspaceUi_DeleteWorkspace" xml:space="preserve"><value>Delete workspace</value></data>
+  <data name="WorkspaceUi_DeleteNodeConfirmation" xml:space="preserve"><value>Delete this node?</value></data>
+  <data name="WorkspaceUi_DeleteWorkspaceConfirmation" xml:space="preserve"><value>Delete this workspace?</value></data>
+  <data name="WorkspaceUi_Delete" xml:space="preserve"><value>Delete</value></data>
+  <data name="WorkspaceUi_ChooseIcon" xml:space="preserve"><value>Choose icon</value></data>
+  <data name="WorkspaceUi_ChooseLocalFile" xml:space="preserve"><value>Choose local file</value></data>
+  <data name="WorkspaceUi_IconFamilyNumbers" xml:space="preserve"><value>Numbers 0–9</value></data>
+  <data name="WorkspaceUi_IconFamilyLetters" xml:space="preserve"><value>Letters A–Z</value></data>
+  <data name="WorkspaceUi_IconFamilyDaily" xml:space="preserve"><value>Everyday</value></data>
+  <data name="WorkspaceUi_IconFamilyDevelopment" xml:space="preserve"><value>Development</value></data>
+  <data name="WorkspaceUi_IconFamilyOffice" xml:space="preserve"><value>Office</value></data>
+  <data name="WorkspaceUi_IconFamilyWindows" xml:space="preserve"><value>Windows / OS</value></data>
+  <data name="WorkspaceUi_Workspace" xml:space="preserve"><value>Workspace</value></data>
+  <data name="WorkspaceUi_WorkspaceButton.AutomationProperties.Name" xml:space="preserve"><value>Workspace</value></data>
+  <data name="WorkspaceUi_ChooseIconTitle.Text" xml:space="preserve"><value>Choose icon</value></data>
+  <data name="WorkspaceUi_NodeOrder" xml:space="preserve"><value>Node order</value></data>
+  <data name="WorkspaceUi_NodeDefaults" xml:space="preserve"><value>Node defaults</value></data>
+  <data name="WorkspaceUi_Change" xml:space="preserve"><value>Change</value></data>
+  <data name="WorkspaceUi_Icon" xml:space="preserve"><value>Icon</value></data>
+  <data name="WorkspaceUi_ChooseFolder" xml:space="preserve"><value>Choose folder</value></data>
+  <data name="WorkspaceUi_ChooseFile" xml:space="preserve"><value>Choose file</value></data>
+  <data name="WorkspaceUi_CommandWindows" xml:space="preserve"><value>Command windows</value></data>
+  <data name="WorkspaceUi_AddCommandWindow" xml:space="preserve"><value>Add command window</value></data>
+  <data name="WorkspaceUi_UntitledCommand" xml:space="preserve"><value>Untitled command</value></data>
+  <data name="WorkspaceUi_AddWebViewWindow" xml:space="preserve"><value>Add WebView window</value></data>
+  <data name="WorkspaceUi_ChooseCommandIcon" xml:space="preserve"><value>Choose command icon</value></data>
+  <data name="WorkspaceUi_CommandNamePlaceholder" xml:space="preserve"><value>Name, for example Codex</value></data>
+  <data name="WorkspaceUi_WebUrlPlaceholder" xml:space="preserve"><value>Web URL, for example https://example.com</value></data>
+  <data name="WorkspaceUi_CommandPlaceholder" xml:space="preserve"><value>Startup command, for example codex --resume (optional)</value></data>
+  <data name="WorkspaceUi_RemoveCommandWindow" xml:space="preserve"><value>Remove command window</value></data>
+  <data name="WorkspaceUi_MultiWindowDisplay" xml:space="preserve"><value>Multi-window display</value></data>
+  <data name="WorkspaceUi_SideBySide" xml:space="preserve"><value>Side by side</value></data>
+  <data name="WorkspaceUi_DisplayMode" xml:space="preserve"><value>Display mode</value></data>
+  <data name="WorkspaceUi_TabPlacementTopLeft" xml:space="preserve"><value>Top left (icon and text)</value></data>
+  <data name="WorkspaceUi_TabPlacementTopRight" xml:space="preserve"><value>Top right (vertical icons)</value></data>
+  <data name="WorkspaceUi_TabPlacementBottomRight" xml:space="preserve"><value>Bottom right (vertical icons)</value></data>
+  <data name="WorkspaceUi_TabPlacement" xml:space="preserve"><value>Tab placement</value></data>
+  <data name="WorkspaceUi_SizeAllocation" xml:space="preserve"><value>Size allocation</value></data>
+  <data name="WorkspaceUi_Open" xml:space="preserve"><value>Open</value></data>
+  <data name="WorkspaceUi_WorkspaceOpen" xml:space="preserve"><value>Workspace is open</value></data>
+  <data name="WorkspaceUi_WorkspaceClosed" xml:space="preserve"><value>Workspace is closed</value></data>
+  <data name="WorkspaceUi_BlankNode" xml:space="preserve"><value>Blank node</value></data>
+  <data name="WorkspaceUi_FromNodeTemplate" xml:space="preserve"><value>From node template: </value></data>
+  <data name="WorkspaceUi_MoveUp" xml:space="preserve"><value>Move up</value></data>
+  <data name="WorkspaceUi_MoveDown" xml:space="preserve"><value>Move down</value></data>
+  <data name="WorkspaceUi_OpenConfigurationDirectory" xml:space="preserve"><value>Open configuration directory</value></data>
+  <data name="WorkspaceUi_MultiWindowDemo" xml:space="preserve"><value>Multi-window demo</value></data>
+  <data name="WorkspaceUi_NodeOne" xml:space="preserve"><value>Node 1</value></data>
+  <data name="WorkspaceUi_NativeWebView2" xml:space="preserve"><value>Native WebView2</value></data>
+  <data name="WorkspaceUi_BlankWorkspace" xml:space="preserve"><value>Blank workspace</value></data>
+  <data name="WorkspaceUi_FromWorkspaceTemplate" xml:space="preserve"><value>From workspace template: </value></data>
+  <data name="WorkspaceUi_WorkspaceManagement" xml:space="preserve"><value>Workspace management</value></data>
+  <data name="WorkspaceUi_SwitchOn" xml:space="preserve"><value>On</value></data>
+  <data name="WorkspaceUi_SwitchOff" xml:space="preserve"><value>Off</value></data>
 </root>

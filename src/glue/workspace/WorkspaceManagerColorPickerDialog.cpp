@@ -55,10 +55,10 @@ namespace terminal::workspace
         }
 
         auto dialog = ContentDialog{};
-        dialog.Title(box_value(L"选择颜色"));
+        dialog.Title(box_value(RS_(L"WorkspaceUi_ChooseColor")));
         dialog.Content(picker);
-        dialog.PrimaryButtonText(L"确定");
-        dialog.CloseButtonText(L"取消");
+        dialog.PrimaryButtonText(RS_(L"WorkspaceUi_Confirm"));
+        dialog.CloseButtonText(RS_(L"WorkspaceUi_Cancel"));
         if (co_await host.ShowWorkspaceDialog(dialog) == ContentDialogResult::Primary)
         {
             co_return _formatColor(picker.Color());

@@ -13,10 +13,10 @@ namespace terminal::workspace
     IAsyncOperation<bool> ConfirmWorkspaceManagerDeletion(TerminalPageBase& host, const bool deletingNode)
     {
         auto dialog = ContentDialog{};
-        dialog.Title(box_value(deletingNode ? L"删除节点" : L"删除工作区"));
-        dialog.Content(box_value(deletingNode ? L"确定要删除这个节点吗？" : L"确定要删除这个工作区吗？"));
-        dialog.PrimaryButtonText(L"删除");
-        dialog.CloseButtonText(L"取消");
+        dialog.Title(box_value(deletingNode ? RS_(L"WorkspaceUi_DeleteNode") : RS_(L"WorkspaceUi_DeleteWorkspace")));
+        dialog.Content(box_value(deletingNode ? RS_(L"WorkspaceUi_DeleteNodeConfirmation") : RS_(L"WorkspaceUi_DeleteWorkspaceConfirmation")));
+        dialog.PrimaryButtonText(RS_(L"WorkspaceUi_Delete"));
+        dialog.CloseButtonText(RS_(L"WorkspaceUi_Cancel"));
         co_return co_await host.ShowWorkspaceDialog(dialog) == ContentDialogResult::Primary;
     }
 }

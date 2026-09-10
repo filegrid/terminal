@@ -193,7 +193,7 @@
             if (isOpen)
             {
                 auto workspaceStateText = TextBlock{};
-                workspaceStateText.Text(L"打开中");
+                workspaceStateText.Text(RS_(L"WorkspaceUi_Open"));
                 workspaceStateText.Margin(WUX::ThicknessHelper::FromLengths(8, 0, 0, 0));
                 workspaceStateText.VerticalAlignment(VerticalAlignment::Center);
                 workspaceStateText.Opacity(0.72);
@@ -208,7 +208,7 @@
             item.Tapped([item](auto&&, auto&&) {
                 item.IsExpanded(!item.IsExpanded());
             });
-            WUX::Controls::ToolTipService::SetToolTip(item, box_value(isOpen ? L"工作区当前已打开" : L"工作区当前未打开"));
+            WUX::Controls::ToolTipService::SetToolTip(item, box_value(isOpen ? RS_(L"WorkspaceUi_WorkspaceOpen") : RS_(L"WorkspaceUi_WorkspaceClosed")));
 
             WUX::Controls::IconElement workspaceNavIcon{ nullptr };
             if (!workspace.Icon.empty())
@@ -250,7 +250,7 @@
             Controls::Grid::SetColumn(addNodeButton, 1);
             auto addNodeFlyout = MenuFlyout{};
             auto addBlankNodeItem = MenuFlyoutItem{};
-            addBlankNodeItem.Text(L"空白节点");
+            addBlankNodeItem.Text(RS_(L"WorkspaceUi_BlankNode"));
             addBlankNodeItem.Click([weakThis{ get_weak() }, index](auto&&, auto&&) {
                 if (auto self{ weakThis.get() })
                 {
@@ -269,7 +269,7 @@
                 {
                     const auto& templateNode = workspace.Nodes.at(templateIndex);
                     auto templateItem = MenuFlyoutItem{};
-                    templateItem.Text(winrt::hstring{ L"来自节点模板：" + (templateNode.Name.empty() ? templateNode.Id : templateNode.Name) });
+                    templateItem.Text(RS_(L"WorkspaceUi_FromNodeTemplate") + (templateNode.Name.empty() ? templateNode.Id : templateNode.Name));
                     templateItem.Click([weakThis{ get_weak() }, index, templateIndex](auto&&, auto&&) {
                         if (auto self{ weakThis.get() })
                         {
@@ -333,7 +333,7 @@
                     moveButton.Padding(WUX::ThicknessHelper::FromLengths(2, 0, 2, 0));
                     Controls::Grid::SetColumn(moveButton, 1);
                     auto moveFlyout = MenuFlyout{};
-                    for (const auto [offset, text] : { std::pair<int, const wchar_t*>{ -1, L"上移" }, { 1, L"下移" } })
+                    for (const auto [offset, text] : { std::pair<int, hstring>{ -1, RS_(L"WorkspaceUi_MoveUp") }, { 1, RS_(L"WorkspaceUi_MoveDown") } })
                     {
                         auto moveItem = MenuFlyoutItem{};
                         moveItem.Text(text);
@@ -409,7 +409,7 @@
 
         // Keep these two management actions adjacent at the bottom of the nav.
         auto newWorkspaceItem = MUX::Controls::NavigationViewItem{};
-        newWorkspaceItem.Content(box_value(L"新建工作区"));
+        newWorkspaceItem.Content(box_value(RS_(L"WorkspaceEditor_NewWorkspaceButton")));
         newWorkspaceItem.Tag(box_value(-2));
         newWorkspaceItem.SelectsOnInvoked(false);
         {
@@ -420,7 +420,7 @@
         nav.FooterMenuItems().Append(newWorkspaceItem);
 
         auto openYamlItem = MUX::Controls::NavigationViewItem{};
-        openYamlItem.Content(box_value(L"打开配置目录"));
+        openYamlItem.Content(box_value(RS_(L"WorkspaceUi_OpenConfigurationDirectory")));
         openYamlItem.Tag(box_value(-1));
         openYamlItem.SelectsOnInvoked(false);
         {
@@ -469,7 +469,7 @@
             demoItem.MenuItems().Append(webDemoItem);
 
             auto multiWindowDemoItem = MUX::Controls::NavigationViewItem{};
-            multiWindowDemoItem.Content(box_value(L"多窗口 Demo"));
+            multiWindowDemoItem.Content(box_value(RS_(L"WorkspaceUi_MultiWindowDemo")));
             multiWindowDemoItem.Tag(box_value(-4));
             multiWindowDemoItem.SelectsOnInvoked(false);
             {
@@ -487,7 +487,7 @@
                 icon.Symbol(WUX::Controls::Symbol::World);
                 xamlWebViewComparisonItem.Icon(icon);
             }
-            for (const auto [index, name] : { std::pair<int32_t, const wchar_t*>{ 0, L"QQ" }, { 1, L"节点 1" }, { 2, L"localhost" } })
+            for (const auto [index, name] : { std::pair<int32_t, hstring>{ 0, L"QQ" }, { 1, RS_(L"WorkspaceUi_NodeOne") }, { 2, L"localhost" } })
             {
                 auto pageItem = MUX::Controls::NavigationViewItem{};
                 pageItem.Content(box_value(name));
@@ -498,14 +498,14 @@
             demoItem.MenuItems().Append(xamlWebViewComparisonItem);
 
             auto nativeWebViewComparisonItem = MUX::Controls::NavigationViewItem{};
-            nativeWebViewComparisonItem.Content(box_value(L"原生 WebView2"));
+            nativeWebViewComparisonItem.Content(box_value(RS_(L"WorkspaceUi_NativeWebView2")));
             nativeWebViewComparisonItem.SelectsOnInvoked(false);
             {
                 WUX::Controls::SymbolIcon icon{};
                 icon.Symbol(WUX::Controls::Symbol::World);
                 nativeWebViewComparisonItem.Icon(icon);
             }
-            for (const auto [index, name] : { std::pair<int32_t, const wchar_t*>{ 0, L"QQ" }, { 1, L"节点 1" }, { 2, L"localhost" } })
+            for (const auto [index, name] : { std::pair<int32_t, hstring>{ 0, L"QQ" }, { 1, RS_(L"WorkspaceUi_NodeOne") }, { 2, L"localhost" } })
             {
                 auto pageItem = MUX::Controls::NavigationViewItem{};
                 pageItem.Content(box_value(name));
@@ -566,7 +566,7 @@
                         {
                             auto addWorkspaceFlyout = MenuFlyout{};
                             auto addBlankWorkspaceItem = MenuFlyoutItem{};
-                            addBlankWorkspaceItem.Text(L"空白工作区");
+                            addBlankWorkspaceItem.Text(RS_(L"WorkspaceUi_BlankWorkspace"));
                             addBlankWorkspaceItem.Click([weakThis](auto&&, auto&&) {
                                 if (auto self{ weakThis.get() })
                                 {
@@ -586,7 +586,7 @@
                                 {
                                     const auto& templateWorkspace = workspaces.at(templateIndex);
                                     auto templateItem = MenuFlyoutItem{};
-                                    templateItem.Text(winrt::hstring{ L"来自工作区模板：" + templateWorkspace.Name });
+                                    templateItem.Text(RS_(L"WorkspaceUi_FromWorkspaceTemplate") + templateWorkspace.Name);
                                     templateItem.Click([weakThis, templateIndex](auto&&, auto&&) {
                                         if (auto self{ weakThis.get() })
                                         {
@@ -700,7 +700,7 @@
         if (workspaces.empty())
         {
             auto empty = TextBlock{};
-            empty.Text(L"暂时没有工作区");
+            empty.Text(RS_(L"WorkspaceEditor_NoneSaved"));
             empty.TextWrapping(TextWrapping::Wrap);
             empty.HorizontalTextAlignment(TextAlignment::Center);
             empty.HorizontalAlignment(HorizontalAlignment::Center);
@@ -714,7 +714,7 @@
             if (workspace == nullptr)
             {
                 auto empty = TextBlock{};
-                empty.Text(L"暂时没有工作区");
+                empty.Text(RS_(L"WorkspaceEditor_NoneSaved"));
                 empty.TextWrapping(TextWrapping::Wrap);
                 empty.HorizontalTextAlignment(TextAlignment::Center);
                 empty.HorizontalAlignment(HorizontalAlignment::Center);
@@ -735,7 +735,7 @@
         }
         else
         {
-            root.Children().Append(makeSectionTitle(L"工作区管理"));
+            root.Children().Append(makeSectionTitle(RS_(L"WorkspaceUi_WorkspaceManagement")));
         }
 
         if (!workspaces.empty())

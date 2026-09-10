@@ -30,9 +30,9 @@
             </Grid.ColumnDefinitions>
 
             <TextBlock x:Name="DialogTitleBlock"
+                       x:Uid="WorkspaceUi_ChooseIconTitle"
                        VerticalAlignment="Center"
-                       Style="{ThemeResource SubtitleTextBlockStyle}"
-                       Text="选择图标" />
+                       Style="{ThemeResource SubtitleTextBlockStyle}" />
 
             <Button x:Name="DialogCloseButton"
                     Grid.Column="1"

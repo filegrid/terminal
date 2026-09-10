@@ -414,6 +414,13 @@ namespace winrt::TerminalApp::implementation
         TabViewItem().DoubleTapped([weakThis = get_weak()](auto&& /*s*/, auto&& /*e*/) {
             if (auto tab{ weakThis.get() })
             {
+                // Workspace node titles belong to the workspace definition.
+                // Do not expose the transient terminal-tab rename editor, even
+                // when that workspace is currently unlocked.
+                if (tab->IsWorkspaceNodeTab())
+                {
+                    return;
+                }
                 tab->_dispatch.DoAction(*tab, { ShortcutAction::OpenTabRenamer, nullptr });
             }
         });
