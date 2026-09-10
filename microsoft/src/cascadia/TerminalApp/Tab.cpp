@@ -8,7 +8,8 @@
 #include "Tab.g.cpp"
 #include "Utils.h"
 #include "AppLogic.h"
-#include <winrt/Microsoft.Web.WebView2.Core.h>
+#include "WorkspaceNativeHwndWebViewHost.h"
+#include "../../../../src/core/chat/WorkspaceDiagnosticLog.h"
 #include "../../types/inc/ColorFix.hpp"
 
 using namespace winrt;
@@ -130,6 +131,7 @@ namespace winrt::TerminalApp::implementation
                                         std::vector<WUX::UIElement> roots,
                                         std::vector<winrt::hstring> titles,
                                         std::vector<winrt::hstring> icons,
+                                        std::vector<std::shared_ptr<WorkspaceNativeHwndWebViewHost>> nativeWebViews,
                                         const bool iconButtons,
                                         const bool dockBottom)
     {
@@ -140,6 +142,7 @@ namespace winrt::TerminalApp::implementation
 
         _commandTabPanes = std::move(panes);
         _commandTabRoots = std::move(roots);
+        _commandTabNativeWebViews = std::move(nativeWebViews);
         _commandTabTitles = std::move(titles);
         _commandTabIcons = std::move(icons);
         _commandTabButtons.clear();
@@ -287,53 +290,14 @@ namespace winrt::TerminalApp::implementation
         Content(_contentWrapper);
     }
 
-    void Tab::SetTerminalContentWebView(winrt::hstring url)
+    void Tab::SetTerminalContentWebView(winrt::hstring url, HWND parentWindow)
     {
         auto host = WUX::Controls::Grid{};
-        auto webView = MUX::Controls::WebView2{};
-        webView.HorizontalAlignment(WUX::HorizontalAlignment::Stretch);
-        webView.VerticalAlignment(WUX::VerticalAlignment::Stretch);
-        host.Tag(webView);
-        auto status = WUX::Controls::TextBlock{};
-        status.Visibility(WUX::Visibility::Collapsed);
-        status.HorizontalAlignment(WUX::HorizontalAlignment::Center);
-        status.VerticalAlignment(WUX::VerticalAlignment::Center);
-        host.Children().Append(webView);
-        host.Children().Append(status);
-        webView.CoreWebView2Initialized([webView, status, url](auto&&, const auto& args) {
-            if (SUCCEEDED(args.Exception()))
-            {
-                const auto core = webView.CoreWebView2();
-                core.Navigate(url);
-            }
-            else
-            {
-                status.Visibility(WUX::Visibility::Collapsed);
-            }
-        });
-        webView.Loaded([webView, status](auto&&, auto&&) -> winrt::fire_and_forget {
-            try
-            {
-                co_await webView.EnsureCoreWebView2Async();
-            }
-            catch (const winrt::hresult_error&)
-            {
-                status.Visibility(WUX::Visibility::Collapsed);
-            }
-        });
-        webView.NavigationCompleted([status](auto&&, const auto& args) {
-            status.Visibility(args.IsSuccess() ? WUX::Visibility::Collapsed : WUX::Visibility::Visible);
-            if (!args.IsSuccess())
-            {
-                status.Visibility(WUX::Visibility::Collapsed);
-            }
-        });
-        // Keep the same active-WebView marker that the multi-command host
-        // uses. Tab::Focus is invoked by the outer TerminalPage after a
-        // pointer interaction; without this marker it focuses the stale
-        // terminal control and immediately closes a WebView popup/flyout.
+        host.Background(WUX::Media::SolidColorBrush{ Windows::UI::Colors::Transparent() });
+        auto nativeWebView = WorkspaceNativeHwndWebViewHost::Create(host, parentWindow, std::move(url));
         _commandTabPanes = { nullptr };
         _commandTabRoots = { host };
+        _commandTabNativeWebViews = { std::move(nativeWebView) };
         _activeCommandTabIndex = 0;
         _terminalContentHost = WUX::Controls::Grid{};
         _contentWrapper.Children().Clear();
@@ -369,6 +333,10 @@ namespace winrt::TerminalApp::implementation
                     _terminalContentHost.Children().Append(root);
                 }
                 root.Visibility(WUX::Visibility::Visible);
+                if (paneIndex < _commandTabNativeWebViews.size() && _commandTabNativeWebViews[paneIndex])
+                {
+                    _commandTabNativeWebViews[paneIndex]->Show();
+                }
             }
             else if (_terminalContentHost.Children().IndexOf(root, contentIndex))
             {
@@ -376,6 +344,10 @@ namespace winrt::TerminalApp::implementation
                 // This is essential for WebView2 to retain its render target
                 // and navigation state.
                 root.Visibility(WUX::Visibility::Collapsed);
+                if (paneIndex < _commandTabNativeWebViews.size() && _commandTabNativeWebViews[paneIndex])
+                {
+                    _commandTabNativeWebViews[paneIndex]->Hide();
+                }
             }
             else if (_commandTabPanes[paneIndex] && !_commandTabPrewarmHost.Children().IndexOf(root, prewarmIndex))
             {
@@ -598,19 +570,13 @@ namespace winrt::TerminalApp::implementation
         _focusState = focusState;
 
         // A workspace WebView command is not a Pane. Retaining the preceding
-        // terminal pane as _activePane is necessary for terminal bookkeeping,
-        // but it must not receive focus while the browser command is visible.
-        // Forwarding the request to WebView2, rather than dropping it, gives
-        // browser-owned menus the same focus lifecycle as a normal browser.
+        // terminal pane is necessary for bookkeeping, but it must not receive
+        // focus while the browser child HWND is visible.
         if (_activeCommandTabIndex < _commandTabPanes.size() && !_commandTabPanes[_activeCommandTabIndex])
         {
-            const auto root = _commandTabRoots[_activeCommandTabIndex];
-            if (const auto host = root.try_as<WUX::FrameworkElement>())
+            if (_activeCommandTabIndex < _commandTabNativeWebViews.size() && _commandTabNativeWebViews[_activeCommandTabIndex])
             {
-                if (const auto webView = host.Tag().try_as<MUX::Controls::WebView2>())
-                {
-                    webView.Focus(focusState);
-                }
+                _commandTabNativeWebViews[_activeCommandTabIndex]->Focus();
             }
             return;
         }
@@ -1251,6 +1217,15 @@ namespace winrt::TerminalApp::implementation
     void Tab::Shutdown()
     {
         ASSERT_UI_THREAD();
+
+        for (const auto& nativeWebView : _commandTabNativeWebViews)
+        {
+            if (nativeWebView)
+            {
+                nativeWebView->Close();
+            }
+        }
+        _commandTabNativeWebViews.clear();
 
         // NOTE: `TerminalPage::_HandleCloseTabRequested` relies on the content being null after this call.
         Content(nullptr);

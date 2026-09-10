@@ -51,7 +51,9 @@
         WT_WORKSPACE_EXT_API winrt::Windows::UI::Xaml::UIElement _BuildWorkspaceManagerContent();
         // Host-only prototype. It deliberately owns no workspace data and has
         // no Core/Glue/runtime integration.
-        winrt::Windows::UI::Xaml::UIElement _BuildWorkspaceMultiWindowDemo();
+        winrt::Windows::UI::Xaml::UIElement _BuildWorkspaceMultiWindowDemo(int webViewHostMode = -1);
+        winrt::Windows::UI::Xaml::UIElement _BuildWorkspaceXamlWebViewHostDemo(size_t urlIndex);
+        void _ShowWorkspaceNativeWebViewHostDemo(size_t urlIndex);
         WT_WORKSPACE_EXT_API void _ConfigureTerminalContentWrapper(const winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace& workspace);
         WT_WORKSPACE_EXT_API winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace* _SelectedWorkspaceForEditing() noexcept;
         WT_WORKSPACE_EXT_API const winrt::Microsoft::Terminal::Settings::Model::implementation::Workspace* _SelectedWorkspaceForEditing() const noexcept;

@@ -381,7 +381,8 @@
                 if (commands[commandIndex].WindowType == WorkspaceNodeCommand::Type::WebView)
                 {
                     // The initial native tab only provides the workspace
-                    // wrapper; the wrapper replaces it with WebView2.
+                    // wrapper; the wrapper replaces it with a native child
+                    // HWND WebView controller.
                     continue;
                 }
 

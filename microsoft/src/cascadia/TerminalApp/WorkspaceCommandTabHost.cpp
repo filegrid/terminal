@@ -3,84 +3,18 @@
 
 #include "pch.h"
 #include "TerminalPage.h"
-#include <winrt/Microsoft.Web.WebView2.Core.h>
-#include "../../../../src/core/chat/WorkspaceDiagnosticLog.h"
+#include "WorkspaceNativeHwndWebViewHost.h"
 
 namespace winrt::TerminalApp::implementation
 {
     namespace
     {
-        Windows::UI::Xaml::UIElement _CreateWorkspaceCommandWebView(const winrt::hstring& url)
+        std::pair<Windows::UI::Xaml::UIElement, std::shared_ptr<WorkspaceNativeHwndWebViewHost>> _CreateWorkspaceCommandWebView(const winrt::hstring& url, const HWND parentWindow)
         {
-            auto webHost = Windows::UI::Xaml::Controls::Grid{};
-            auto webView = Microsoft::UI::Xaml::Controls::WebView2{};
-            webView.HorizontalAlignment(Windows::UI::Xaml::HorizontalAlignment::Stretch);
-            webView.VerticalAlignment(Windows::UI::Xaml::VerticalAlignment::Stretch);
-            // Tab owns the outer command host. Preserve its focus target so
-            // Tab::Focus can forward activation to this WebView instead of to
-            // the hidden terminal pane that was used to create the node tab.
-            webHost.Tag(webView);
-            auto status = Windows::UI::Xaml::Controls::TextBlock{};
-            status.Visibility(Windows::UI::Xaml::Visibility::Collapsed);
-            status.HorizontalAlignment(Windows::UI::Xaml::HorizontalAlignment::Center);
-            status.VerticalAlignment(Windows::UI::Xaml::VerticalAlignment::Center);
-            webHost.Children().Append(webView);
-            webHost.Children().Append(status);
-            // This follows the workspace-manager WebView2 host: initialize
-            // asynchronously, navigate only after CoreWebView2 is ready, and
-            // retain a visible failure status instead of a blank command tab.
-            webView.CoreWebView2Initialized([webView, status, url](auto&&, const auto& args) {
-                if (SUCCEEDED(args.Exception()))
-                {
-                    const auto core = webView.CoreWebView2();
-                    core.NewWindowRequested([](auto&&, const auto& newWindowArgs) {
-                        Json::Value payload{ Json::objectValue };
-                        payload["userInitiated"] = newWindowArgs.IsUserInitiated();
-                        terminal::workspacechat::AddDiagnosticTextFields(payload, "uri", newWindowArgs.Uri().c_str());
-                        std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_webview_new_window_requested", payload);
-                    });
-                    core.NavigationStarting([](auto&&, const auto& navigationArgs) {
-                        Json::Value payload{ Json::objectValue };
-                        terminal::workspacechat::AddDiagnosticTextFields(payload, "uri", navigationArgs.Uri().c_str());
-                        std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_webview_navigation_starting", payload);
-                    });
-                    core.ProcessFailed([](auto&&, const auto& processArgs) {
-                        Json::Value payload{ Json::objectValue };
-                        payload["kind"] = static_cast<int>(processArgs.ProcessFailedKind());
-                        std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_webview_process_failed", payload);
-                    });
-                    core.Navigate(url);
-                }
-                else
-                {
-                    status.Visibility(Windows::UI::Xaml::Visibility::Collapsed);
-                }
-            });
-            webView.Loaded([webView, status](auto&&, auto&&) -> winrt::fire_and_forget {
-                try
-                {
-                    co_await webView.EnsureCoreWebView2Async();
-                }
-                catch (const winrt::hresult_error&)
-                {
-                    status.Visibility(Windows::UI::Xaml::Visibility::Collapsed);
-                }
-            });
-            webView.NavigationCompleted([status](auto&&, const auto& args) {
-                Json::Value payload{ Json::objectValue };
-                payload["success"] = args.IsSuccess();
-                payload["webErrorStatus"] = static_cast<int>(args.WebErrorStatus());
-                std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_webview_navigation_completed", payload);
-                if (args.IsSuccess())
-                {
-                    status.Visibility(Windows::UI::Xaml::Visibility::Collapsed);
-                }
-                else
-                {
-                    status.Visibility(Windows::UI::Xaml::Visibility::Collapsed);
-                }
-            });
-            return webHost;
+            auto layout = Windows::UI::Xaml::Controls::Grid{};
+            layout.Background(Windows::UI::Xaml::Media::SolidColorBrush{ Windows::UI::Colors::Transparent() });
+            auto nativeWebView = WorkspaceNativeHwndWebViewHost::Create(layout, parentWindow, url);
+            return { layout, std::move(nativeWebView) };
         }
     }
 
@@ -117,7 +51,7 @@ namespace winrt::TerminalApp::implementation
                                       node.Commands;
             if (commands.size() == 1 && commands.front().WindowType == WorkspaceNodeCommand::Type::WebView)
             {
-                tab->SetTerminalContentWebView(winrt::hstring{ commands.front().WebUrl });
+                tab->SetTerminalContentWebView(winrt::hstring{ commands.front().WebUrl }, _hostingHwnd.value_or(nullptr));
                 continue;
             }
             if (node.MultiWindowPreference.DisplayMode != WorkspaceWindowDisplayMode::Tab)
@@ -134,10 +68,12 @@ namespace winrt::TerminalApp::implementation
             std::vector<Windows::UI::Xaml::UIElement> roots;
             std::vector<winrt::hstring> titles;
             std::vector<winrt::hstring> icons;
+            std::vector<std::shared_ptr<WorkspaceNativeHwndWebViewHost>> nativeWebViews;
             panes.reserve(launches.size());
             roots.reserve(launches.size());
             titles.reserve(launches.size());
             icons.reserve(launches.size());
+            nativeWebViews.reserve(launches.size());
             for (size_t commandIndex = 0; commandIndex < launches.size(); ++commandIndex)
             {
                 const auto& launch = launches[commandIndex];
@@ -145,7 +81,9 @@ namespace winrt::TerminalApp::implementation
                 if (command.WindowType == WorkspaceNodeCommand::Type::WebView)
                 {
                     panes.emplace_back(nullptr);
-                    roots.emplace_back(_CreateWorkspaceCommandWebView(winrt::hstring{ command.WebUrl }));
+                    auto [root, nativeWebView] = _CreateWorkspaceCommandWebView(winrt::hstring{ command.WebUrl }, _hostingHwnd.value_or(nullptr));
+                    roots.emplace_back(std::move(root));
+                    nativeWebViews.emplace_back(std::move(nativeWebView));
                     titles.emplace_back(!command.Name.empty() ? winrt::hstring{ command.Name } : winrt::hstring{ L"WebView" });
                     icons.emplace_back(!command.Icon.empty() ? command.Icon : node.Icon);
                     continue;
@@ -157,6 +95,7 @@ namespace winrt::TerminalApp::implementation
                     roots.emplace_back(pane->GetRootElement());
                     titles.emplace_back(launch.TerminalArgs.TabTitle());
                     icons.emplace_back(!command.Icon.empty() ? command.Icon : node.Icon);
+                    nativeWebViews.emplace_back(nullptr);
                     continue;
                 }
                 // Command panes belong to the current first-level node Tab.
@@ -204,6 +143,7 @@ namespace winrt::TerminalApp::implementation
                 roots.emplace_back(panes.back()->GetRootElement());
                 titles.emplace_back(launch.TerminalArgs.TabTitle());
                 icons.emplace_back(!command.Icon.empty() ? command.Icon : node.Icon);
+                nativeWebViews.emplace_back(nullptr);
             }
             if (roots.size() > 1)
             {
@@ -213,6 +153,7 @@ namespace winrt::TerminalApp::implementation
                                                std::move(roots),
                                                std::move(titles),
                                                std::move(icons),
+                                               std::move(nativeWebViews),
                                                iconButtons,
                                                placement == WorkspaceTabPlacement::BottomRight);
             }

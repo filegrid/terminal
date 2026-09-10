@@ -8,7 +8,7 @@ A workspace node can contain multiple command windows while remaining a single f
 
 - The workspace must be unlocked and in edit mode.
 - The node must have a valid terminal profile. Terminal command windows inherit its profile, startup directory, and title policy.
-- WebView windows require the Microsoft Edge WebView2 Runtime.
+- WebView windows use the system-installed default WebView Runtime. The application does not download, install, package, or select its version or path. If a web page does not render correctly, install or update the Runtime from the [official page](https://developer.microsoft.com/en-us/microsoft-edge/webview2/), then restart the application.
 
 ## Configure command subtabs
 
