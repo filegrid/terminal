@@ -1263,4 +1263,62 @@
   <data name="WorkspaceEditor_IconFamilyOutline" xml:space="preserve"><value>线框</value></data>
   <data name="WorkspaceEditor_IconFamilyDuotone" xml:space="preserve"><value>双色</value></data>
   <data name="WorkspaceEditor_IconFamilySharp" xml:space="preserve"><value>锐利</value></data>
+  <data name="WorkspaceUi_ChooseColor" xml:space="preserve"><value>选择颜色</value></data>
+  <data name="WorkspaceUi_Confirm" xml:space="preserve"><value>确定</value></data>
+  <data name="WorkspaceUi_Cancel" xml:space="preserve"><value>取消</value></data>
+  <data name="WorkspaceUi_DeleteNode" xml:space="preserve"><value>删除节点</value></data>
+  <data name="WorkspaceUi_DeleteWorkspace" xml:space="preserve"><value>删除工作区</value></data>
+  <data name="WorkspaceUi_DeleteNodeConfirmation" xml:space="preserve"><value>确定要删除这个节点吗？</value></data>
+  <data name="WorkspaceUi_DeleteWorkspaceConfirmation" xml:space="preserve"><value>确定要删除这个工作区吗？</value></data>
+  <data name="WorkspaceUi_Delete" xml:space="preserve"><value>删除</value></data>
+  <data name="WorkspaceUi_ChooseIcon" xml:space="preserve"><value>选择图标</value></data>
+  <data name="WorkspaceUi_ChooseLocalFile" xml:space="preserve"><value>选择本地文件</value></data>
+  <data name="WorkspaceUi_IconFamilyNumbers" xml:space="preserve"><value>数字 0-9</value></data>
+  <data name="WorkspaceUi_IconFamilyLetters" xml:space="preserve"><value>字母 A-Z</value></data>
+  <data name="WorkspaceUi_IconFamilyDaily" xml:space="preserve"><value>日常</value></data>
+  <data name="WorkspaceUi_IconFamilyDevelopment" xml:space="preserve"><value>研发</value></data>
+  <data name="WorkspaceUi_IconFamilyOffice" xml:space="preserve"><value>办公</value></data>
+  <data name="WorkspaceUi_IconFamilyWindows" xml:space="preserve"><value>Windows / OS</value></data>
+  <data name="WorkspaceUi_Workspace" xml:space="preserve"><value>工作区</value></data>
+  <data name="WorkspaceUi_WorkspaceButton.AutomationProperties.Name" xml:space="preserve"><value>工作区</value></data>
+  <data name="WorkspaceUi_ChooseIconTitle.Text" xml:space="preserve"><value>选择图标</value></data>
+  <data name="WorkspaceUi_NodeOrder" xml:space="preserve"><value>节点顺序</value></data>
+  <data name="WorkspaceUi_NodeDefaults" xml:space="preserve"><value>节点默认值</value></data>
+  <data name="WorkspaceUi_Change" xml:space="preserve"><value>换一个</value></data>
+  <data name="WorkspaceUi_Icon" xml:space="preserve"><value>图标</value></data>
+  <data name="WorkspaceUi_ChooseFolder" xml:space="preserve"><value>选择文件夹</value></data>
+  <data name="WorkspaceUi_ChooseFile" xml:space="preserve"><value>选择文件</value></data>
+  <data name="WorkspaceUi_CommandWindows" xml:space="preserve"><value>命令窗口</value></data>
+  <data name="WorkspaceUi_AddCommandWindow" xml:space="preserve"><value>添加命令窗口</value></data>
+  <data name="WorkspaceUi_UntitledCommand" xml:space="preserve"><value>未命名命令</value></data>
+  <data name="WorkspaceUi_AddWebViewWindow" xml:space="preserve"><value>添加 WebView 窗口</value></data>
+  <data name="WorkspaceUi_ChooseCommandIcon" xml:space="preserve"><value>选择命令图标</value></data>
+  <data name="WorkspaceUi_CommandNamePlaceholder" xml:space="preserve"><value>名字，例如 Codex</value></data>
+  <data name="WorkspaceUi_WebUrlPlaceholder" xml:space="preserve"><value>Web URL，例如 https://example.com</value></data>
+  <data name="WorkspaceUi_CommandPlaceholder" xml:space="preserve"><value>启动命令，例如 codex --resume（可为空）</value></data>
+  <data name="WorkspaceUi_RemoveCommandWindow" xml:space="preserve"><value>删除命令窗口</value></data>
+  <data name="WorkspaceUi_MultiWindowDisplay" xml:space="preserve"><value>多窗口展示</value></data>
+  <data name="WorkspaceUi_SideBySide" xml:space="preserve"><value>左右分隔</value></data>
+  <data name="WorkspaceUi_DisplayMode" xml:space="preserve"><value>展示方式</value></data>
+  <data name="WorkspaceUi_TabPlacementTopLeft" xml:space="preserve"><value>左上（图标加文字）</value></data>
+  <data name="WorkspaceUi_TabPlacementTopRight" xml:space="preserve"><value>右上（竖排图标）</value></data>
+  <data name="WorkspaceUi_TabPlacementBottomRight" xml:space="preserve"><value>右下（竖排图标）</value></data>
+  <data name="WorkspaceUi_TabPlacement" xml:space="preserve"><value>Tab 位置</value></data>
+  <data name="WorkspaceUi_SizeAllocation" xml:space="preserve"><value>大小分配</value></data>
+  <data name="WorkspaceUi_Open" xml:space="preserve"><value>打开中</value></data>
+  <data name="WorkspaceUi_WorkspaceOpen" xml:space="preserve"><value>工作区当前已打开</value></data>
+  <data name="WorkspaceUi_WorkspaceClosed" xml:space="preserve"><value>工作区当前未打开</value></data>
+  <data name="WorkspaceUi_BlankNode" xml:space="preserve"><value>空白节点</value></data>
+  <data name="WorkspaceUi_FromNodeTemplate" xml:space="preserve"><value>来自节点模板：</value></data>
+  <data name="WorkspaceUi_MoveUp" xml:space="preserve"><value>上移</value></data>
+  <data name="WorkspaceUi_MoveDown" xml:space="preserve"><value>下移</value></data>
+  <data name="WorkspaceUi_OpenConfigurationDirectory" xml:space="preserve"><value>打开配置目录</value></data>
+  <data name="WorkspaceUi_MultiWindowDemo" xml:space="preserve"><value>多窗口 Demo</value></data>
+  <data name="WorkspaceUi_NodeOne" xml:space="preserve"><value>节点 1</value></data>
+  <data name="WorkspaceUi_NativeWebView2" xml:space="preserve"><value>原生 WebView2</value></data>
+  <data name="WorkspaceUi_BlankWorkspace" xml:space="preserve"><value>空白工作区</value></data>
+  <data name="WorkspaceUi_FromWorkspaceTemplate" xml:space="preserve"><value>来自工作区模板：</value></data>
+  <data name="WorkspaceUi_WorkspaceManagement" xml:space="preserve"><value>工作区管理</value></data>
+  <data name="WorkspaceUi_SwitchOn" xml:space="preserve"><value>开</value></data>
+  <data name="WorkspaceUi_SwitchOff" xml:space="preserve"><value>关</value></data>
 </root>

@@ -1,7 +1,5 @@
 # Workspace Node Command Subtabs Guide
 
-Applies to version 0.0.4 and later.
-
 A workspace node can contain multiple command windows while remaining a single first-level tab. Select the node, then switch its command windows from the second-level tabs in the content area or from the right-side icon strip. This keeps related terminals, services, and web tools out of the top-level tab row.
 
 ## Prerequisites
@@ -23,22 +21,7 @@ Each node supports one to five command windows. Closing a first-level node tab c
 
 ## codev example
 
-`codev` in `/mnt/d/my/codev/` starts code-server in Docker and mounts the current project into the browser editor. It requires Linux or WSL2, a running Docker daemon, `curl`, and `bash`. Link the command to its source directory so it can find the adjacent `Dockerfile`:
-
-```bash
-mkdir -p ~/.local/bin
-ln -sfn /mnt/d/my/codev/codev ~/.local/bin/codev
-export PATH="$HOME/.local/bin:$PATH"
-codev --help
-```
-
-The first run downloads code-server (default: `4.136.2`), builds `codev:latest`, and creates the shared `codev-extensions` volume. To build it ahead of time:
-
-```bash
-codev rebuild
-```
-
-Start the editor from a project directory:
+If you use codev, start it from the project directory after installing it according to its own documentation:
 
 ```bash
 cd /path/to/your-project
@@ -59,7 +42,6 @@ Multiple projects use consecutive ports such as `8080` and `8081`; enter the URL
 cd /path/to/your-project
 codev stop       # removes this project's container, not project files or shared extensions
 codev list       # lists recorded instances
-codev rebuild    # rebuilds the image; run stop and codev afterwards to use it
 ```
 
 By default, `codev` uses `--auth none` and binds to `0.0.0.0`; use it only on the local machine or a trusted network. From Windows WebView on WSL2, prefer `http://127.0.0.1:<port>`. WebView displays the page only and does not start `codev`; run `codev` first.

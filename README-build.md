@@ -117,6 +117,17 @@ To create the installable MSIX in `bin/`, run:
 cmake --build build --target msix
 ```
 
+### 5. Localize all production UI text
+
+For every non-demo feature, user-visible UI text must be defined through the
+localizable resource system and provided for each supported language. Do not
+hard-code Chinese, English, or any other display text in C++, XAML, tooltips,
+dialogs, menus, accessibility labels, or dynamically created controls.
+
+Demo-only code is excluded from this rule. It may use fixed text when that
+makes an isolated comparison easier to read, but demo strings must not be
+copied into a production path.
+
 ## Outputs
 
 The portable single-file outputs are written to `bin/`:
@@ -139,6 +150,10 @@ portable distribution.
   version header produced from `VERSION`.
 - `res/` contains workspace resources.
 - `tools/` contains resource-generation and build helper scripts.
+- `docs/usage/eng/` and `docs/usage/cn/` contain the English and Chinese
+  end-user documentation.
+- `bin/` contains the final portable and installable artifacts emitted by a
+  successful package build.
 
 Keep glue code limited to adaptation and wiring. New business rules, state
 machines, persistence policies, and runtime decisions belong in `src/core/`

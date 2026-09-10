@@ -5,7 +5,7 @@
         if (!workspace)
         {
             auto empty = TextBlock{};
-            empty.Text(L"暂时没有工作区");
+            empty.Text(RS_(L"WorkspaceEditor_NoneSaved"));
             empty.TextWrapping(TextWrapping::Wrap);
             empty.HorizontalTextAlignment(TextAlignment::Center);
             empty.HorizontalAlignment(HorizontalAlignment::Center);
@@ -113,7 +113,7 @@
             }
         }, !_workspaceEditorEditMode, true);
 
-        generalPanel.Children().Append(makeSectionTitle(L"节点顺序"));
+        generalPanel.Children().Append(makeSectionTitle(RS_(L"WorkspaceUi_NodeOrder")));
         auto reorderList = ListView{};
         reorderList.CanDragItems(_workspaceEditorEditMode);
         reorderList.CanReorderItems(_workspaceEditorEditMode);
@@ -199,7 +199,7 @@
         }
         generalPanel.Children().Append(reorderList);
 
-        generalPanel.Children().Append(makeSectionTitle(L"节点默认值"));
+        generalPanel.Children().Append(makeSectionTitle(RS_(L"WorkspaceUi_NodeDefaults")));
         const auto defaultProfileOptions = _workspaceExtension->WorkspaceManagerProfileOptionsForEditing(
             winrt::hstring{ workspace->NewNodeDefaults.ProfileGuid }, winrt::hstring{ workspace->NewNodeDefaults.ProfileName });
         auto defaultProfilePicker = _workspaceExtension->CreateWorkspaceManagerProfilePicker(
@@ -221,8 +221,8 @@
                 }
             });
         }
-        generalPanel.Children().Append(makeWorkspaceSetting(L"来源", defaultProfilePicker));
-        addLabeledTextBox(generalPanel, L"启动目录", workspace->NewNodeDefaults.StartupDirectory, [weakThis{ get_weak() }](auto&& sender, auto&&) {
+        generalPanel.Children().Append(makeWorkspaceSetting(RS_(L"WorkspaceEditor_Source"), defaultProfilePicker));
+        addLabeledTextBox(generalPanel, RS_(L"WorkspaceEditor_StartupDirectory").c_str(), workspace->NewNodeDefaults.StartupDirectory, [weakThis{ get_weak() }](auto&& sender, auto&&) {
             if (auto self{ weakThis.get() })
             {
                 self->_workspaceExtension->UpdateWorkspaceManagerWorkspaceText(
@@ -234,6 +234,8 @@
             auto toggle = WUX::Controls::ToggleSwitch{};
             applyWorkspaceStyle(toggle, L"WorkspaceToggleSwitchStyle");
             toggle.Header(nullptr);
+            toggle.OnContent(winrt::box_value(RS_(L"WorkspaceUi_SwitchOn")));
+            toggle.OffContent(winrt::box_value(RS_(L"WorkspaceUi_SwitchOff")));
             toggle.IsOn(isOn);
             toggle.IsEnabled(_workspaceEditorEditMode);
             toggle.HorizontalAlignment(HorizontalAlignment::Right);
@@ -243,7 +245,7 @@
             }
             generalPanel.Children().Append(makeWorkspaceSetting(label, toggle));
         };
-        addDefaultToggle(L"显示输入框", workspace->NewNodeDefaults.ShowInputPanel, [weakThis{ get_weak() }](auto&& sender, auto&&) {
+        addDefaultToggle(RS_(L"WorkspaceEditor_ShowInputPanel").c_str(), workspace->NewNodeDefaults.ShowInputPanel, [weakThis{ get_weak() }](auto&& sender, auto&&) {
             if (auto self{ weakThis.get() })
             {
                 self->_workspaceExtension->UpdateWorkspaceManagerWorkspaceBool(
@@ -251,7 +253,7 @@
                     sender.as<WUX::Controls::ToggleSwitch>().IsOn());
             }
         });
-        addDefaultToggle(L"固定标题", workspace->NewNodeDefaults.UseNodeNameAsTabTitle, [weakThis{ get_weak() }](auto&& sender, auto&&) {
+        addDefaultToggle(RS_(L"WorkspaceEditor_UseNodeNameAsTabTitle").c_str(), workspace->NewNodeDefaults.UseNodeNameAsTabTitle, [weakThis{ get_weak() }](auto&& sender, auto&&) {
             if (auto self{ weakThis.get() })
             {
                 self->_workspaceExtension->UpdateWorkspaceManagerWorkspaceBool(
@@ -262,6 +264,8 @@
         auto defaultShowTab = WUX::Controls::ToggleSwitch{};
         applyWorkspaceStyle(defaultShowTab, L"WorkspaceToggleSwitchStyle");
         defaultShowTab.Header(nullptr);
+        defaultShowTab.OnContent(winrt::box_value(RS_(L"WorkspaceUi_SwitchOn")));
+        defaultShowTab.OffContent(winrt::box_value(RS_(L"WorkspaceUi_SwitchOff")));
         defaultShowTab.IsOn(workspace->NewNodeDefaults.ShowTab);
         defaultShowTab.IsEnabled(_workspaceEditorEditMode);
         if (_workspaceEditorEditMode)
@@ -276,7 +280,7 @@
             });
         }
         defaultShowTab.HorizontalAlignment(HorizontalAlignment::Right);
-        generalPanel.Children().Append(makeWorkspaceSetting(L"显示此标签页", defaultShowTab));
+        generalPanel.Children().Append(makeWorkspaceSetting(RS_(L"WorkspaceEditor_ShowTab"), defaultShowTab));
 
         auto colorPanel = StackPanel{};
         colorPanel.Orientation(Orientation::Horizontal);
@@ -314,8 +318,8 @@
             auto chooseColorIcon = SymbolIcon{};
             chooseColorIcon.Symbol(Symbol::Refresh);
             chooseColorButton.Content(chooseColorIcon);
-            ToolTipService::SetToolTip(chooseColorButton, box_value(L"换一个"));
-            Automation::AutomationProperties::SetName(chooseColorButton, L"换一个");
+            ToolTipService::SetToolTip(chooseColorButton, box_value(RS_(L"WorkspaceUi_Change")));
+            Automation::AutomationProperties::SetName(chooseColorButton, RS_(L"WorkspaceUi_Change"));
             chooseColorButton.Click([weakThis{ get_weak() }, applyWorkspaceColorPreview](auto&&, auto&&) {
                 if (auto self{ weakThis.get() })
                 {
@@ -400,8 +404,8 @@
         workspaceIconButton.HorizontalContentAlignment(HorizontalAlignment::Center);
         workspaceIconButton.VerticalContentAlignment(VerticalAlignment::Center);
         workspaceIconButton.Content(workspaceIconPreview);
-        ToolTipService::SetToolTip(workspaceIconButton, box_value(L"选择图标"));
-        Automation::AutomationProperties::SetName(workspaceIconButton, L"选择图标");
+        ToolTipService::SetToolTip(workspaceIconButton, box_value(RS_(L"WorkspaceUi_ChooseIcon")));
+        Automation::AutomationProperties::SetName(workspaceIconButton, RS_(L"WorkspaceUi_ChooseIcon"));
         workspaceIconPanel.Children().Append(workspaceIconButton);
         if (_workspaceEditorEditMode)
         {
@@ -414,7 +418,7 @@
         }
 
         generalPanel.Children().InsertAt(3, makeWorkspaceSetting(RS_(L"WorkspaceEditor_BackgroundColor"), colorPanel));
-        generalPanel.Children().InsertAt(4, makeWorkspaceSetting(L"图标", workspaceIconPanel));
+        generalPanel.Children().InsertAt(4, makeWorkspaceSetting(RS_(L"WorkspaceUi_Icon"), workspaceIconPanel));
         root.Children().Append(generalPanel);
     }
 
@@ -426,7 +430,7 @@
         if (!workspace)
         {
             auto empty = TextBlock{};
-            empty.Text(L"暂时没有工作区");
+            empty.Text(RS_(L"WorkspaceEditor_NoneSaved"));
             empty.TextWrapping(TextWrapping::Wrap);
             empty.HorizontalTextAlignment(TextAlignment::Center);
             empty.HorizontalAlignment(HorizontalAlignment::Center);
@@ -542,6 +546,8 @@
         auto showTabToggle = WUX::Controls::ToggleSwitch{};
         applyWorkspaceStyle(showTabToggle, L"WorkspaceToggleSwitchStyle");
         showTabToggle.Header(nullptr);
+        showTabToggle.OnContent(winrt::box_value(RS_(L"WorkspaceUi_SwitchOn")));
+        showTabToggle.OffContent(winrt::box_value(RS_(L"WorkspaceUi_SwitchOff")));
         showTabToggle.IsOn(node.ShowTab);
         showTabToggle.IsEnabled(_workspaceEditorEditMode);
         if (_workspaceEditorEditMode)
@@ -634,8 +640,8 @@
         iconButton.HorizontalAlignment(HorizontalAlignment::Left);
         iconButton.VerticalAlignment(VerticalAlignment::Center);
         iconButton.Content(iconPreview);
-        ToolTipService::SetToolTip(iconButton, box_value(L"选择图标"));
-        Automation::AutomationProperties::SetName(iconButton, L"选择图标");
+        ToolTipService::SetToolTip(iconButton, box_value(RS_(L"WorkspaceUi_ChooseIcon")));
+        Automation::AutomationProperties::SetName(iconButton, RS_(L"WorkspaceUi_ChooseIcon"));
         iconPanel.Children().Append(iconButton);
         if (_workspaceEditorEditMode)
         {
@@ -646,7 +652,7 @@
                 }
             });
         }
-        nodeRoot.Children().Append(makeWorkspaceSetting(L"图标", iconPanel));
+        nodeRoot.Children().Append(makeWorkspaceSetting(RS_(L"WorkspaceUi_Icon"), iconPanel));
 
         const auto addNodePathPicker = [&](const wchar_t* label, const std::wstring& initialValue, const bool pickFolder) {
             auto panel = StackPanel{};
@@ -676,8 +682,8 @@
             browseIcon.Symbol(pickFolder ? Symbol::Folder : Symbol::OpenFile);
             browseButton.Content(browseIcon);
             browseButton.IsEnabled(_workspaceEditorEditMode);
-            ToolTipService::SetToolTip(browseButton, box_value(pickFolder ? L"选择文件夹" : L"选择文件"));
-            Automation::AutomationProperties::SetName(browseButton, pickFolder ? L"选择文件夹" : L"选择文件");
+            ToolTipService::SetToolTip(browseButton, box_value(pickFolder ? RS_(L"WorkspaceUi_ChooseFolder") : RS_(L"WorkspaceUi_ChooseFile")));
+            Automation::AutomationProperties::SetName(browseButton, pickFolder ? RS_(L"WorkspaceUi_ChooseFolder") : RS_(L"WorkspaceUi_ChooseFile"));
             browseButton.Click([weakThis{ get_weak() }, nodeIndex, pickFolder, pathBox](auto&&, auto&&) {
                 [](auto weakThis, size_t nodeIndex, bool pickFolder, TextBox pathBox) -> safe_void_coroutine {
                     if (auto self{ weakThis.get() })
@@ -708,7 +714,7 @@
         commandActionsColumn.Width(GridLengthHelper::Auto());
         commandHeader.ColumnDefinitions().Append(commandActionsColumn);
         commandHeader.HorizontalAlignment(HorizontalAlignment::Stretch);
-        auto commandHeaderText = makeSectionTitle(L"命令窗口");
+        auto commandHeaderText = makeSectionTitle(RS_(L"WorkspaceUi_CommandWindows"));
         commandHeaderText.VerticalAlignment(VerticalAlignment::Center);
         commandHeader.Children().Append(commandHeaderText);
         auto commandActions = StackPanel{};
@@ -726,7 +732,7 @@
         addCommandIcon.Symbol(Symbol::Add);
         addCommandButton.Content(addCommandIcon);
         Grid::SetColumn(addCommandButton, 1);
-        ToolTipService::SetToolTip(addCommandButton, box_value(L"添加命令窗口"));
+        ToolTipService::SetToolTip(addCommandButton, box_value(RS_(L"WorkspaceUi_AddCommandWindow")));
         addCommandButton.IsEnabled(_workspaceEditorEditMode && (node.Commands.empty() || node.Commands.size() < 5));
         addCommandButton.Click([weakThis{ get_weak() }, nodeIndex](auto&&, auto&&) {
             if (auto self{ weakThis.get() })
@@ -742,7 +748,7 @@
                     if (target.Commands.size() < 5)
                     {
                         target.Commands.emplace_back(Microsoft::Terminal::Settings::Model::implementation::WorkspaceNodeCommand{
-                            target.Id + L":command-" + std::to_wstring(target.Commands.size() + 1), {}, L"未命名命令", {} });
+                            target.Id + L":command-" + std::to_wstring(target.Commands.size() + 1), {}, RS_(L"WorkspaceUi_UntitledCommand").c_str(), {} });
                         target.MultiWindowPreference.SplitWeights.assign(target.Commands.size(), 1.0 / target.Commands.size());
                         self->_workspaceExtension->WorkspaceDefinitionsDirty() = true;
                         self->_RebuildWorkspaceManagerTab();
@@ -760,7 +766,7 @@
         auto addWebViewIcon = SymbolIcon{};
         addWebViewIcon.Symbol(Symbol::World);
         addWebViewButton.Content(addWebViewIcon);
-        ToolTipService::SetToolTip(addWebViewButton, box_value(L"添加 WebView 窗口"));
+        ToolTipService::SetToolTip(addWebViewButton, box_value(RS_(L"WorkspaceUi_AddWebViewWindow")));
         addWebViewButton.IsEnabled(_workspaceEditorEditMode && (node.Commands.empty() || node.Commands.size() < 5));
         addWebViewButton.Click([weakThis{ get_weak() }, nodeIndex](auto&&, auto&&) {
             if (auto self{ weakThis.get() })
@@ -833,7 +839,7 @@
                 iconButton.Content(fallbackIcon);
             }
             iconButton.IsEnabled(_workspaceEditorEditMode);
-            ToolTipService::SetToolTip(iconButton, box_value(L"选择命令图标"));
+            ToolTipService::SetToolTip(iconButton, box_value(RS_(L"WorkspaceUi_ChooseCommandIcon")));
             iconButton.Click([weakThis{ get_weak() }, nodeIndex, commandIndex](auto&&, auto&&) {
                 [](winrt::weak_ref<TerminalPage> weakThis, const size_t nodeIndex, const size_t commandIndex) -> safe_void_coroutine {
                     if (auto self{ weakThis.get() }; self && self->_workspaceExtension)
@@ -862,13 +868,13 @@
             });
             row.Children().Append(iconButton);
             auto nameBox = TextBox{};
-            nameBox.PlaceholderText(L"名字，例如 Codex");
+            nameBox.PlaceholderText(RS_(L"WorkspaceUi_CommandNamePlaceholder"));
             nameBox.Text(command.Name);
             nameBox.MinWidth(0);
             nameBox.IsEnabled(_workspaceEditorEditMode);
             auto commandBox = TextBox{};
             const auto isWebView = command.WindowType == Microsoft::Terminal::Settings::Model::implementation::WorkspaceNodeCommand::Type::WebView;
-            commandBox.PlaceholderText(isWebView ? L"Web URL，例如 https://example.com" : L"启动命令，例如 codex --resume（可为空）");
+            commandBox.PlaceholderText(isWebView ? RS_(L"WorkspaceUi_WebUrlPlaceholder") : RS_(L"WorkspaceUi_CommandPlaceholder"));
             commandBox.Text(isWebView ? command.WebUrl : command.Command);
             commandBox.MinWidth(160);
             commandBox.HorizontalAlignment(HorizontalAlignment::Stretch);
@@ -913,7 +919,7 @@
             remove.Content(removeIcon);
             remove.IsEnabled(_workspaceEditorEditMode && commands.size() > 1);
             Grid::SetColumn(remove, 4);
-            ToolTipService::SetToolTip(remove, box_value(L"删除命令窗口"));
+            ToolTipService::SetToolTip(remove, box_value(RS_(L"WorkspaceUi_RemoveCommandWindow")));
             remove.Click([weakThis{ get_weak() }, nodeIndex, commandIndex](auto&&, auto&&) {
                 if (auto self{ weakThis.get() })
                 {
@@ -980,10 +986,10 @@
 
         if (commands.size() >= 2)
         {
-            auto multiWindowTitle = makeSectionTitle(L"多窗口展示");
+            auto multiWindowTitle = makeSectionTitle(RS_(L"WorkspaceUi_MultiWindowDisplay"));
             nodeRoot.Children().Append(multiWindowTitle);
             auto modeBox = ComboBox{};
-            modeBox.Items().Append(box_value(L"左右分隔"));
+            modeBox.Items().Append(box_value(RS_(L"WorkspaceUi_SideBySide")));
             modeBox.Items().Append(box_value(L"Tab"));
             modeBox.SelectedIndex(node.MultiWindowPreference.DisplayMode == Microsoft::Terminal::Settings::Model::implementation::WorkspaceWindowDisplayMode::Tab ? 1 : 0);
             modeBox.IsEnabled(_workspaceEditorEditMode);
@@ -1000,14 +1006,14 @@
                     }
                 }
             });
-            nodeRoot.Children().Append(makeWorkspaceSetting(L"展示方式", modeBox));
+            nodeRoot.Children().Append(makeWorkspaceSetting(RS_(L"WorkspaceUi_DisplayMode"), modeBox));
 
             if (node.MultiWindowPreference.DisplayMode == Microsoft::Terminal::Settings::Model::implementation::WorkspaceWindowDisplayMode::Tab)
             {
                 auto placementBox = ComboBox{};
-                placementBox.Items().Append(box_value(L"左上（图标加文字）"));
-                placementBox.Items().Append(box_value(L"右上（竖排图标）"));
-                placementBox.Items().Append(box_value(L"右下（竖排图标）"));
+                placementBox.Items().Append(box_value(RS_(L"WorkspaceUi_TabPlacementTopLeft")));
+                placementBox.Items().Append(box_value(RS_(L"WorkspaceUi_TabPlacementTopRight")));
+                placementBox.Items().Append(box_value(RS_(L"WorkspaceUi_TabPlacementBottomRight")));
                 placementBox.SelectedIndex(static_cast<int32_t>(node.MultiWindowPreference.TabPlacement));
                 placementBox.IsEnabled(_workspaceEditorEditMode);
                 placementBox.SelectionChanged([weakThis{ get_weak() }, nodeIndex](auto&& sender, auto&&) {
@@ -1020,7 +1026,7 @@
                         }
                     }
                 });
-                nodeRoot.Children().Append(makeWorkspaceSetting(L"Tab 位置", placementBox));
+                nodeRoot.Children().Append(makeWorkspaceSetting(RS_(L"WorkspaceUi_TabPlacement"), placementBox));
             }
             else
             {
@@ -1084,7 +1090,7 @@
                         allocation.Children().Append(divider);
                     }
                 }
-                nodeRoot.Children().Append(makeWorkspaceSetting(L"大小分配", allocation));
+                nodeRoot.Children().Append(makeWorkspaceSetting(RS_(L"WorkspaceUi_SizeAllocation"), allocation));
             }
         }
 
@@ -1165,8 +1171,8 @@
             auto reselectTabColorIcon = SymbolIcon{};
             reselectTabColorIcon.Symbol(Symbol::Refresh);
             reselectTabColorButton.Content(reselectTabColorIcon);
-            ToolTipService::SetToolTip(reselectTabColorButton, box_value(L"换一个"));
-            Automation::AutomationProperties::SetName(reselectTabColorButton, L"换一个");
+            ToolTipService::SetToolTip(reselectTabColorButton, box_value(RS_(L"WorkspaceUi_Change")));
+            Automation::AutomationProperties::SetName(reselectTabColorButton, RS_(L"WorkspaceUi_Change"));
             reselectTabColorButton.Click([weakThis{ get_weak() }, nodeIndex, applyNodeColorPreview](auto&&, auto&&) {
                 if (auto self{ weakThis.get() })
                 {
@@ -1190,6 +1196,8 @@
         auto showInputPanelToggle = WUX::Controls::ToggleSwitch{};
         applyWorkspaceStyle(showInputPanelToggle, L"WorkspaceToggleSwitchStyle");
         showInputPanelToggle.Header(nullptr);
+        showInputPanelToggle.OnContent(winrt::box_value(RS_(L"WorkspaceUi_SwitchOn")));
+        showInputPanelToggle.OffContent(winrt::box_value(RS_(L"WorkspaceUi_SwitchOff")));
         showInputPanelToggle.IsOn(node.ShowInputPanel);
         showInputPanelToggle.IsEnabled(_workspaceEditorEditMode);
         if (_workspaceEditorEditMode)
@@ -1209,6 +1217,8 @@
         auto useDefinedTitleToggle = WUX::Controls::ToggleSwitch{};
         applyWorkspaceStyle(useDefinedTitleToggle, L"WorkspaceToggleSwitchStyle");
         useDefinedTitleToggle.Header(nullptr);
+        useDefinedTitleToggle.OnContent(winrt::box_value(RS_(L"WorkspaceUi_SwitchOn")));
+        useDefinedTitleToggle.OffContent(winrt::box_value(RS_(L"WorkspaceUi_SwitchOff")));
         useDefinedTitleToggle.IsOn(node.UseNodeNameAsTabTitle);
         useDefinedTitleToggle.IsEnabled(_workspaceEditorEditMode);
         if (_workspaceEditorEditMode)

@@ -1,54 +1,48 @@
 # Windows Terminal Geek Portable Edition
 
-Windows Terminal Geek Portable Edition is a portable, workspace-focused build of Windows Terminal. It restores related terminal sessions together, keeps workspace configuration separate from the normal terminal settings, and provides project-oriented terminal and web-tool workflows.
+Windows Terminal Geek Portable Edition is a portable, workspace-focused terminal. It keeps the terminals, web tools, startup directories, and commands for one project together, then restores that working context when you reopen the workspace.
 
-![Workspace overview](res/images/all.png)
+![Workspace tabs and command subtabs](res/images/workspace.png)
 
-## Highlights
+## One workspace, one working context
 
-- **Portable distribution**: run the single-file release without an MSIX installation. `bin\Start-WindowsTerminalPortable.cmd` uses its own directory as the portable root.
-- **Workspace management**: group profiles, SSH connections, startup directories, and startup commands into reusable workspaces. Lock a workspace to prevent accidental edits.
-- **Command subtabs**: place up to five terminal commands or WebView tools inside one workspace node without adding more top-level tabs.
-- **Integrated web tools**: embed local or intranet pages such as code-server/codev directly beside a project's terminals.
-- **Input panel and recovery**: send multi-line terminal input with `Ctrl+Enter`, retain unfinished text, and recover SSH-aware startup state, including Windows hosts reached through `ssh -t`.
+A workspace is a named collection of nodes. A node is one first-level terminal tab and can contain one to five command windows: terminals, local web tools, or intranet pages. This keeps project tools together without filling the top-level tab bar.
+
+![Workspace and node configuration](res/images/node.png)
+
+- **Workspaces and nodes** — group profiles, SSH connections, startup directories, icons, colors, and startup commands. Lock a workspace when its layout is ready to prevent accidental edits.
+- **Command subtabs** — keep related terminal commands and WebView tools inside a node. Put their selector at the top left, top right, or bottom right.
+- **Direct execution** — download the release EXE and run it directly; no installer is required.
+
+## Terminals, local tools, and debugging together
+
+Use a node for the shell commands that operate on a project, then add the web views that support that work. A command window can start a terminal command or show an already-running local service URL.
+
+![Embedded debugging tool](res/images/debug.png)
+
+![Embedded code workspace](res/images/code.png)
+
+Web windows use the system-installed WebView Runtime. The application does not download, install, package, or select its version. If a page cannot render correctly, install or update the Runtime from the [official WebView page](https://developer.microsoft.com/en-us/microsoft-edge/webview2/), then restart the application.
 
 ## Quick start
 
-Launch `bin\Start-WindowsTerminalPortable.cmd`. To store the extracted payload, settings, and workspaces in a chosen directory, launch with:
+1. Run the downloaded executable.
+2. Select the workspace name at the upper left to open workspace management.
+3. Create a workspace and a node, then select a terminal profile and startup directory.
+4. Add terminal command windows with `+`, or add a web window with the globe icon and its complete URL.
+5. Save and reopen the workspace to create the configured sessions.
 
-```powershell
-WindowsTerminalPortable.exe --portable-root <directory>
-```
-
-Open workspace management from the workspace name at the upper left. Create or select a node, choose its profile and startup directory, then configure its command windows. See the command-subtabs guide for the complete workflow and the codev example.
+Run the downloaded executable directly.
 
 ## Documentation
 
+- [User guide](docs/usage/eng/getting-started.md)
 - [Workspace node command subtabs guide](docs/usage/eng/workspace-node-command-subtabs.md)
 - [Release notes](docs/usage/eng/release-notes.md)
-- [Chinese command-subtabs guide](docs/usage/cn/workspace-node-command-subtabs.md)
-- [Chinese release notes](docs/usage/cn/release-notes.md)
+- [中文使用说明](docs/usage/cn/getting-started.md)
+- [工作区节点命令子 Tab 使用说明](docs/usage/cn/workspace-node-command-subtabs.md)
+- [中文发行说明](docs/usage/cn/release-notes.md)
 - [Build guide](README-build.md)
-- [Design and implementation notes](docs/)
-
-## Building
-
-Read the [Build guide](README-build.md) before compiling, testing, packaging, or reporting a build result. For Host, Settings, tab, XAML, or terminal-runtime changes, validate the deliverable with:
-
-```powershell
-cmake --build build --target full
-```
-
-Individual library, DLL, executable, or internal Ninja targets are diagnostic checks only and may leave `bin/` with an older payload.
-
-## Repository layout
-
-- `src/`: workspace core logic and Terminal-facing glue.
-- `res/`: workspace resources.
-- `tools/`: build and resource-generation tools.
-- `microsoft/`: Windows Terminal source and checked-in dependencies.
-- `docs/usage/eng/` and `docs/usage/cn/`: English and Chinese user documentation.
-- `bin/`: portable release artifacts.
 
 ## License and upstream project
 

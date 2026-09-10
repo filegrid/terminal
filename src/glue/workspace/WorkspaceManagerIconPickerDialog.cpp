@@ -43,8 +43,8 @@ namespace terminal::workspace
             { L"sharp", L"WorkspaceEditor_IconFamilySharp" },
         } };
         constexpr std::array<IconSection, 6> Sections{ {
-            { L"numbers", L"数字 0-9", 10 }, { L"letters", L"字母 A-Z", 26 }, { L"daily", L"日常", 20 },
-            { L"development", L"研发", 20 }, { L"office", L"办公", 20 }, { L"windows", L"Windows / OS", 20 },
+            { L"numbers", L"WorkspaceUi_IconFamilyNumbers", 10 }, { L"letters", L"WorkspaceUi_IconFamilyLetters", 26 }, { L"daily", L"WorkspaceUi_IconFamilyDaily", 20 },
+            { L"development", L"WorkspaceUi_IconFamilyDevelopment", 20 }, { L"office", L"WorkspaceUi_IconFamilyOffice", 20 }, { L"windows", L"WorkspaceUi_IconFamilyWindows", 20 },
         } };
 
         std::wstring _descriptor(const std::wstring& family, const IconSection& section, const uint32_t index)
@@ -122,7 +122,7 @@ namespace terminal::workspace
         auto family = std::make_shared<std::wstring>(_familyFromIcon(*selected));
         auto root = StackPanel{};
         root.Spacing(4); root.Width(412); root.MinWidth(412); root.Height(544); root.MinHeight(544);
-        dialog.Title(box_value(L"选择图标"));
+        dialog.Title(box_value(RS_(L"WorkspaceUi_ChooseIcon")));
 
         auto header = StackPanel{};
         header.Orientation(Orientation::Horizontal); header.Spacing(4);
@@ -138,7 +138,7 @@ namespace terminal::workspace
             header.Children().Append(button);
         }
         auto chooseFile = HyperlinkButton{};
-        chooseFile.Content(box_value(L"选择本地文件"));
+        chooseFile.Content(box_value(RS_(L"WorkspaceUi_ChooseLocalFile")));
         chooseFile.Click([dialog, selected](auto&&, auto&&) {
             [](ContentDialog dialog, std::shared_ptr<std::wstring> selected) -> safe_void_coroutine {
                 const auto path = co_await OpenImagePicker(nullptr);

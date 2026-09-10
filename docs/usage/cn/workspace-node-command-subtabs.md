@@ -1,7 +1,5 @@
 # 工作区节点命令子 Tab 使用说明
 
-适用于 0.0.4 及以后版本。
-
 一个工作区节点可包含多个命令窗口，但一级标签栏仍只显示该节点。选中节点后，可在内容区的第二级 Tab 或右侧图标之间切换命令窗口；相关的终端、服务和 Web 工具因此不会占满顶层标签栏。
 
 ## 前提
@@ -23,22 +21,7 @@
 
 ## codev 示例
 
-`/mnt/d/my/codev/` 中的 `codev` 会以 Docker 启动 code-server，把当前项目映射到浏览器编辑器。环境需要 Linux 或 WSL2、正在运行的 Docker daemon、`curl` 和 `bash`。建议将命令软链接到源码目录，让脚本可找到同目录的 `Dockerfile`：
-
-```bash
-mkdir -p ~/.local/bin
-ln -sfn /mnt/d/my/codev/codev ~/.local/bin/codev
-export PATH="$HOME/.local/bin:$PATH"
-codev --help
-```
-
-首次运行会下载 code-server（默认 `4.136.2`）、构建 `codev:latest`，并创建共享插件卷 `codev-extensions`。也可预先执行：
-
-```bash
-codev rebuild
-```
-
-在项目目录启动编辑器：
+若使用 codev，请按其自身文档完成安装后，在项目目录启动编辑器：
 
 ```bash
 cd /path/to/your-project
@@ -59,7 +42,6 @@ codev
 cd /path/to/your-project
 codev stop       # 删除当前项目的容器，不删除项目文件或共享插件
 codev list       # 查看已记录实例
-codev rebuild    # 重建镜像；之后需 stop 再 codev 才会使用新镜像
 ```
 
 `codev` 默认以 `--auth none` 绑定 `0.0.0.0`，只应在本机或可信网络使用。在 WSL2 中，Windows 端 WebView 应优先使用 `http://127.0.0.1:端口`。WebView 只显示网页，不会自动启动 `codev`；请先运行 `codev`。
