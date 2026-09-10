@@ -478,6 +478,42 @@
                 multiWindowDemoItem.Icon(icon);
             }
             demoItem.MenuItems().Append(multiWindowDemoItem);
+
+            auto xamlWebViewComparisonItem = MUX::Controls::NavigationViewItem{};
+            xamlWebViewComparisonItem.Content(box_value(L"XAML WebView2"));
+            xamlWebViewComparisonItem.SelectsOnInvoked(false);
+            {
+                WUX::Controls::SymbolIcon icon{};
+                icon.Symbol(WUX::Controls::Symbol::World);
+                xamlWebViewComparisonItem.Icon(icon);
+            }
+            for (const auto [index, name] : { std::pair<int32_t, const wchar_t*>{ 0, L"QQ" }, { 1, L"节点 1" }, { 2, L"localhost" } })
+            {
+                auto pageItem = MUX::Controls::NavigationViewItem{};
+                pageItem.Content(box_value(name));
+                pageItem.Tag(box_value(-50 - index));
+                pageItem.SelectsOnInvoked(false);
+                xamlWebViewComparisonItem.MenuItems().Append(pageItem);
+            }
+            demoItem.MenuItems().Append(xamlWebViewComparisonItem);
+
+            auto nativeWebViewComparisonItem = MUX::Controls::NavigationViewItem{};
+            nativeWebViewComparisonItem.Content(box_value(L"原生 WebView2"));
+            nativeWebViewComparisonItem.SelectsOnInvoked(false);
+            {
+                WUX::Controls::SymbolIcon icon{};
+                icon.Symbol(WUX::Controls::Symbol::World);
+                nativeWebViewComparisonItem.Icon(icon);
+            }
+            for (const auto [index, name] : { std::pair<int32_t, const wchar_t*>{ 0, L"QQ" }, { 1, L"节点 1" }, { 2, L"localhost" } })
+            {
+                auto pageItem = MUX::Controls::NavigationViewItem{};
+                pageItem.Content(box_value(name));
+                pageItem.Tag(box_value(-60 - index));
+                pageItem.SelectsOnInvoked(false);
+                nativeWebViewComparisonItem.MenuItems().Append(pageItem);
+            }
+            demoItem.MenuItems().Append(nativeWebViewComparisonItem);
             nav.FooterMenuItems().Append(demoItem);
         }
 
@@ -516,6 +552,11 @@
         nav.ItemInvoked([weakThis{ get_weak() }, contentGrid](auto&&, const MUX::Controls::NavigationViewItemInvokedEventArgs& args) {
             if (auto self{ weakThis.get() })
             {
+                if (self->_workspaceManagerNativeWebView)
+                {
+                    self->_workspaceManagerNativeWebView->Close();
+                    self->_workspaceManagerNativeWebView.reset();
+                }
                 if (const auto item = args.InvokedItemContainer().try_as<MUX::Controls::NavigationViewItem>())
                 {
                     if (const auto tag = item.Tag())
@@ -576,51 +617,19 @@
                             contentGrid.RowDefinitions().Clear();
                             contentGrid.RowDefinitions().Append(RowDefinition{});
 
-                            auto webView = MUX::Controls::WebView2{};
-                            webView.HorizontalAlignment(HorizontalAlignment::Stretch);
-                            webView.VerticalAlignment(VerticalAlignment::Stretch);
                             auto webHost = Grid{};
-                            auto status = TextBlock{};
-                            status.Text(L"正在初始化 WebView2…");
-                            status.HorizontalAlignment(HorizontalAlignment::Center);
-                            status.VerticalAlignment(VerticalAlignment::Center);
-                            webHost.Children().Append(webView);
-                            webHost.Children().Append(status);
+                            webHost.Background(WUX::Media::SolidColorBrush{ Windows::UI::Colors::Transparent() });
                             const auto webRoot = (std::filesystem::path{ wil::GetModuleFileNameW<std::wstring>(nullptr) }.parent_path() / L"res" / L"web").wstring();
-                            webView.CoreWebView2Initialized([webView, webRoot, status](auto&&, const auto& args) {
-                                if (SUCCEEDED(args.Exception()))
-                                {
-                                    const auto core = webView.CoreWebView2();
-                                    core.SetVirtualHostNameToFolderMapping(L"workspace.local",
-                                                                            webRoot,
-                                                                            winrt::Microsoft::Web::WebView2::Core::CoreWebView2HostResourceAccessKind::DenyCors);
-                                    core.Navigate(L"https://workspace.local/index.html");
-                                }
-                                else
-                                {
-                                    status.Text(L"WebView2 初始化失败。");
-                                }
-                            });
-                            webView.Loaded([webView, status](auto&&, auto&&) -> safe_void_coroutine {
-                                try
-                                {
-                                    co_await webView.EnsureCoreWebView2Async();
-                                }
-                                catch (const winrt::hresult_error& error)
-                                {
-                                    status.Text(winrt::hstring{ L"WebView2 初始化调用失败：" } + winrt::to_hstring(error.code().value));
-                                }
-                            });
-                            webView.NavigationCompleted([status](auto&&, const auto& args) {
-                                if (args.IsSuccess())
-                                {
-                                    status.Visibility(Visibility::Collapsed);
-                                }
-                                else
-                                {
-                                    status.Text(L"页面加载失败。");
-                                }
-                            });
+                            self->_workspaceManagerNativeWebView = WorkspaceNativeHwndWebViewHost::Create(
+                                webHost,
+                                self->_hostingHwnd.value_or(nullptr),
+                                L"https://workspace.local/index.html",
+                                [webRoot](ICoreWebView2* core) {
+                                    std::ignore = WorkspaceNativeHwndWebViewHost::MapVirtualHostToFolder(
+                                        core,
+                                        L"workspace.local",
+                                        webRoot);
+                                });
                             contentGrid.Children().Append(webHost);
                         }
                         else if (value == -4)
@@ -631,6 +640,21 @@
                             contentGrid.RowDefinitions().Clear();
                             contentGrid.RowDefinitions().Append(RowDefinition{});
                             contentGrid.Children().Append(self->_BuildWorkspaceMultiWindowDemo());
+                        }
+                        else if ((value >= -52 && value <= -50) || (value >= -62 && value <= -60))
+                        {
+                            contentGrid.Children().Clear();
+                            contentGrid.RowDefinitions().Clear();
+                            contentGrid.RowDefinitions().Append(RowDefinition{});
+                            const auto urlIndex = gsl::narrow_cast<size_t>(value <= -60 ? -60 - value : -50 - value);
+                            if (value >= -52)
+                            {
+                                contentGrid.Children().Append(self->_BuildWorkspaceXamlWebViewHostDemo(urlIndex));
+                            }
+                            else
+                            {
+                                self->_ShowWorkspaceNativeWebViewHostDemo(urlIndex);
+                            }
                         }
                     }
                     else if (item.MenuItems().Size() > 0)

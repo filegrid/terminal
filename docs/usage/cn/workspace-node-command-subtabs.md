@@ -8,7 +8,7 @@
 
 - 使用可编辑、未锁定的工作区；锁定的工作区需先解锁并进入编辑模式。
 - 节点已选择可用的终端 profile。终端类型命令窗口复用此 profile、节点启动目录和标题策略。
-- WebView 窗口需要可用的 Microsoft Edge WebView2 Runtime。
+- WebView 窗口使用系统已安装的默认 WebView Runtime；程序不会下载、安装、打包或指定其版本和路径。若网页无法正常显示，请从[官方页面](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)安装或更新运行时，然后重新启动程序。
 
 ## 配置命令子 Tab
 

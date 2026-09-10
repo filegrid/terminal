@@ -7,6 +7,11 @@
 #include "Tab.h"
 #include "Tab.g.h"
 
+namespace winrt::TerminalApp::implementation
+{
+    class WorkspaceNativeHwndWebViewHost;
+}
+
 // fwdecl unittest classes
 namespace TerminalAppLocalTests
 {
@@ -41,12 +46,13 @@ namespace winrt::TerminalApp::implementation
                                        std::vector<winrt::Windows::UI::Xaml::UIElement> roots,
                                        std::vector<winrt::hstring> titles,
                                        std::vector<winrt::hstring> icons,
+                                       std::vector<std::shared_ptr<WorkspaceNativeHwndWebViewHost>> nativeWebViews,
                                        bool iconButtons,
                                        bool dockBottom);
         // Replaces the node's initial terminal content with a configured
         // browser window. This keeps a WebView workspace command inside the
         // same first-level workspace Tab.
-        void SetTerminalContentWebView(winrt::hstring url);
+        void SetTerminalContentWebView(winrt::hstring url, HWND parentWindow);
 
         void AttachColorPicker(winrt::TerminalApp::ColorPickupFlyout& colorPicker);
 
@@ -192,6 +198,7 @@ namespace winrt::TerminalApp::implementation
         winrt::Microsoft::UI::Xaml::Controls::TabView _commandTabView{ nullptr };
         std::vector<std::shared_ptr<Pane>> _commandTabPanes;
         std::vector<winrt::Windows::UI::Xaml::UIElement> _commandTabRoots;
+        std::vector<std::shared_ptr<WorkspaceNativeHwndWebViewHost>> _commandTabNativeWebViews;
         std::vector<winrt::hstring> _commandTabTitles;
         std::vector<winrt::hstring> _commandTabIcons;
         std::vector<winrt::Windows::UI::Xaml::Controls::Button> _commandTabButtons;

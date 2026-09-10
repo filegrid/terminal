@@ -4347,7 +4347,7 @@ add_custom_command(OUTPUT "${_terminal_app_pri}"
 
 set(_terminal_app_sources
     init.cpp AppCommandlineArgs.cpp Commandline.cpp CommandPaletteItems.cpp Jumplist.cpp LanguageProfileNotifier.cpp
-    MinMaxCloseControl.cpp Remoting.cpp PaletteItemTemplateSelector.cpp Tab.cpp TaskbarState.cpp TerminalPage.cpp WorkspaceMultiWindowDemo.cpp WorkspaceCommandTabHost.cpp TabManagement.cpp
+    MinMaxCloseControl.cpp Remoting.cpp PaletteItemTemplateSelector.cpp Tab.cpp TaskbarState.cpp TerminalPage.cpp WorkspaceMultiWindowDemo.cpp WorkspaceWebViewHostDemo.cpp WorkspaceNativeHwndWebViewHost.cpp WorkspaceCommandTabHost.cpp TabManagement.cpp
     ActionPreviewHandlers.cpp TerminalTabStatus.cpp TitlebarControl.cpp TabRowControl.cpp TabHeaderControl.cpp HighlightedTextControl.cpp
     ColorPickupFlyout.cpp CommandPalette.cpp FilteredCommand.cpp Pane.cpp Pane.LayoutSizeNode.cpp DebugTapConnection.cpp AppKeyBindings.cpp
     ShortcutActionDispatch.cpp AboutDialog.cpp App.cpp AppActionHandlers.cpp AppLogic.cpp ContentManager.cpp TerminalWindow.cpp
@@ -5299,7 +5299,11 @@ target_link_libraries(${_glue_extension_target} PRIVATE
 target_link_options(${_glue_extension_target} PRIVATE ${_ext_core_link_options})
 # WindowsTerminal links TerminalAppLib directly as well as TerminalApp.dll, so
 # propagate the core archive from the static host library to every final linker.
-target_link_libraries(${_terminal_app_lib_target} PUBLIC ${_workspace_chat_core_target})
+# The demo's native CompositionController host calls the WebView2 C API
+# directly. Keep its loader import library public because WindowsTerminal also
+# links TerminalAppLib directly.
+target_link_libraries(${_terminal_app_lib_target} PUBLIC ${_workspace_chat_core_target}
+    "${_openconsole_root}/packages/Microsoft.Web.WebView2.1.0.1661.34/build/native/${PORTABLE_PLATFORM}/WebView2Loader.dll.lib")
 target_link_libraries(${_terminal_settings_model_target} PRIVATE ${_workspace_chat_core_target})
 target_link_libraries(${_windows_terminal_target} PRIVATE ${_workspace_chat_core_target})
 set_target_properties(${_glue_extension_target} PROPERTIES

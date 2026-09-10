@@ -44,6 +44,7 @@ namespace terminal::workspace
 namespace winrt::TerminalApp::implementation
 {
     struct TerminalSettingsCache;
+    class WorkspaceNativeHwndWebViewHost;
 
     inline constexpr uint32_t DefaultRowsToScroll{ 3 };
     inline constexpr std::wstring_view TabletInputServiceKey{ L"TabletInputService" };
@@ -239,6 +240,7 @@ namespace winrt::TerminalApp::implementation
     private:
         friend struct TerminalPageT<TerminalPage>; // for Xaml to bind events
         std::optional<HWND> _hostingHwnd;
+        std::shared_ptr<WorkspaceNativeHwndWebViewHost> _workspaceManagerNativeWebView;
 
         // If you add controls here, but forget to null them either here or in
         // the ctor, you're going to have a bad time. It'll mysteriously fail to

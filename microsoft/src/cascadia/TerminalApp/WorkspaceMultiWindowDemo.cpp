@@ -3,6 +3,15 @@
 
 #include "pch.h"
 #include "TerminalPage.h"
+#include "../../../../src/core/chat/WorkspaceDiagnosticLog.h"
+
+#include <winrt/Microsoft.Web.WebView2.Core.h>
+#include "../../../packages/Microsoft.Web.WebView2.1.0.1661.34/build/native/include/WebView2.h"
+#include <wrl.h>
+#include <winrt/Windows.UI.Composition.h>
+#include <winrt/Windows.UI.Xaml.Hosting.h>
+
+#include <filesystem>
 
 using namespace winrt;
 using namespace winrt::Windows::UI;
@@ -13,7 +22,238 @@ using namespace winrt::Windows::UI::Xaml::Media;
 
 namespace winrt::TerminalApp::implementation
 {
-    UIElement TerminalPage::_BuildWorkspaceMultiWindowDemo()
+    namespace
+    {
+        using ::Microsoft::WRL::Callback;
+        using ::Microsoft::WRL::ComPtr;
+
+        std::wstring _WorkspaceWebViewDemoDataDirectory()
+        {
+            std::wstring value(32768, L'\0');
+            const auto length = GetEnvironmentVariableW(L"WT_PORTABLE_ROOT", value.data(), gsl::narrow_cast<DWORD>(value.size()));
+            if (length > 0 && length < value.size())
+            {
+                value.resize(length);
+                return value + L"\\webview\\native-host-demo";
+            }
+            return std::filesystem::temp_directory_path().wstring() + L"\\WindowsTerminalNativeWebViewDemo";
+        }
+
+        struct NativeWebViewDemoHost final : std::enable_shared_from_this<NativeWebViewDemoHost>
+        {
+            NativeWebViewDemoHost(const Grid& surface, const HWND parentWindow, hstring url) :
+                _surface(surface),
+                _parentWindow(parentWindow),
+                _url(std::move(url)),
+                _userDataDirectory(_WorkspaceWebViewDemoDataDirectory())
+            {
+            }
+
+            ~NativeWebViewDemoHost()
+            {
+                Close();
+            }
+
+            void Initialize()
+            {
+                Json::Value payload{ Json::objectValue };
+                terminal::workspacechat::AddDiagnosticTextFields(payload, "url", _url.c_str());
+                terminal::workspacechat::AddDiagnosticTextFields(payload, "userDataDirectory", _userDataDirectory);
+                payload["parentWindow"] = Json::UInt64{ gsl::narrow_cast<uint64_t>(reinterpret_cast<uintptr_t>(_parentWindow)) };
+                std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_native_webview_demo_create_requested", payload);
+
+                _visual = Windows::UI::Xaml::Hosting::ElementCompositionPreview::GetElementVisual(_surface).Compositor().CreateContainerVisual();
+                Windows::UI::Xaml::Hosting::ElementCompositionPreview::SetElementChildVisual(_surface, _visual);
+                _surface.SizeChanged([weak = weak_from_this()](auto&&, auto&&) {
+                    if (const auto self = weak.lock())
+                    {
+                        self->_Resize();
+                    }
+                });
+                _surface.PointerPressed([weak = weak_from_this()](auto&&, const auto& args) {
+                    if (const auto self = weak.lock())
+                    {
+                        self->_SendMouse(COREWEBVIEW2_MOUSE_EVENT_KIND_LEFT_BUTTON_DOWN, args);
+                    }
+                });
+                _surface.PointerReleased([weak = weak_from_this()](auto&&, const auto& args) {
+                    if (const auto self = weak.lock())
+                    {
+                        self->_SendMouse(COREWEBVIEW2_MOUSE_EVENT_KIND_LEFT_BUTTON_UP, args);
+                    }
+                });
+                _surface.PointerMoved([weak = weak_from_this()](auto&&, const auto& args) {
+                    if (const auto self = weak.lock())
+                    {
+                        self->_SendMouse(COREWEBVIEW2_MOUSE_EVENT_KIND_MOVE, args);
+                    }
+                });
+
+                std::error_code error;
+                std::filesystem::create_directories(_userDataDirectory, error);
+                const auto callback = Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
+                    [self = shared_from_this()](const HRESULT result, ICoreWebView2Environment* environment) -> HRESULT {
+                        if (FAILED(result) || !environment)
+                        {
+                            self->_LogFailure(L"workspace_native_webview_demo_environment_failed", result);
+                            return S_OK;
+                        }
+                        self->_environment = environment;
+                        ComPtr<ICoreWebView2Environment3> environment3;
+                        if (const auto queryResult = environment->QueryInterface(IID_PPV_ARGS(&environment3)); FAILED(queryResult))
+                        {
+                            self->_LogFailure(L"workspace_native_webview_demo_composition_unavailable", queryResult);
+                            return S_OK;
+                        }
+                        return environment3->CreateCoreWebView2CompositionController(
+                            self->_parentWindow,
+                            Callback<ICoreWebView2CreateCoreWebView2CompositionControllerCompletedHandler>(
+                                [self](const HRESULT controllerResult, ICoreWebView2CompositionController* controller) -> HRESULT {
+                                    if (FAILED(controllerResult) || !controller)
+                                    {
+                                        self->_LogFailure(L"workspace_native_webview_demo_controller_failed", controllerResult);
+                                        return S_OK;
+                                    }
+                                    self->_compositionController = controller;
+                                    if (FAILED(controller->QueryInterface(IID_PPV_ARGS(&self->_controller))))
+                                    {
+                                        self->_LogFailure(L"workspace_native_webview_demo_controller_interface_failed", E_NOINTERFACE);
+                                        return S_OK;
+                                    }
+                                    if (FAILED(self->_controller->get_CoreWebView2(&self->_core)))
+                                    {
+                                        self->_LogFailure(L"workspace_native_webview_demo_core_failed", E_FAIL);
+                                        return S_OK;
+                                    }
+                                    EventRegistrationToken navigationToken{};
+                                    std::ignore = self->_core->add_NavigationCompleted(
+                                        Callback<ICoreWebView2NavigationCompletedEventHandler>(
+                                            [self](ICoreWebView2*, ICoreWebView2NavigationCompletedEventArgs* args) -> HRESULT {
+                                                BOOL success{};
+                                                COREWEBVIEW2_WEB_ERROR_STATUS status{};
+                                                if (args)
+                                                {
+                                                    std::ignore = args->get_IsSuccess(&success);
+                                                    std::ignore = args->get_WebErrorStatus(&status);
+                                                }
+                                                Json::Value payload{ Json::objectValue };
+                                                payload["success"] = success == TRUE;
+                                                payload["webErrorStatus"] = static_cast<int>(status);
+                                                terminal::workspacechat::AddDiagnosticTextFields(payload, "url", self->_url.c_str());
+                                                std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_native_webview_demo_navigation_completed", payload);
+                                                return S_OK;
+                                            }).Get(),
+                                        &navigationToken);
+                                    EventRegistrationToken processFailedToken{};
+                                    std::ignore = self->_core->add_ProcessFailed(
+                                        Callback<ICoreWebView2ProcessFailedEventHandler>(
+                                            [self](ICoreWebView2*, ICoreWebView2ProcessFailedEventArgs* args) -> HRESULT {
+                                                COREWEBVIEW2_PROCESS_FAILED_KIND kind{};
+                                                if (args)
+                                                {
+                                                    std::ignore = args->get_ProcessFailedKind(&kind);
+                                                }
+                                                Json::Value payload{ Json::objectValue };
+                                                payload["processFailedKind"] = static_cast<int>(kind);
+                                                terminal::workspacechat::AddDiagnosticTextFields(payload, "url", self->_url.c_str());
+                                                std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_native_webview_demo_process_failed", payload);
+                                                return S_OK;
+                                            }).Get(),
+                                        &processFailedToken);
+                                    const auto visualUnknown = reinterpret_cast<IUnknown*>(winrt::get_abi(self->_visual));
+                                    if (const auto targetResult = controller->put_RootVisualTarget(visualUnknown); FAILED(targetResult))
+                                    {
+                                        self->_LogFailure(L"workspace_native_webview_demo_visual_target_failed", targetResult);
+                                        return S_OK;
+                                    }
+                                    self->_controller->put_IsVisible(TRUE);
+                                    self->_Resize();
+                                    self->_core->Navigate(self->_url.c_str());
+                                    Json::Value payload{ Json::objectValue };
+                                    terminal::workspacechat::AddDiagnosticTextFields(payload, "url", self->_url.c_str());
+                                    std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_native_webview_demo_ready", payload);
+                                    return S_OK;
+                                }).Get());
+                    });
+                const auto result = CreateCoreWebView2EnvironmentWithOptions(nullptr, _userDataDirectory.c_str(), nullptr, callback.Get());
+                if (FAILED(result))
+                {
+                    _LogFailure(L"workspace_native_webview_demo_environment_request_failed", result);
+                }
+            }
+
+            void Close() noexcept
+            {
+                if (_controller)
+                {
+                    _controller->Close();
+                }
+                _core.Reset();
+                _controller.Reset();
+                _compositionController.Reset();
+                _environment.Reset();
+                if (_surface && _visual)
+                {
+                    Windows::UI::Xaml::Hosting::ElementCompositionPreview::SetElementChildVisual(_surface, nullptr);
+                }
+                _visual = nullptr;
+            }
+
+        private:
+            void _Resize()
+            {
+                if (!_controller || !_visual)
+                {
+                    return;
+                }
+                const auto scale = Windows::Graphics::Display::DisplayInformation::GetForCurrentView().RawPixelsPerViewPixel();
+                const auto width = std::max(0L, gsl::narrow_cast<LONG>(std::lround(_surface.ActualWidth() * scale)));
+                const auto height = std::max(0L, gsl::narrow_cast<LONG>(std::lround(_surface.ActualHeight() * scale)));
+                _visual.Size({ static_cast<float>(width), static_cast<float>(height) });
+                std::ignore = _controller->put_Bounds(RECT{ 0, 0, width, height });
+            }
+
+            void _SendMouse(const COREWEBVIEW2_MOUSE_EVENT_KIND kind, const Windows::UI::Xaml::Input::PointerRoutedEventArgs& args)
+            {
+                if (!_compositionController)
+                {
+                    return;
+                }
+                const auto scale = Windows::Graphics::Display::DisplayInformation::GetForCurrentView().RawPixelsPerViewPixel();
+                const auto position = args.GetCurrentPoint(_surface).Position();
+                const POINT point{
+                    gsl::narrow_cast<LONG>(std::lround(position.X * scale)),
+                    gsl::narrow_cast<LONG>(std::lround(position.Y * scale))
+                };
+                std::ignore = _compositionController->SendMouseInput(kind, COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_NONE, 0, point);
+                if (kind == COREWEBVIEW2_MOUSE_EVENT_KIND_LEFT_BUTTON_DOWN && _controller)
+                {
+                    std::ignore = _controller->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+                }
+            }
+
+            void _LogFailure(const std::wstring_view eventName, const HRESULT result) const
+            {
+                Json::Value payload{ Json::objectValue };
+                payload["hresult"] = static_cast<int>(result);
+                terminal::workspacechat::AddDiagnosticTextFields(payload, "url", _url.c_str());
+                terminal::workspacechat::AddDiagnosticTextFields(payload, "userDataDirectory", _userDataDirectory);
+                std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(eventName, payload);
+            }
+
+            Grid _surface{ nullptr };
+            HWND _parentWindow{};
+            hstring _url;
+            std::wstring _userDataDirectory;
+            Windows::UI::Composition::ContainerVisual _visual{ nullptr };
+            ComPtr<ICoreWebView2Environment> _environment;
+            ComPtr<ICoreWebView2CompositionController> _compositionController;
+            ComPtr<ICoreWebView2Controller> _controller;
+            ComPtr<ICoreWebView2> _core;
+        };
+    }
+
+    UIElement TerminalPage::_BuildWorkspaceMultiWindowDemo(const int webViewHostMode)
     {
         // Deliberately local-only: this is the Step 1 Host visual prototype,
         // not a workspace model, terminal launcher, or persistence feature.
@@ -34,9 +274,20 @@ namespace winrt::TerminalApp::implementation
             bool Split{ true };
             int TabPlacement{ 0 }; // 0: left-top, 1: right-top, 2: right-bottom
             size_t Active{ 0 };
+            // This is deliberately local to the demo. It does not alter the
+            // workspace command host or any persisted workspace setting.
+            bool WebViewHostComparison{};
+            int WebViewHostMode{}; // 0: XAML WebView2; 1: native composition controller
+            std::vector<std::shared_ptr<NativeWebViewDemoHost>> NativeWebViews;
+
+            explicit DemoState(const int mode) :
+                WebViewHostComparison(mode >= 0),
+                WebViewHostMode(mode >= 0 ? mode : 0)
+            {
+            }
         };
 
-        const auto state = std::make_shared<DemoState>();
+        const auto state = std::make_shared<DemoState>(webViewHostMode);
         const auto host = Grid{};
         host.Margin(ThicknessHelper::FromLengths(16, 16, 16, 16));
         // Keep the prototype visually and behaviorally tied to the existing
@@ -56,6 +307,11 @@ namespace winrt::TerminalApp::implementation
         const auto rebuild = std::make_shared<std::function<void()>>();
 
         *rebuild = [this, host, state, rebuild, applyWorkspaceStyle]() {
+            for (const auto& nativeWebView : state->NativeWebViews)
+            {
+                nativeWebView->Close();
+            }
+            state->NativeWebViews.clear();
             host.Children().Clear();
             const auto snapSplitWeight = [](const double value, const double minimum, const double combined) {
                 constexpr double step = 0.05;
@@ -254,6 +510,32 @@ namespace winrt::TerminalApp::implementation
                 (*rebuild)();
             });
             settings.Children().Append(commandList);
+            {
+                auto comparison = CheckBox{};
+                comparison.Content(box_value(L"WebView2 宿主对照（打开 3 个现有地址）"));
+                comparison.IsChecked(state->WebViewHostComparison);
+                comparison.Checked([state, rebuild](auto&&, auto&&) {
+                    state->WebViewHostComparison = true;
+                    (*rebuild)();
+                });
+                comparison.Unchecked([state, rebuild](auto&&, auto&&) {
+                    state->WebViewHostComparison = false;
+                    (*rebuild)();
+                });
+                settings.Children().Append(makeWorkspaceSetting(L"诊断 Demo", comparison));
+                if (state->WebViewHostComparison)
+                {
+                    auto hostMode = ComboBox{};
+                    hostMode.Items().Append(box_value(L"XAML WebView2（当前实现）"));
+                    hostMode.Items().Append(box_value(L"原生 CompositionController（Tauri/Wry 路线）"));
+                    hostMode.SelectedIndex(state->WebViewHostMode);
+                    hostMode.SelectionChanged([state, rebuild](auto&& sender, auto&&) {
+                        state->WebViewHostMode = sender.as<ComboBox>().SelectedIndex();
+                        (*rebuild)();
+                    });
+                    settings.Children().Append(makeWorkspaceSetting(L"对照宿主", hostMode));
+                }
+            }
             if (state->Commands.size() > 1)
             {
             settings.Children().Append(makeSectionTitle(L"多窗口展示"));
@@ -441,6 +723,94 @@ namespace winrt::TerminalApp::implementation
             preview.BorderBrush(SolidColorBrush{ Colors::DimGray() });
             Grid::SetColumn(preview, 1);
             page.Children().Append(preview);
+            if (state->WebViewHostComparison)
+            {
+                const std::array<hstring, 3> urls{
+                    L"https://www.qq.com",
+                    L"http://127.0.0.1:8080/?folder=/home/coder/project",
+                    L"http://localhost:18080/"
+                };
+                auto layout = Grid{};
+                layout.Padding(ThicknessHelper::FromLengths(8, 8, 8, 8));
+                for (size_t index = 0; index < urls.size(); ++index)
+                {
+                    auto row = RowDefinition{};
+                    row.Height(GridLengthHelper::FromValueAndType(1, GridUnitType::Star));
+                    layout.RowDefinitions().Append(row);
+                }
+                auto heading = TextBlock{};
+                heading.Text(state->WebViewHostMode == 0 ? L"XAML WebView2：三个现有地址" : L"原生 CompositionController：三个现有地址");
+                heading.Margin(ThicknessHelper::FromLengths(10, 6, 10, 4));
+                heading.FontSize(14);
+                heading.HorizontalAlignment(HorizontalAlignment::Left);
+                heading.VerticalAlignment(VerticalAlignment::Top);
+                layout.Children().Append(heading);
+
+                for (size_t index = 0; index < urls.size(); ++index)
+                {
+                    auto tile = Grid{};
+                    tile.Margin(ThicknessHelper::FromLengths(0, 22, 0, 3));
+                    tile.BorderBrush(SolidColorBrush{ Color{ 255, 80, 80, 80 } });
+                    tile.BorderThickness(ThicknessHelper::FromLengths(1, 1, 1, 1));
+                    Grid::SetRow(tile, static_cast<int>(index));
+                    auto label = TextBlock{};
+                    label.Text(to_hstring(static_cast<int>(index + 1)) + L". " + urls[index]);
+                    label.Margin(ThicknessHelper::FromLengths(8, 3, 8, 3));
+                    label.FontSize(12);
+                    label.VerticalAlignment(VerticalAlignment::Top);
+                    tile.Children().Append(label);
+                    auto surface = Grid{};
+                    surface.Margin(ThicknessHelper::FromLengths(0, 25, 0, 0));
+                    tile.Children().Append(surface);
+                    if (state->WebViewHostMode == 0)
+                    {
+                        auto webView = Microsoft::UI::Xaml::Controls::WebView2{};
+                        webView.HorizontalAlignment(HorizontalAlignment::Stretch);
+                        webView.VerticalAlignment(VerticalAlignment::Stretch);
+                        webView.CoreWebView2Initialized([webView, url = urls[index]](auto&&, const auto& args) {
+                            Json::Value payload{ Json::objectValue };
+                            payload["initializationHresult"] = Json::Int{ args.Exception() };
+                            terminal::workspacechat::AddDiagnosticTextFields(payload, "url", url.c_str());
+                            std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_webview_demo_xaml_initialized", payload);
+                            if (SUCCEEDED(args.Exception()))
+                            {
+                                webView.CoreWebView2().Navigate(url);
+                            }
+                        });
+                        webView.Loaded([webView, url = urls[index]](auto&&, auto&&) -> winrt::fire_and_forget {
+                            try
+                            {
+                                co_await webView.EnsureCoreWebView2Async();
+                            }
+                            catch (const winrt::hresult_error& ex)
+                            {
+                                Json::Value payload{ Json::objectValue };
+                                terminal::workspacechat::AddDiagnosticTextFields(payload, "url", url.c_str());
+                                terminal::workspacechat::AppendExceptionDiagnostic(payload, ex);
+                                std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_webview_demo_xaml_ensure_exception", payload);
+                            }
+                        });
+                        webView.NavigationCompleted([url = urls[index]](auto&&, const auto& args) {
+                            Json::Value payload{ Json::objectValue };
+                            payload["success"] = args.IsSuccess();
+                            payload["webErrorStatus"] = static_cast<int>(args.WebErrorStatus());
+                            terminal::workspacechat::AddDiagnosticTextFields(payload, "url", url.c_str());
+                            std::ignore = terminal::workspacechat::AppendWorkspaceDiagnosticLog(L"workspace_webview_demo_xaml_navigation_completed", payload);
+                        });
+                        surface.Children().Append(webView);
+                    }
+                    else
+                    {
+                        const auto nativeWebView = std::make_shared<NativeWebViewDemoHost>(surface, _hostingHwnd.value_or(nullptr), urls[index]);
+                        state->NativeWebViews.emplace_back(nativeWebView);
+                        nativeWebView->Initialize();
+                    }
+                    layout.Children().Append(tile);
+                }
+                preview.Children().Append(layout);
+                host.Children().Append(page);
+                return;
+            }
             const auto makeTerminal = [state](const size_t index) {
                 auto terminal = Border{};
                 terminal.Margin(ThicknessHelper::FromLengths(6, state->Commands.size() == 1 ? 6 : 34, 6, 6));
@@ -643,4 +1013,5 @@ namespace winrt::TerminalApp::implementation
         (*rebuild)();
         return host;
     }
+
 }
