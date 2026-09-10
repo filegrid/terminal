@@ -1,41 +1,28 @@
-# Workspace Node Command Subtabs Guide
+# Workspace Nodes and Command Windows
 
-A workspace node can contain multiple command windows while remaining a single first-level tab. Select the node, then switch its command windows from the second-level tabs in the content area or from the right-side icon strip. This keeps related terminals, services, and web tools out of the top-level tab row.
+A node is a workspace top-level tab. Command windows are terminals or WebViews inside the node. A node supports one to five command windows.
 
-## Configure command subtabs
+## Add and edit windows
 
-1. Open **Workspace Management** from the top-right drop-down menu, then choose the workspace and node in the left navigation.
-2. In **Command windows**, choose **Add command window** and enter its name and startup command. Leave the command empty to start only the node profile.
-3. Choose **Add WebView window**, then enter its name and complete URL, for example `http://127.0.0.1:8080`.
-4. Choose an icon for each item and adjust its order.
-5. Under **Multi-window display**, choose tabs or side-by-side. A node containing WebView uses tabs.
-6. Choose top-left, top-right, or bottom-right under **Tab position**, then select **Save** at the bottom of the management tab. Reopen the workspace to create sessions from the new configuration.
+1. Open **Workspace Management** from the top-right drop-down menu, then open the workspace and target node in the left navigation.
+2. In **Command windows**, click `+` to add a terminal window or the globe icon to add a WebView window.
+3. Name every window. For a terminal window, enter its startup command; leave it empty to start the terminal with the node profile and startup directory. A WebView needs a complete URL, such as `http://127.0.0.1:8080`.
+4. Choose an icon, drag windows into order, or remove them. Removal is available only while the node still has another window.
+5. Save the workspace and reopen it to create sessions from the edited definition.
 
-Each node supports one to five command windows. Closing a first-level node tab closes every window it contains; switching subtabs does not restart an already created terminal session.
+The node profile and startup directory are shared by its terminal windows. A WebView does not execute a terminal command: it loads its URL directly. Start any local service yourself before opening the workspace.
 
-## codev example
+## Choose a window layout
 
-If you use codev, start it from the project directory after installing it according to its own documentation:
+With two or more windows, **Multi-window display** offers:
 
-```bash
-cd /path/to/your-project
-codev
-```
+- **Side by side**: show multiple terminals at once and drag dividers to adjust their proportions.
+- **Tab**: show one window at a time; place the subtab strip at top left, top right, or bottom right.
 
-It prints an address such as `http://127.0.0.1:8080`. Configure the following windows in one workspace node and select **Tab** display mode:
+A node containing a WebView uses the tab layout. A WebView cannot be hosted in Terminal's native split-pane tree. Switching subtabs does not restart an existing terminal session.
 
-| Order | Name | Type | Command or URL |
-| --- | --- | --- | --- |
-| 1 | Development terminal | Terminal | Empty, or `wsl` / your project startup command |
-| 2 | VS Code Web | WebView | `http://127.0.0.1:8080` |
-| 3 | Dev Server | Terminal | `npm run dev` |
+## Runtime behavior
 
-Multiple projects use consecutive ports such as `8080` and `8081`; enter the URL that `codev` prints for each node. Manage instances with:
+Opening a workspace creates nodes from its saved definition. Closing a node's top-level tab closes all of its terminals and WebViews; switching a node or subtab does not close them.
 
-```bash
-cd /path/to/your-project
-codev stop       # removes this project's container, not project files or shared extensions
-codev list       # lists recorded instances
-```
-
-By default, `codev` uses `--auth none` and binds to `0.0.0.0`; use it only on the local machine or a trusted network. From Windows WebView on WSL2, prefer `http://127.0.0.1:<port>`. WebView displays the page only and does not start `codev`; run `codev` first.
+A practical pattern is to keep an AI Agent, source terminal, development-service terminal, and service debugging page in one node. You may also keep one ordinary terminal window; nodes do not require a multi-window layout.

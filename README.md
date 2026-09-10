@@ -55,10 +55,12 @@ Web windows use the system-installed WebView Runtime. The application does not d
 - [User guide](docs/usage/eng/getting-started.md)
 - [FAQ](docs/usage/eng/faq.md)
 - [Workspace node command subtabs guide](docs/usage/eng/workspace-node-command-subtabs.md)
+- [VS Code Web (Dockerfile)](docs/usage/eng/code-server-docker.md)
 - [Release notes](docs/usage/eng/release-notes.md)
 - [中文使用说明](docs/usage/cn/getting-started.md)
 - [常见问题](docs/usage/cn/faq.md)
 - [工作区节点命令子 Tab 使用说明](docs/usage/cn/workspace-node-command-subtabs.md)
+- [VS Code Web（Dockerfile）](docs/usage/cn/code-server-docker.md)
 - [中文发行说明](docs/usage/cn/release-notes.md)
 - [Build guide](README-build.md)
 
