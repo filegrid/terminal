@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:chatgpt.com)",
+      "WebFetch(domain:releases.openai.com)"
+    ]
+  }
+}

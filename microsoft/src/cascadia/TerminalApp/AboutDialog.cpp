@@ -18,9 +18,14 @@ namespace winrt::TerminalApp::implementation
         InitializeComponent();
     }
 
+    void AboutDialog::OnPrimaryButtonClick(const IInspectable&, const winrt::Windows::UI::Xaml::Controls::ContentDialogButtonClickEventArgs&)
+    {
+        winrt::Windows::System::Launcher::LaunchUriAsync(winrt::Windows::Foundation::Uri{ L"https://github.com/filegrid/terminal/issues/new" });
+    }
+
     winrt::hstring AboutDialog::ApplicationDisplayName()
     {
-        return CascadiaSettings::ApplicationDisplayName();
+        return L"GeekTerminal";
     }
 
     winrt::hstring AboutDialog::ApplicationVersion()

@@ -12,6 +12,7 @@ namespace winrt::TerminalApp::implementation
     public:
         AboutDialog();
 
+        void OnPrimaryButtonClick(const IInspectable& sender, const winrt::Windows::UI::Xaml::Controls::ContentDialogButtonClickEventArgs& eventArgs);
         winrt::hstring ApplicationDisplayName();
         winrt::hstring ApplicationVersion();
 

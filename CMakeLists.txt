@@ -87,8 +87,9 @@ endif()
 file(READ "${_ext_version_file}" _portable_version_text)
 string(STRIP "${_portable_version_text}" _portable_version_text)
 set(_portable_product_version "${_portable_version_text}")
-set(_portable_msix_configuration_suffix "$<$<NOT:$<CONFIG:Release>>:_$<CONFIG>>")
-set(_portable_terminal_package "${_portable_output_root}/WindowsTerminalPortableGeekEdition_System${_portable_msix_configuration_suffix}_${_portable_product_version}_${PORTABLE_PLATFORM}.msix")
+set(_portable_package_configuration_suffix "$<$<NOT:$<CONFIG:Release>>:_$<CONFIG>>")
+set(_portable_executable_package "${_portable_output_root}/GeekTerminal${_portable_package_configuration_suffix}_${_portable_product_version}_${PORTABLE_PLATFORM}.exe")
+set(_portable_msi_package "${_portable_output_root}/GeekTerminal${_portable_package_configuration_suffix}_${_portable_product_version}_${PORTABLE_PLATFORM}.msi")
 
 file(TO_NATIVE_PATH "${_workspace_root}" _workspace_root_native)
 file(TO_NATIVE_PATH "${_openconsole_root}" _openconsole_root_native)
@@ -5343,6 +5344,26 @@ set(_product_xaml_runtime_dll "${_product_xaml_runtime_root}/Microsoft.UI.Xaml.d
 set(_product_xaml_runtime_themes "${_product_xaml_runtime_root}/Microsoft.UI.Xaml/Themes/Generic.xaml")
 set(_product_xaml_runtime_output_dll "${_windows_terminal_output_root}/Microsoft.UI.Xaml.dll")
 set(_product_xaml_runtime_output_themes "${_windows_terminal_output_root}/Microsoft.UI.Xaml/Themes/Generic.xaml")
+set(PORTABLE_WIX_PATH "${_workspace_root}/tools/wix-tool/wix.exe" CACHE FILEPATH
+    "Path to the WiX CLI used to build the MSI installer")
+set(_portable_installer_source "${_workspace_root}/tools/installer/FileGridInstaller.wxs")
+set(_portable_installer_license_source "${_workspace_root}/res/LICENSE.txt")
+set(_portable_installer_license_converter "${_workspace_root}/tools/installer/Convert-LicenseToRtf.ps1")
+set(_portable_about_dialog "${_workspace_root}/microsoft/src/cascadia/TerminalApp/AboutDialog.xaml")
+set(_portable_installer_license "${CMAKE_BINARY_DIR}/installer-license/LICENSE.rtf")
+set(_portable_msi_layout "${CMAKE_BINARY_DIR}/msi-layout/$<CONFIG>")
+add_custom_command(
+    OUTPUT "${_portable_installer_license}"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_BINARY_DIR}/installer-license"
+    COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${_portable_installer_license_converter}"
+        -InputPath "${_portable_installer_license_source}"
+        -OutputPath "${_portable_installer_license}"
+        -Version "${_portable_product_version}"
+        -AboutDialogPath "${_portable_about_dialog}"
+    DEPENDS "${_portable_installer_license_source}" "${_portable_installer_license_converter}" "${_portable_about_dialog}"
+    VERBATIM
+    COMMENT "Converting installer license text to RTF"
+)
 if(NOT EXISTS "${_product_xaml_appx}")
     message(FATAL_ERROR "Could not find Microsoft.UI.Xaml AppX runtime at ${_product_xaml_appx}.")
 endif()
@@ -5360,7 +5381,6 @@ add_custom_command(
 )
 add_custom_target(product-xaml-runtime DEPENDS "${_product_xaml_runtime_dll}")
 add_dependencies(${_windows_terminal_target} product-xaml-runtime)
-
 set(_portable_tool_rsp_content "/nostdlib+\n/target:exe\n/langversion:12.0\n/nullable:enable\n/optimize+\n/deterministic+\n/debug:portable\n/out:\"${_portable_tool_dll}\"\n")
 foreach(_dotnet_reference IN LISTS _dotnet_net8_references)
     string(APPEND _portable_tool_rsp_content "/reference:\"${_dotnet_reference}\"\n")
@@ -5644,15 +5664,54 @@ add_custom_target(full ALL
     COMMENT "Packaging final bin artifacts into ${_portable_output_root} from a full rebuild"
 )
 add_dependencies(full product-xaml-runtime)
-
-add_custom_target(msix
-    COMMAND "${_portable_makeappx_path}" pack /f "${_product_package_map}" /p "${_product_terminal_package}" /o
-    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_product_terminal_package}" "${_portable_terminal_package}"
-    DEPENDS full
-    USES_TERMINAL
+add_custom_target(msi-layout
+    COMMAND "${_dotnet_path}" "${_portable_tool_dll}"
+        --package-map "${_product_package_map}"
+        --manifest "${_product_manifest}"
+        --version-file "${_ext_version_file}"
+        --xaml-package "${_portable_xaml_package_native}"
+        --platform "${PORTABLE_PLATFORM}"
+        --configuration "$<CONFIG>"
+        --destination "${_portable_output_root_native}"
+        --source-root "${_workspace_root_native}"
+        --makepri-path "${_makepri_path_native}"
+        --roslyn-path "${_dotnet_csc_path_native}"
+        --framework-reference-path "${_net472_reference_path_native}"
+        --workspace-extension-output-dir "${_openconsole_bin_root_native_base}/$<CONFIG>/Ext"
+        --layout-output "${_portable_msi_layout}"
+    DEPENDS full portable-package-tool
     VERBATIM
-    COMMENT "Creating installable MSIX at ${_portable_terminal_package}"
+    COMMENT "Preparing expanded GeekTerminal files for the MSI installer"
 )
+
+if(NOT EXISTS "${PORTABLE_WIX_PATH}")
+    add_custom_target(msi
+        COMMAND "${CMAKE_COMMAND}" -E echo "WiX CLI was not found at ${PORTABLE_WIX_PATH}. Install it with: dotnet tool install wix --version 5.0.2 --tool-path tools/wix-tool"
+        COMMAND "${CMAKE_COMMAND}" -E false
+        DEPENDS full
+        USES_TERMINAL
+        VERBATIM
+        COMMENT "WiX is required to create the MSI installer"
+    )
+else()
+    add_custom_target(msi
+        COMMAND "${PORTABLE_WIX_PATH}" extension add WixToolset.Util.wixext/5.0.2
+        COMMAND "${PORTABLE_WIX_PATH}" build
+            -arch "${PORTABLE_PLATFORM}"
+            -ext WixToolset.UI.wixext
+            -ext WixToolset.Util.wixext
+            -pdbtype none
+            -d "ProductVersion=${_portable_product_version}"
+            -d "ProductLayout=${_portable_msi_layout}"
+            -d "LicenseRtf=${_portable_installer_license}"
+            -out "${_portable_msi_package}"
+            "${_portable_installer_source}"
+        DEPENDS msi-layout "${_portable_installer_source}" "${_portable_installer_license}"
+        USES_TERMINAL
+        VERBATIM
+        COMMENT "Creating MSI installer at ${_portable_msi_package}"
+    )
+endif()
 
 add_custom_target(ext
     COMMAND ${CMAKE_COMMAND}

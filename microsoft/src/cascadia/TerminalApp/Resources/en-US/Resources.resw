@@ -467,7 +467,7 @@
     <value>About</value>
   </data>
   <data name="AboutDialog.PrimaryButtonText" xml:space="preserve">
-    <value>Send feedback</value>
+    <value>Report an issue on GitHub</value>
   </data>
   <data name="AboutDialog.CloseButtonText" xml:space="preserve">
     <value>OK</value>
@@ -475,9 +475,6 @@
   <data name="AboutDialog_VersionLabel.Text" xml:space="preserve">
     <value>Version:</value>
     <comment>This is the heading for a version number label</comment>
-  </data>
-  <data name="AboutDialog_DisplayName.Text" xml:space="preserve">
-    <value>Windows Terminal (Portable Geek Edition)</value>
   </data>
   <data name="AboutDialog_AuthorLabel.Text" xml:space="preserve">
     <value>Author: </value>

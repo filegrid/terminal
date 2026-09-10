@@ -98,6 +98,10 @@ internal sealed class Program
                 {
                     BuildSingleFilePortable(distributionName, version, architecture, outputZip);
                 }
+                else if (!string.IsNullOrWhiteSpace(_options.LayoutOutputDirectory))
+                {
+                    ExtractInstallerLayout(outputZip, terminalDirectoryName, _options.LayoutOutputDirectory);
+                }
                 else
                 {
                     var outputZipPath = Path.Combine(_options.Destination, distributionName + ".zip");
@@ -214,6 +218,41 @@ internal sealed class Program
             return new PackageManifest(identity.Attribute("Name")?.Value ?? string.Empty, identity.Attribute("Version")?.Value ?? string.Empty, identity.Attribute("ProcessorArchitecture")?.Value ?? string.Empty);
         }
 
+        private static void ExtractInstallerLayout(string outputZip, string terminalDirectoryName, string layoutDirectory)
+        {
+            if (Directory.Exists(layoutDirectory))
+            {
+                Directory.Delete(layoutDirectory, true);
+            }
+
+            var runtimeDirectory = Path.Combine(layoutDirectory, "bin");
+            Directory.CreateDirectory(runtimeDirectory);
+            var prefix = terminalDirectoryName + "/";
+            using var archive = ZipFile.OpenRead(outputZip);
+            foreach (var entry in archive.Entries)
+            {
+                if (!entry.FullName.StartsWith(prefix, StringComparison.Ordinal) || string.IsNullOrEmpty(entry.Name))
+                {
+                    continue;
+                }
+
+                var relativePath = entry.FullName[prefix.Length..].Replace('/', Path.DirectorySeparatorChar);
+                if (string.Equals(relativePath, "WindowsTerminal.exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    relativePath = "GeekTerminal.exe";
+                }
+
+                var destinationPath = Path.GetFullPath(Path.Combine(runtimeDirectory, relativePath));
+                if (!destinationPath.StartsWith(Path.GetFullPath(layoutDirectory) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException($"Unsafe installer-layout path: {entry.FullName}");
+                }
+
+                Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
+                entry.ExtractToFile(destinationPath, true);
+            }
+        }
+
         private static void PopulateTerminalRootFromPackageMap(string packageMapPath, string terminalRoot)
         {
             foreach (var rawLine in File.ReadLines(packageMapPath))
@@ -261,11 +300,6 @@ internal sealed class Program
                 }
             }
 
-            var xamlDll = Path.Combine(xamlRoot, "Microsoft.UI.Xaml.dll");
-            File.Copy(xamlDll, Path.Combine(terminalRoot, "Microsoft.UI.Xaml.dll"), true);
-
-            var xamlDirectory = Path.Combine(xamlRoot, "Microsoft.UI.Xaml");
-            CopyDirectory(xamlDirectory, Path.Combine(terminalRoot, "Microsoft.UI.Xaml"));
         }
 
         private void MergeResources(string terminalRoot, string xamlRoot)
@@ -305,6 +339,12 @@ internal sealed class Program
                     Directory.Delete(tempRoot, true);
                 }
             }
+
+            var xamlDll = Path.Combine(xamlRoot, "Microsoft.UI.Xaml.dll");
+            File.Copy(xamlDll, Path.Combine(terminalRoot, "Microsoft.UI.Xaml.dll"), true);
+
+            var xamlDirectory = Path.Combine(xamlRoot, "Microsoft.UI.Xaml");
+            CopyDirectory(xamlDirectory, Path.Combine(terminalRoot, "Microsoft.UI.Xaml"));
         }
 
         private void CreatePortableModeFiles(string terminalRoot)
@@ -587,7 +627,7 @@ internal sealed class Program
         private string GetPortableOutputName(string version, string architecture, string extension)
         {
             var configurationSuffix = string.Equals(_options.Configuration, "Release", StringComparison.OrdinalIgnoreCase) ? string.Empty : "_" + _options.Configuration;
-            return $"WindowsTerminalPortableGeekEdition_System{configurationSuffix}_{version}_{architecture}{extension}";
+            return $"GeekTerminal{configurationSuffix}_{version}_{architecture}{extension}";
         }
 
         private void DeleteLegacyPortableOutputs(string distributionName, string version, string architecture, string extension)
@@ -598,8 +638,8 @@ internal sealed class Program
                 distributionName + extension,
                 $"WindowsTerminalPortable_en-US{configurationSuffix}_{version}_{architecture}{extension}",
                 $"WindowsTerminalPortable_zh-CN{configurationSuffix}_{version}_{architecture}{extension}",
-                $"WindowsTerminalPortableGeekEdition_System{configurationSuffix}_{version}_{architecture}{extension}",
-                $"WindowsTerminalPortableGeekEdition_English{configurationSuffix}_{version}_{architecture}{extension}"
+                $"GeekTerminal_System{configurationSuffix}_{version}_{architecture}{extension}",
+                $"GeekTerminal_English{configurationSuffix}_{version}_{architecture}{extension}"
             };
 
             foreach (var name in legacyNames.Distinct(StringComparer.OrdinalIgnoreCase))
@@ -775,6 +815,7 @@ internal sealed class Program
         public required string RoslynPath { get; init; }
         public required string FrameworkReferencePath { get; init; }
         public string? WorkspaceExtensionOutputDirectory { get; init; }
+        public string? LayoutOutputDirectory { get; init; }
         public required bool PortableMode { get; init; }
         public required bool SingleFileOutput { get; init; }
 
@@ -815,6 +856,7 @@ internal sealed class Program
                 RoslynPath = GetRequired(values, "--roslyn-path"),
                 FrameworkReferencePath = GetRequired(values, "--framework-reference-path"),
                 WorkspaceExtensionOutputDirectory = values.TryGetValue("--workspace-extension-output-dir", out var workspaceExtensionOutputDirectory) ? workspaceExtensionOutputDirectory : null,
+                LayoutOutputDirectory = values.TryGetValue("--layout-output", out var layoutOutputDirectory) ? layoutOutputDirectory : null,
                 PortableMode = flags.Contains("--portable-mode"),
                 SingleFileOutput = flags.Contains("--single-file-output")
             };

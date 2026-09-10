@@ -32,8 +32,8 @@ cmake --build build --target full
 # Core / Glue-only changes that do not alter the Host payload
 cmake --build build --target ext
 
-# Complete portable package plus an installable MSIX directly in bin/
-cmake --build build --target msix
+# Complete portable package plus an installable MSI directly in bin/
+cmake --build build --target msi
 ```
 
 ## Mandatory architecture and build rules
@@ -89,9 +89,9 @@ updates Ext/Glue. It is invalid for a Host-affecting change because it can leave
 the portable package with an old Host. `full` rebuilds and packages the complete
 product.
 
-Only `full`, `ext`, and `msix` are supported developer build targets. `full` is
-the default CMake build and produces a portable artifact in `bin/`; `msix`
-performs `full` first and then adds the installable MSIX. Do **not** invoke
+Only `full`, `ext`, and `msi` are supported developer build targets. `full` is
+the default CMake build and produces a portable artifact in `bin/`; `msi`
+performs `full` first and then adds the installable MSI. Do **not** invoke
 individual compilation, library, DLL, executable, or packaging-subtargets (for
 example `TerminalAppLib`, `WindowsTerminal`, `Ext`, or `ninja` targets) as a
 delivery or validation path.
@@ -111,11 +111,16 @@ graph and regenerate the portable artifact, run:
 cmake --build build --target full
 ```
 
-To create the installable MSIX in `bin/`, run:
+To create the installable MSI in `bin/`, run:
 
 ```powershell
-cmake --build build --target msix
+dotnet tool install wix --tool-path tools/wix-tool --version 5.0.2
+cmake --build build --target msi --config Release
 ```
+
+MSI does not require an MSIX publisher certificate. Windows will request normal
+installer/UAC confirmation as appropriate. Code-signing the final MSI remains
+recommended for public distribution but is not required to build or run it.
 
 ### 5. Localize all production UI text
 
@@ -132,9 +137,9 @@ copied into a production path.
 
 The portable single-file outputs are written to `bin/`:
 
-- `WindowsTerminalPortableGeekEdition_System_<version>_<arch>.exe`
-- `WindowsTerminalPortableGeekEdition_System_Debug_<version>_<arch>.exe`
-- `WindowsTerminalPortableGeekEdition_System_<version>_<arch>.msix` (only with `msix`)
+- `GeekTerminal_<version>_<arch>.exe`
+- `GeekTerminal_Debug_<version>_<arch>.exe`
+- `GeekTerminal_<version>_<arch>.msi` (only with `msi`)
 
 Only these final files should be used to validate portable startup behavior.
 Intermediate executables, `wt.exe`, `OpenConsole.exe`, MSIX files, and files

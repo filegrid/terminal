@@ -1,8 +1,10 @@
 # User Guide
 
-Windows Terminal Geek Portable Edition uses workspaces to organize related terminals and web tools. A workspace can contain multiple nodes. Each node occupies one first-level tab and can contain one or more command windows.
+GeekTerminal uses a workspace to represent either one large project or a complete environment such as development, staging, or production. A common practical pattern is to organize subprojects as nodes in the first-level tab row, with each subproject defining workflow windows such as AI-agent command windows, source-code shells, debugging pages, and local client pages. This is a recommended organization pattern, not a requirement.
 
 [中文](../cn/getting-started.md)
+
+For installation or runtime dependencies, see the [FAQ](faq.md).
 
 ## Start the application
 
@@ -16,7 +18,7 @@ The application automatically uses the system language. Restart the application 
 
 1. Select the workspace name at the upper left to open workspace management.
 2. Create a workspace or select an existing one.
-3. Create a node, choose a terminal profile, and optionally set its startup directory and name.
+3. Create one node for each subproject, choose its terminal profile, and set its startup directory and name.
 4. Enter edit mode to change the configuration. Save and reopen the workspace for the new session configuration to take effect.
 5. Lock a workspace to prevent accidental edits. Unlock it before editing again.
 
@@ -24,7 +26,7 @@ Terminal windows in a node inherit that node's selected profile and startup dire
 
 ## Configure command windows
 
-Each node supports one to five command windows:
+Each node supports one to five command windows. Treat these as the subproject workflow: one or more AI-agent terminals, a source-code shell, and web windows for debugging pages or local clients.
 
 - Select `+` to add a terminal command window. Enter a name and startup command; leave the command empty to start only the node profile.
 - Select the globe icon to add a web window. Enter a name and a complete URL, such as `http://127.0.0.1:8080`.
