@@ -2,6 +2,13 @@
 
 [中文](../cn/release-notes.md)
 
+## Improved: workspace WebView stability and interaction
+
+- Workspace web commands and the workspace manager now use the native WebView2 CompositionController instead of the XAML `WebView2` control.
+- Fixed the web rendering layer covering top-right/bottom-right command icons and workspace close controls; icon spacing has returned to its original layout.
+- Completed mouse-input forwarding, focus handoff, and close lifecycle handling so a terminal pane does not take focus back from a web page.
+- Added diagnostic logging for WebView creation, navigation, sizing, visibility, mouse input, focus, and process failures to investigate intermittent exits or load failures.
+
 ## Added: workspace node command subtabs
 
 Workspace nodes can now contain up to five command windows. The windows remain within one first-level node tab and are switched in the node content area using command subtabs (or a vertical icon strip), keeping related tools out of the top-level tab row.
