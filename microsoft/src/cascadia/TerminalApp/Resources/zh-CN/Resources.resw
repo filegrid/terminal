@@ -467,7 +467,7 @@
     <value>关于</value>
   </data>
   <data name="AboutDialog.PrimaryButtonText" xml:space="preserve">
-    <value>发送反馈</value>
+    <value>在 GitHub 提交 Issue</value>
   </data>
   <data name="AboutDialog.CloseButtonText" xml:space="preserve">
     <value>确定</value>
@@ -477,7 +477,7 @@
     <comment>This is the heading for a version number label</comment>
   </data>
   <data name="AboutDialog_DisplayName.Text" xml:space="preserve">
-    <value>Windows 终端 (便携极客版)</value>
+    <value>GeekTerminal</value>
   </data>
   <data name="AboutDialog_AuthorLabel.Text" xml:space="preserve">
     <value>作者：</value>
@@ -492,7 +492,7 @@
     <comment>A hyperlink name for the current-language project documentation</comment>
   </data>
   <data name="AboutDialog_DocumentationLink.NavigateUri" xml:space="preserve">
-    <value>https://github.com/filegrid/terminal/blob/filegrid/README-cn.md</value>
+    <value>https://github.com/filegrid/terminal/blob/filegrid/README.md</value>
   </data>
   <data name="ConfirmCloseDialog_Cancel" xml:space="preserve">
     <value>取消</value>

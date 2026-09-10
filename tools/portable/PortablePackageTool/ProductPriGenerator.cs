@@ -12,7 +12,6 @@ internal static class ProductPriGenerator
         ("Microsoft.Terminal.UI.Markdown", "Microsoft.Terminal.UI.Markdown.pri"),
         ("Microsoft.Terminal.UI", "Microsoft.Terminal.UI.pri"),
         ("TerminalApp", "TerminalApp.pri"),
-        ("TerminalAppLib", "TerminalApp.pri"),
         ("TerminalConnection", "Microsoft.Terminal.TerminalConnection.pri"),
         ("TerminalCore", "Microsoft.Terminal.Core.pri")
     };
@@ -24,7 +23,6 @@ internal static class ProductPriGenerator
         var repoRoot = Path.GetFullPath(GetRequired(values, "--repo-root"));
         var packageRoot = Path.GetFullPath(GetRequired(values, "--package-root"));
         var productBinRoot = Path.GetFullPath(GetRequired(values, "--product-bin-root"));
-        var xamlPri = RequireFile(GetRequired(values, "--xaml-pri"));
 
         Directory.CreateDirectory(outputRoot);
         var embedRoot = Path.Combine(outputRoot, "embed");
@@ -200,3 +198,4 @@ internal static class ProductPriGenerator
             : throw new ArgumentException($"Missing required argument {key}");
     }
 }
+        var xamlPri = RequireFile(GetRequired(values, "--xaml-pri"));

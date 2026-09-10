@@ -1,0 +1,21 @@
+GeekTerminal
+END USER LICENSE AGREEMENT
+
+Version  {{VERSION}}
+Copyright (c) {{AUTHOR}}. All rights reserved.
+Contact  {{EMAIL}}
+
+1. Acceptance
+By installing or using this software, you accept this agreement.
+
+2. License
+{{AUTHOR}} grants you a personal, non-exclusive right to install and use this software on devices you control.
+
+3. Restrictions
+You must comply with applicable laws and must not use this software to infringe the rights of others.
+
+4. Disclaimer
+This software is provided "as is", without warranty of any kind, express or implied. To the extent permitted by law, {{AUTHOR}} is not liable for any indirect, incidental, or consequential damages arising from its use.
+
+5. Contact
+Questions about this software or this agreement: {{EMAIL}}
